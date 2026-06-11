@@ -6,7 +6,7 @@ import type { Tool, ToolContext } from './types.js'
 
 const schema = z.object({
   file_path: z.string().describe('要编辑的文件路径'),
-  old_string: z.string().describe('要被替换的原文（必须与文件内容逐字符一致，含缩进与换行）'),
+  old_string: z.string().min(1).describe('要被替换的原文（必须与文件内容逐字符一致，含缩进与换行；不能为空）'),
   new_string: z.string().describe('替换后的新文本'),
   replace_all: z.boolean().optional().describe('替换所有出现处；默认 false（要求 old_string 在文件中唯一）'),
 })

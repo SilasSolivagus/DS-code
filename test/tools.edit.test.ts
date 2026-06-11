@@ -73,4 +73,19 @@ describe('Edit', () => {
     const out = await editTool.call({ file_path: f, old_string: 'same', new_string: 'same' }, ctx)
     expect(out).toContain('相同')
   })
+
+  it('空 old_string 被 schema 拒绝（防止 split 腐化文件）', () => {
+    const parsed = editTool.inputSchema.safeParse({ file_path: '/x', old_string: '', new_string: 'y', replace_all: true })
+    expect(parsed.success).toBe(false)
+  })
+
+  it('多行 old_string 替换（最高频真实场景）', async () => {
+    const { f, ctx } = await setup('function foo() {\n  return 1\n}\n')
+    const out = await editTool.call(
+      { file_path: f, old_string: 'function foo() {\n  return 1\n}', new_string: 'function foo() {\n  return 2\n}' },
+      ctx,
+    )
+    expect(out).toContain('已编辑')
+    expect(readFileSync(f, 'utf8')).toContain('return 2')
+  })
 })
