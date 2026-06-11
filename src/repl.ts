@@ -5,7 +5,7 @@ import { runLoop, type LoopDeps } from './loop.js'
 import { allTools } from './tools/index.js'
 import { buildSystemPrompt } from './prompt.js'
 import { loadSettings, saveSettings } from './config.js'
-import type { Decision, PermissionMode } from './permissions.js'
+import { isDangerous, type Decision, type PermissionMode } from './permissions.js'
 import type { ToolContext } from './tools/types.js'
 
 const C = { dim: '\x1b[2m', cyan: '\x1b[36m', red: '\x1b[31m', green: '\x1b[32m', reset: '\x1b[0m' }
@@ -48,6 +48,7 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean }): Promis
     lineWaiter = res
   })
   const ask = async (toolName: string, desc: string): Promise<Decision> => {
+    if (isDangerous(desc)) process.stdout.write(`\n${C.red}⚠ 高危操作；选 always 也只会精确放行这一条命令${C.reset}`)
     const a = (await question(`\n${C.cyan}允许 ${toolName}：${desc} ？ [y]是 / [n]否 / [a]总是允许 › ${C.reset}`))
       .trim().toLowerCase()
     return a === 'a' ? 'always' : a === 'y' ? 'yes' : 'no'

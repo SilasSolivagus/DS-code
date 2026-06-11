@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { matchRule, checkPermission, type PermissionContext, type Decision } from '../src/permissions.js'
+import { matchRule, checkPermission, isDangerous, type PermissionContext, type Decision } from '../src/permissions.js'
 
 const fakeTool = (name: string, isReadOnly: boolean, desc: false | string = 'x'): any => ({
   name,
@@ -82,5 +82,38 @@ describe('checkPermission', () => {
     const tool2 = fakeTool('Bash', false, 'npm install lodash')
     expect((await checkPermission(tool2, {}, ctx)).ok).toBe(true)
     expect(asks).toBe(1)
+  })
+})
+
+describe('isDangerous', () => {
+  it('识别高危命令', () => {
+    expect(isDangerous('rm -rf /tmp/x')).toBe(true)
+    expect(isDangerous('rm -fr node_modules')).toBe(true)
+    expect(isDangerous('sudo rm file')).toBe(true)
+    expect(isDangerous('git push --force')).toBe(true)
+    expect(isDangerous('git reset --hard HEAD~1')).toBe(true)
+    expect(isDangerous('DROP TABLE users')).toBe(true)
+  })
+  it('普通命令不误报', () => {
+    expect(isDangerous('npm test')).toBe(false)
+    expect(isDangerous('rm file.txt')).toBe(false)
+    expect(isDangerous('ls -la')).toBe(false)
+    expect(isDangerous('git status --porcelain')).toBe(false)
+  })
+})
+
+describe('checkPermission 高危分支', () => {
+  it('高危命令 always 只持久化精确规则，不做前缀放宽', async () => {
+    const rules: string[] = []
+    const ctx = pc({ rules, saveRule: r => rules.push(r), ask: async () => 'always' })
+    const tool = fakeTool('Bash', false, 'rm -rf /tmp/scratch')
+    expect((await checkPermission(tool, {}, ctx)).ok).toBe(true)
+    expect(rules).toEqual(['Bash(rm -rf /tmp/scratch)'])
+    // 精确规则不匹配其他 rm -rf
+    const tool2 = fakeTool('Bash', false, 'rm -rf /etc')
+    let asked = false
+    const ctx2 = pc({ rules, ask: async () => { asked = true; return 'no' } })
+    await checkPermission(tool2, {}, ctx2)
+    expect(asked).toBe(true)
   })
 })

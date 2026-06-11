@@ -11,6 +11,22 @@ export interface PermissionContext {
   ask: (toolName: string, desc: string) => Promise<Decision>
 }
 
+const DANGEROUS_PATTERNS = [
+  /\brm\s+(-\w+\s+)*-\w*r\w*f/i, // rm -rf 及参数变体
+  /\brm\s+(-\w+\s+)*-\w*f\w*r/i, // rm -fr
+  /\bsudo\b/,
+  /--force\b/,
+  /\bgit\s+reset\s+--hard\b/,
+  /\bdrop\s+(table|database)\b/i,
+  /\bmkfs\b/,
+  /\bdd\s+if=/,
+]
+
+/** 高危命令：权限弹窗加警告，always 不做前缀放宽只存精确规则 */
+export function isDangerous(desc: string): boolean {
+  return DANGEROUS_PATTERNS.some(re => re.test(desc))
+}
+
 /** 规则形如 Bash(npm test:*)（前缀）或 Bash(ls)（精确） */
 export function matchRule(rule: string, toolName: string, desc: string): boolean {
   const m = rule.match(/^(\w+)\((.+)\)$/)
@@ -40,7 +56,9 @@ export async function checkPermission(
     // Bash 取第一行的前两个词做前缀规则（如 "npm test:*"）；其他工具按完整描述精确匹配
     const firstLine = desc.split('\n')[0]
     const pat = tool.name === 'Bash'
-      ? firstLine.split(' ').slice(0, 2).join(' ') + ':*'
+      ? isDangerous(desc)
+        ? firstLine // 高危：只精确放行本条命令
+        : firstLine.split(' ').slice(0, 2).join(' ') + ':*'
       : desc.replace(/\n/g, ' ')
     pc.saveRule(`${tool.name}(${pat})`)
     return { ok: true }
