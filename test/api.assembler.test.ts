@@ -40,4 +40,22 @@ describe('Assembler', () => {
     expect(a.push({ choices: [] })).toBe('')
     expect(a.push({})).toBe('')
   })
+
+  it('finish_reason 与 usage 在同一 chunk（DeepSeek 末包结构）', () => {
+    const a = new Assembler()
+    a.push({ choices: [{ delta: { content: 'hi' } }] })
+    a.push({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 7, completion_tokens: 2, prompt_cache_hit_tokens: 3 } })
+    const r = a.finish()
+    expect(r.finishReason).toBe('stop')
+    expect(r.usage.prompt_cache_hit_tokens).toBe(3)
+    expect(r.content).toBe('hi')
+  })
+
+  it('content 与 tool_calls 混在同一 delta', () => {
+    const a = new Assembler()
+    expect(a.push({ choices: [{ delta: { content: '我来读', tool_calls: [{ index: 0, id: 'c9', function: { name: 'Read', arguments: '{}' } }] } }] })).toBe('我来读')
+    const r = a.finish()
+    expect(r.content).toBe('我来读')
+    expect(r.toolCalls).toEqual([{ id: 'c9', name: 'Read', args: '{}' }])
+  })
 })

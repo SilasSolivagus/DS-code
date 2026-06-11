@@ -39,7 +39,7 @@ export class Assembler {
     for (const tc of delta.tool_calls ?? []) {
       const slot = this.calls.get(tc.index) ?? { id: '', name: '', args: '' }
       if (tc.id) slot.id = tc.id
-      if (tc.function?.name) slot.name += tc.function.name
+      if (tc.function?.name) slot.name = tc.function.name
       if (tc.function?.arguments) slot.args += tc.function.arguments
       this.calls.set(tc.index, slot)
     }
