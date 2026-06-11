@@ -16,7 +16,7 @@
     {
       "id": "s3-bash-cwd",
       "repo": "/Users/silas/loop/deepcode",
-      "prompt": "Bash 工具是怎么实现 cd 持久化（工作目录跨命令保持）的？",
+      "prompt": "Bash 工具是怎么实现 cd 持久化（工作目录跨命令保持）的？引用具体文件说明。",
       "expected": ["bash\\.ts", "(PWD|MARKER|marker|printf)"]
     },
     {
