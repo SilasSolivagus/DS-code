@@ -3,8 +3,8 @@ import { allTools, toApiTools } from '../src/tools/index.js'
 import { readTool } from '../src/tools/read.js'
 
 describe('registry', () => {
-  it('注册了 M1 的四个工具', () => {
-    expect(allTools.map(t => t.name).sort()).toEqual(['Bash', 'Glob', 'Grep', 'Read'])
+  it('注册了 M2 的六个工具', () => {
+    expect(allTools.map(t => t.name).sort()).toEqual(['Bash', 'Edit', 'Glob', 'Grep', 'Read', 'Write'])
   })
 
   it('toApiTools 生成 OpenAI function 定义', () => {

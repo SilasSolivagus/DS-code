@@ -5,7 +5,7 @@ import { runLoop, type LoopDeps } from './loop.js'
 import { allTools } from './tools/index.js'
 import { buildSystemPrompt } from './prompt.js'
 import { loadSettings, saveSettings } from './config.js'
-import type { Decision } from './permissions.js'
+import type { Decision, PermissionMode } from './permissions.js'
 import type { ToolContext } from './tools/types.js'
 
 const C = { dim: '\x1b[2m', cyan: '\x1b[36m', red: '\x1b[31m', green: '\x1b[32m', reset: '\x1b[0m' }
@@ -19,6 +19,7 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean }): Promis
   let abort = new AbortController()
   let model = 'deepseek-v4-flash'
   let thinking = false
+  let permMode: PermissionMode = opts.yolo ? 'yolo' : 'default'
   const ctx: ToolContext = {
     cwd: () => cwd,
     setCwd: d => { cwd = d },
@@ -59,7 +60,7 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean }): Promis
     if (!line) continue
     if (line === '/exit') break
     if (line === '/help') {
-      console.log('/model  flash↔pro 切换\n/think  thinking 模式开关\n/exit   退出')
+      console.log('/model  flash↔pro 切换\n/think  thinking 模式开关\n/accept acceptEdits 模式开关（Edit/Write 免确认，Bash 仍确认）\n/exit   退出')
       continue
     }
     if (line === '/model') {
@@ -70,6 +71,15 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean }): Promis
     if (line === '/think') {
       thinking = !thinking
       console.log(`thinking 模式：${thinking ? '开' : '关'}`)
+      continue
+    }
+    if (line === '/accept') {
+      if (opts.yolo) {
+        console.log('当前是 yolo 模式，所有操作均已放行')
+        continue
+      }
+      permMode = permMode === 'acceptEdits' ? 'default' : 'acceptEdits'
+      console.log(`acceptEdits 模式：${permMode === 'acceptEdits' ? '开（Edit/Write 免确认，Bash 仍需确认）' : '关'}`)
       continue
     }
     if (line.startsWith('/')) {
@@ -89,7 +99,7 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean }): Promis
         thinking,
         ctx,
         permission: {
-          mode: opts.yolo ? 'yolo' : 'default',
+          mode: permMode,
           rules: settings.permissions.allow,
           saveRule: r => { settings.permissions.allow.push(r); saveSettings(settings) },
           ask,
