@@ -30,10 +30,14 @@ export const readTool: Tool<typeof schema> = {
     }
     if (stat.isDirectory()) return `错误：${p} 是目录。请用 Glob 列出其中的文件。`
     const lines = fs.readFileSync(p, 'utf8').split('\n')
+    if (input.offset !== undefined && input.offset - 1 >= lines.length) {
+      return `错误：offset ${input.offset} 超出文件总行数 ${lines.length}。`
+    }
     const start = (input.offset ?? 1) - 1
     const limit = Math.min(input.limit ?? MAX_LINES, MAX_LINES)
     const slice = lines.slice(start, start + limit)
-    ctx.fileState.set(p, stat.mtimeMs)
+    const newStat = fs.statSync(p)
+    ctx.fileState.set(p, newStat.mtimeMs)
     const body = slice
       .map((l, i) => {
         const text = l.length > MAX_LINE_CHARS ? l.slice(0, MAX_LINE_CHARS) + '…[行截断]' : l
