@@ -17,7 +17,10 @@ export function matchRule(rule: string, toolName: string, desc: string): boolean
   if (!m) return false
   const [, name, pat] = m
   if (name !== toolName) return false
-  if (pat.endsWith(':*')) return desc.startsWith(pat.slice(0, -2))
+  if (pat.endsWith(':*')) {
+    const prefix = pat.slice(0, -2)
+    return desc === prefix || desc.startsWith(prefix + ' ')
+  }
   return desc === pat
 }
 
@@ -34,8 +37,11 @@ export async function checkPermission(
   if (pc.rules.some(r => matchRule(r, tool.name, desc))) return { ok: true }
   const decision = await pc.ask(tool.name, desc)
   if (decision === 'always') {
-    // Bash 取前两个词做前缀规则（如 "npm test:*"）；其他工具按完整描述精确匹配
-    const pat = tool.name === 'Bash' ? desc.split(' ').slice(0, 2).join(' ') + ':*' : desc
+    // Bash 取第一行的前两个词做前缀规则（如 "npm test:*"）；其他工具按完整描述精确匹配
+    const firstLine = desc.split('\n')[0]
+    const pat = tool.name === 'Bash'
+      ? firstLine.split(' ').slice(0, 2).join(' ') + ':*'
+      : desc.replace(/\n/g, ' ')
     pc.saveRule(`${tool.name}(${pat})`)
     return { ok: true }
   }

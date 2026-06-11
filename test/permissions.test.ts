@@ -25,6 +25,12 @@ describe('matchRule', () => {
     expect(matchRule('Bash(ls)', 'Bash', 'ls -la')).toBe(false)
     expect(matchRule('Bash(ls:*)', 'Edit', 'ls')).toBe(false)
   })
+
+  it('前缀匹配有词边界，ls 不匹配 lsof', () => {
+    expect(matchRule('Bash(ls:*)', 'Bash', 'ls -la')).toBe(true)
+    expect(matchRule('Bash(ls:*)', 'Bash', 'ls')).toBe(true)
+    expect(matchRule('Bash(ls:*)', 'Bash', 'lsof -i :3000')).toBe(false)
+  })
 })
 
 describe('checkPermission', () => {
@@ -63,5 +69,18 @@ describe('checkPermission', () => {
     expect(asked).toBe(false)
     await checkPermission(fakeTool('Bash', false, 'npm i'), {}, ctx)
     expect(asked).toBe(true)
+  })
+
+  it('多行命令 always 后第一行前缀规则可命中', async () => {
+    const rules: string[] = []
+    let asks = 0
+    const ctx = pc({ rules, saveRule: r => rules.push(r), ask: async () => { asks++; return 'always' } })
+    const tool = fakeTool('Bash', false, 'npm install\nnpm test')
+    expect((await checkPermission(tool, {}, ctx)).ok).toBe(true)
+    expect(rules).toEqual(['Bash(npm install:*)'])
+    // 后续单行同前缀命令命中规则，不再询问
+    const tool2 = fakeTool('Bash', false, 'npm install lodash')
+    expect((await checkPermission(tool2, {}, ctx)).ok).toBe(true)
+    expect(asks).toBe(1)
   })
 })
