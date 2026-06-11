@@ -100,6 +100,10 @@ describe('isDangerous', () => {
     expect(isDangerous('ls -la')).toBe(false)
     expect(isDangerous('git status --porcelain')).toBe(false)
   })
+  it('--force-with-lease 不误报', () => {
+    expect(isDangerous('git push --force-with-lease')).toBe(false)
+    expect(isDangerous('git push --force')).toBe(true)
+  })
 })
 
 describe('checkPermission 高危分支', () => {
@@ -115,5 +119,16 @@ describe('checkPermission 高危分支', () => {
     const ctx2 = pc({ rules, ask: async () => { asked = true; return 'no' } })
     await checkPermission(tool2, {}, ctx2)
     expect(asked).toBe(true)
+  })
+
+  it('高危多行命令 always 后，完全相同的命令第二次命中规则', async () => {
+    const rules: string[] = []
+    let asks = 0
+    const ctx = pc({ rules, saveRule: r => rules.push(r), ask: async () => { asks++; return 'always' } })
+    const tool = fakeTool('Bash', false, 'rm -rf /tmp/scratch\necho done')
+    expect((await checkPermission(tool, {}, ctx)).ok).toBe(true)
+    expect(rules).toEqual(['Bash(rm -rf /tmp/scratch echo done)'])
+    expect((await checkPermission(tool, {}, ctx)).ok).toBe(true)
+    expect(asks).toBe(1) // 第二次不再询问
   })
 })

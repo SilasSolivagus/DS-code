@@ -15,7 +15,7 @@ const DANGEROUS_PATTERNS = [
   /\brm\s+(-\w+\s+)*-\w*r\w*f/i, // rm -rf 及参数变体
   /\brm\s+(-\w+\s+)*-\w*f\w*r/i, // rm -fr
   /\bsudo\b/,
-  /--force\b/,
+  /--force(?!-)/,
   /\bgit\s+reset\s+--hard\b/,
   /\bdrop\s+(table|database)\b/i,
   /\bmkfs\b/,
@@ -33,11 +33,12 @@ export function matchRule(rule: string, toolName: string, desc: string): boolean
   if (!m) return false
   const [, name, pat] = m
   if (name !== toolName) return false
+  const normDesc = desc.replace(/\n/g, ' ') // 规则存储侧同样做了 \n→空格 归一化
   if (pat.endsWith(':*')) {
     const prefix = pat.slice(0, -2)
-    return desc === prefix || desc.startsWith(prefix + ' ')
+    return normDesc === prefix || normDesc.startsWith(prefix + ' ')
   }
-  return desc === pat
+  return normDesc === pat
 }
 
 export async function checkPermission(
@@ -57,7 +58,7 @@ export async function checkPermission(
     const firstLine = desc.split('\n')[0]
     const pat = tool.name === 'Bash'
       ? isDangerous(desc)
-        ? firstLine // 高危：只精确放行本条命令
+        ? desc.replace(/\n/g, ' ') // 高危：完整命令精确放行（含归一化的多行）
         : firstLine.split(' ').slice(0, 2).join(' ') + ':*'
       : desc.replace(/\n/g, ' ')
     pc.saveRule(`${tool.name}(${pat})`)
