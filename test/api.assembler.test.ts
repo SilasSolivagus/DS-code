@@ -58,4 +58,11 @@ describe('Assembler', () => {
     expect(r.content).toBe('我来读')
     expect(r.toolCalls).toEqual([{ id: 'c9', name: 'Read', args: '{}' }])
   })
+
+  it('reasoning_content 流式返回供显示，但不进 content', () => {
+    const a = new Assembler()
+    expect(a.push({ choices: [{ delta: { reasoning_content: '思考中…' } }] })).toBe('思考中…')
+    expect(a.push({ choices: [{ delta: { content: '答案' } }] })).toBe('答案')
+    expect(a.finish().content).toBe('答案')
+  })
 })

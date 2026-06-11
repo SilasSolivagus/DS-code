@@ -44,9 +44,10 @@ export class Assembler {
       if (tc.function?.arguments) slot.args += tc.function.arguments
       this.calls.set(tc.index, slot)
     }
+    // reasoning_content（thinking 模式的思考流）只用于显示，不进 content/messages
     const text: string = delta.content ?? ''
     this.content += text
-    return text
+    return (delta.reasoning_content ?? '') + text
   }
 
   finish(): ChatResult {
@@ -115,7 +116,10 @@ export async function* chatStream(client: OpenAI, opts: ChatOptions): AsyncGener
         ...(opts.tools.length ? { tools: opts.tools } : {}),
         stream: true,
         stream_options: { include_usage: true },
-        ...(opts.thinking ? { reasoning_effort: 'medium', thinking: { type: 'enabled' } } : {}),
+        // v4 系列默认开 thinking（白烧思考 token），必须显式 disabled
+        ...(opts.thinking
+          ? { reasoning_effort: 'medium', thinking: { type: 'enabled' } }
+          : { thinking: { type: 'disabled' } }),
       } as any,
       { signal: opts.signal },
     ),
