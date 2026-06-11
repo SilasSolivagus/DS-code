@@ -3,19 +3,21 @@
     "日期": "2026-06-11",
     "CC 版本": "2.1.173 (Claude Code)",
     "模型": "deepseek-v4-flash（cc 轨经 sonnet 映射）",
-    "每场景次数": "1"
+    "每场景次数": "2"
   },
   "results": [
     {
       "scenario": "s1-assembler",
       "track": "deepcode",
       "run": 1,
-      "success": true,
-      "missedKeywords": [],
-      "wallMs": 13821,
-      "tokensIn": 7433,
-      "tokensOut": 1099,
-      "cacheHit": 3840,
+      "success": false,
+      "missedKeywords": [
+        "api\\.ts"
+      ],
+      "wallMs": 11128,
+      "tokensIn": 6581,
+      "tokensOut": 845,
+      "cacheHit": 3456,
       "toolCalls": 4
     },
     {
@@ -24,11 +26,239 @@
       "run": 1,
       "success": true,
       "missedKeywords": [],
-      "wallMs": 170902,
-      "tokensIn": 498571,
-      "tokensOut": 1427,
-      "cacheHit": 342528,
+      "wallMs": 185372,
+      "tokensIn": 115435,
+      "tokensOut": 903,
+      "cacheHit": 75008,
+      "toolCalls": 5
+    },
+    {
+      "scenario": "s1-assembler",
+      "track": "deepcode",
+      "run": 2,
+      "success": true,
+      "missedKeywords": [],
+      "wallMs": 17778,
+      "tokensIn": 10873,
+      "tokensOut": 1354,
+      "cacheHit": 7168,
+      "toolCalls": 4
+    },
+    {
+      "scenario": "s1-assembler",
+      "track": "cc",
+      "run": 2,
+      "success": true,
+      "missedKeywords": [],
+      "wallMs": 167802,
+      "tokensIn": 116239,
+      "tokensOut": 847,
+      "cacheHit": 75392,
+      "toolCalls": 4
+    },
+    {
+      "scenario": "s2-permission-rule",
+      "track": "deepcode",
+      "run": 1,
+      "success": true,
+      "missedKeywords": [],
+      "wallMs": 11644,
+      "tokensIn": 6068,
+      "tokensOut": 981,
+      "cacheHit": 3584,
+      "toolCalls": 4
+    },
+    {
+      "scenario": "s2-permission-rule",
+      "track": "cc",
+      "run": 1,
+      "success": false,
+      "missedKeywords": [
+        "matchRule",
+        "permissions\\.ts"
+      ],
+      "wallMs": 290110,
+      "tokensIn": 190197,
+      "tokensOut": 2146,
+      "cacheHit": 131584,
+      "toolCalls": 7
+    },
+    {
+      "scenario": "s2-permission-rule",
+      "track": "deepcode",
+      "run": 2,
+      "success": true,
+      "missedKeywords": [],
+      "wallMs": 11861,
+      "tokensIn": 8596,
+      "tokensOut": 876,
+      "cacheHit": 4864,
+      "toolCalls": 5
+    },
+    {
+      "scenario": "s2-permission-rule",
+      "track": "cc",
+      "run": 2,
+      "success": true,
+      "missedKeywords": [],
+      "wallMs": 160757,
+      "tokensIn": 115131,
+      "tokensOut": 981,
+      "cacheHit": 75264,
+      "toolCalls": 4
+    },
+    {
+      "scenario": "s3-bash-cwd",
+      "track": "deepcode",
+      "run": 1,
+      "success": false,
+      "missedKeywords": [
+        "bash\\.ts"
+      ],
+      "wallMs": 12284,
+      "tokensIn": 6833,
+      "tokensOut": 882,
+      "cacheHit": 4992,
       "toolCalls": 6
+    },
+    {
+      "scenario": "s3-bash-cwd",
+      "track": "cc",
+      "run": 1,
+      "success": false,
+      "missedKeywords": [
+        "bash\\.ts",
+        "(PWD|MARKER|marker|printf)"
+      ],
+      "wallMs": 129258,
+      "tokensIn": 36619,
+      "tokensOut": 583,
+      "cacheHit": 0,
+      "toolCalls": 1
+    },
+    {
+      "scenario": "s3-bash-cwd",
+      "track": "deepcode",
+      "run": 2,
+      "success": false,
+      "missedKeywords": [
+        "bash\\.ts"
+      ],
+      "wallMs": 13960,
+      "tokensIn": 4944,
+      "tokensOut": 992,
+      "cacheHit": 3584,
+      "toolCalls": 5
+    },
+    {
+      "scenario": "s3-bash-cwd",
+      "track": "cc",
+      "run": 2,
+      "success": false,
+      "missedKeywords": [
+        "bash\\.ts"
+      ],
+      "wallMs": 134322,
+      "tokensIn": 72383,
+      "tokensOut": 784,
+      "cacheHit": 17408,
+      "toolCalls": 2
+    },
+    {
+      "scenario": "s4-versions-auth",
+      "track": "deepcode",
+      "run": 1,
+      "success": true,
+      "missedKeywords": [],
+      "wallMs": 11547,
+      "tokensIn": 10320,
+      "tokensOut": 812,
+      "cacheHit": 7168,
+      "toolCalls": 7
+    },
+    {
+      "scenario": "s4-versions-auth",
+      "track": "cc",
+      "run": 1,
+      "success": true,
+      "missedKeywords": [],
+      "wallMs": 158660,
+      "tokensIn": 77556,
+      "tokensOut": 707,
+      "cacheHit": 38016,
+      "toolCalls": 2
+    },
+    {
+      "scenario": "s4-versions-auth",
+      "track": "deepcode",
+      "run": 2,
+      "success": true,
+      "missedKeywords": [],
+      "wallMs": 12986,
+      "tokensIn": 10890,
+      "tokensOut": 935,
+      "cacheHit": 8320,
+      "toolCalls": 7
+    },
+    {
+      "scenario": "s4-versions-auth",
+      "track": "cc",
+      "run": 2,
+      "success": true,
+      "missedKeywords": [],
+      "wallMs": 143908,
+      "tokensIn": 240229,
+      "tokensOut": 1576,
+      "cacheHit": 187008,
+      "toolCalls": 12
+    },
+    {
+      "scenario": "s5-roles",
+      "track": "deepcode",
+      "run": 1,
+      "success": true,
+      "missedKeywords": [],
+      "wallMs": 7715,
+      "tokensIn": 7653,
+      "tokensOut": 484,
+      "cacheHit": 5120,
+      "toolCalls": 2
+    },
+    {
+      "scenario": "s5-roles",
+      "track": "cc",
+      "run": 1,
+      "success": true,
+      "missedKeywords": [],
+      "wallMs": 125067,
+      "tokensIn": 76211,
+      "tokensOut": 523,
+      "cacheHit": 37888,
+      "toolCalls": 2
+    },
+    {
+      "scenario": "s5-roles",
+      "track": "deepcode",
+      "run": 2,
+      "success": true,
+      "missedKeywords": [],
+      "wallMs": 9422,
+      "tokensIn": 7862,
+      "tokensOut": 599,
+      "cacheHit": 5120,
+      "toolCalls": 3
+    },
+    {
+      "scenario": "s5-roles",
+      "track": "cc",
+      "run": 2,
+      "success": true,
+      "missedKeywords": [],
+      "wallMs": 131606,
+      "tokensIn": 154518,
+      "tokensOut": 808,
+      "cacheHit": 115328,
+      "toolCalls": 4
     }
   ]
 }
