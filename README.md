@@ -43,7 +43,7 @@ export ANTHROPIC_API_KEY=${DEEPSEEK_API_KEY}
 - **thinking 控制**：v4-flash 默认偷偷开 thinking（同一问题 39 token vs 1 token），deepcode 默认显式关闭；`/think` 开启后思考流可见（仅显示，不入上下文）
 - **环境适配**：自动识别 `https_proxy` 等代理变量（undici ProxyAgent；Node fetch 默认不读代理）
 - **项目记忆**：自动向上收集 `CLAUDE.md`/`AGENTS.md` + 全局 `~/.deepcode/DEEPCODE.md` 注入系统提示词
-- Esc 中断当前轮、47 个单测
+- Esc 中断当前轮、66 个单测
 
 ## 使用
 
@@ -69,7 +69,7 @@ src/
   prompt.ts       静态系统提示词组装 + 记忆文件发现
   permissions.ts  权限门 + 规则匹配
   config.ts       ~/.deepcode/settings.json
-  tools/          Tool 接口（zod schema 驱动）+ Read/Glob/Grep/Bash
+  tools/          Tool 接口（zod schema 驱动）+ Read/Glob/Grep/Bash/Edit/Write
 ```
 
 设计原则（详见 [docs/specs/](docs/specs/) 的完整规格）：
@@ -92,7 +92,7 @@ src/
 ## 开发
 
 ```bash
-npm test           # vitest，47 用例
+npm test           # vitest，66 用例
 npm run typecheck  # tsc --noEmit
 DEEPSEEK_API_KEY=sk-... npx tsx scripts/smoke-api.ts "你好"  # 真机冒烟
 ```
