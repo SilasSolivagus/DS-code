@@ -1,0 +1,57 @@
+// src/tools/bash.ts
+import { z } from 'zod'
+import { execFile } from 'node:child_process'
+import type { Tool } from './types.js'
+
+const MAX_OUTPUT = 30_000
+const MARKER = '__DEEPCODE_END__'
+
+const schema = z.object({
+  command: z.string().describe('要执行的 bash 命令'),
+  timeout: z.number().int().max(600_000).optional().describe('超时毫秒数，默认 120000'),
+})
+
+export function truncateMiddle(s: string, max = MAX_OUTPUT): string {
+  if (s.length <= max) return s
+  const half = Math.floor(max / 2)
+  return s.slice(0, half) + `\n…[输出过长，已截断中间 ${s.length - max} 字符]…\n` + s.slice(-half)
+}
+
+export const bashTool: Tool<typeof schema> = {
+  name: 'Bash',
+  description:
+    '在持久化工作目录中执行 bash 命令（cd 会影响后续所有命令）。默认 120 秒超时。输出超过 30000 字符会截断中间部分。查找文件请用 Glob/Grep 而不是 find/grep 命令。',
+  inputSchema: schema,
+  isReadOnly: false,
+  needsPermission: input => input.command,
+  call(input, ctx) {
+    return new Promise(resolve => {
+      // 捕获用户命令的退出码与结束时的 $PWD，与命令自身输出隔离
+      const wrapped = `${input.command}\n__dc_ec=$?\nprintf '\\n${MARKER}%s|%s' "$PWD" "$__dc_ec"`
+      execFile(
+        '/bin/bash',
+        ['-c', wrapped],
+        { cwd: ctx.cwd(), timeout: input.timeout ?? 120_000, maxBuffer: 10 * 1024 * 1024, signal: ctx.signal },
+        (err: any, stdout, stderr) => {
+          let out = stdout
+          // Default: use err.code if numeric (e.g. `exit 3` terminates bash before marker is printed)
+          let exitCode = err ? (typeof err.code === 'number' ? err.code : 1) : 0
+          const idx = out.lastIndexOf(MARKER)
+          if (idx >= 0) {
+            const tail = out.slice(idx + MARKER.length)
+            out = out.slice(0, idx).replace(/\n$/, '')
+            const sep = tail.lastIndexOf('|')
+            const newCwd = tail.slice(0, sep)
+            exitCode = Number(tail.slice(sep + 1)) || 0
+            if (newCwd) ctx.setCwd(newCwd)
+          }
+          const merged = [out, stderr && `[stderr]\n${stderr}`].filter(Boolean).join('\n')
+          if (err?.killed) {
+            return resolve(truncateMiddle(`错误：命令超时（${input.timeout ?? 120_000}ms），已终止。\n${merged}`))
+          }
+          resolve(truncateMiddle(exitCode === 0 ? merged || '(无输出)' : `退出码 ${exitCode}\n${merged}`))
+        },
+      )
+    })
+  },
+}
