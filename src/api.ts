@@ -1,5 +1,5 @@
 import OpenAI from 'openai'
-import { ProxyAgent } from 'undici'
+import { fetch as undiciFetch, ProxyAgent } from 'undici'
 
 export interface Usage {
   prompt_tokens: number
@@ -92,7 +92,8 @@ export function createClient(): OpenAI {
   return new OpenAI({
     apiKey,
     baseURL: 'https://api.deepseek.com',
-    ...(proxy ? { fetchOptions: { dispatcher: new ProxyAgent(proxy) } as any } : {}),
+    // dispatcher 必须配同一 undici 包的 fetch，混用 Node 内置 fetch 会 InvalidArgumentError
+    ...(proxy ? { fetch: undiciFetch as any, fetchOptions: { dispatcher: new ProxyAgent(proxy) } as any } : {}),
   })
 }
 
