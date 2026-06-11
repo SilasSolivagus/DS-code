@@ -10,7 +10,7 @@ vi.mock('../src/api.js', () => ({
     (async function* () {
       const scene = script.shift()
       if (!scene) throw new Error('script exhausted')
-      for (const d of scene.deltas ?? []) yield d
+      for (const d of scene.deltas ?? []) yield { type: 'text', delta: d }
       return scene.result
     })(),
   ),

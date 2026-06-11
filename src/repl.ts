@@ -110,7 +110,7 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean }): Promis
       let step
       while (!(step = await gen.next()).done) {
         const ev = step.value
-        if (ev.type === 'text') process.stdout.write(ev.delta)
+        if (ev.type === 'text') process.stdout.write(ev.reasoning ? `${C.dim}${ev.delta}${C.reset}` : ev.delta)
         else if (ev.type === 'tool_start') process.stdout.write(`\n${C.cyan}⏺ ${ev.name}(${ev.desc.slice(0, 120)})${C.reset}`)
         else if (ev.type === 'tool_end') process.stdout.write(`\n${ev.ok ? C.green : C.red}  ⎿ ${ev.preview}${C.reset}`)
         else if (ev.type === 'turn_end') {

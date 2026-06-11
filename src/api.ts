@@ -24,8 +24,8 @@ export class Assembler {
   private usage: Usage = { prompt_tokens: 0, completion_tokens: 0, prompt_cache_hit_tokens: 0 }
   private calls = new Map<number, { id: string; name: string; args: string }>()
 
-  /** 喂入一个流式分片，返回其中的文本增量（无则空串） */
-  push(chunk: any): string {
+  /** 喂入一个流式分片，返回其中的文本增量 */
+  push(chunk: any): { text: string; reasoning: string } {
     if (chunk?.usage) {
       this.usage = {
         prompt_tokens: chunk.usage.prompt_tokens ?? 0,
@@ -34,7 +34,7 @@ export class Assembler {
       }
     }
     const choice = chunk?.choices?.[0]
-    if (!choice) return ''
+    if (!choice) return { text: '', reasoning: '' }
     if (choice.finish_reason) this.finishReason = choice.finish_reason
     const delta = choice.delta ?? {}
     for (const tc of delta.tool_calls ?? []) {
@@ -47,7 +47,7 @@ export class Assembler {
     // reasoning_content（thinking 模式的思考流）只用于显示，不进 content/messages
     const text: string = delta.content ?? ''
     this.content += text
-    return (delta.reasoning_content ?? '') + text
+    return { text, reasoning: delta.reasoning_content ?? '' }
   }
 
   finish(): ChatResult {
@@ -93,6 +93,7 @@ export function createClient(): OpenAI {
   return new OpenAI({
     apiKey,
     baseURL: 'https://api.deepseek.com',
+    maxRetries: 0, // 重试统一由 withRetry 负责，避免与 SDK 自带重试叠加
     // dispatcher 必须配同一 undici 包的 fetch，混用 Node 内置 fetch 会 InvalidArgumentError
     ...(proxy ? { fetch: undiciFetch as any, fetchOptions: { dispatcher: new ProxyAgent(proxy) } as any } : {}),
   })
@@ -106,7 +107,9 @@ export interface ChatOptions {
   signal: AbortSignal
 }
 
-export async function* chatStream(client: OpenAI, opts: ChatOptions): AsyncGenerator<string, ChatResult> {
+export type StreamDelta = { type: 'text' | 'reasoning'; delta: string }
+
+export async function* chatStream(client: OpenAI, opts: ChatOptions): AsyncGenerator<StreamDelta, ChatResult> {
   // 重试只覆盖"建立流"；分片开始到达后中断则直接抛出
   const stream = await withRetry(() =>
     client.chat.completions.create(
@@ -126,8 +129,9 @@ export async function* chatStream(client: OpenAI, opts: ChatOptions): AsyncGener
   )
   const asm = new Assembler()
   for await (const chunk of stream as any) {
-    const text = asm.push(chunk)
-    if (text) yield text
+    const { text, reasoning } = asm.push(chunk)
+    if (reasoning) yield { type: 'reasoning', delta: reasoning }
+    if (text) yield { type: 'text', delta: text }
   }
   return asm.finish()
 }

@@ -10,5 +10,5 @@ const gen = chatStream(client, {
   signal: new AbortController().signal,
 })
 let step
-while (!(step = await gen.next()).done) process.stdout.write(step.value)
+while (!(step = await gen.next()).done) process.stdout.write(step.value.delta)
 console.log('\n--- usage:', JSON.stringify(step.value.usage), 'finish:', step.value.finishReason)

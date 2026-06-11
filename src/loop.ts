@@ -6,7 +6,7 @@ import { toApiTools } from './tools/index.js'
 import { checkPermission, type PermissionContext } from './permissions.js'
 
 export type LoopEvent =
-  | { type: 'text'; delta: string }
+  | { type: 'text'; delta: string; reasoning?: boolean }
   | { type: 'tool_start'; id: string; name: string; desc: string }
   | { type: 'tool_end'; id: string; ok: boolean; preview: string }
   | { type: 'turn_end'; usage: ChatResult['usage'] }
@@ -84,7 +84,11 @@ export async function* runLoop(
           result = step.value
           break
         }
-        yield { type: 'text', delta: step.value }
+        yield {
+          type: 'text',
+          delta: step.value.delta,
+          ...(step.value.type === 'reasoning' ? { reasoning: true } : {}),
+        }
       }
     } catch (e) {
       if (deps.ctx.signal.aborted) {
