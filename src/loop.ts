@@ -113,6 +113,11 @@ export async function* runLoop(
     })
     if (!result.toolCalls.length) {
       yield { type: 'turn_end', usage: result.usage }
+      // 被长度上限截断且无工具调用：自动追加续写请求，进入下一轮（仍受 maxTurns 约束）
+      if (result.finishReason === 'length') {
+        messages.push({ role: 'user', content: '（上一条回复因长度上限被截断，请继续输出剩余内容。）' })
+        continue
+      }
       return 'done'
     }
 

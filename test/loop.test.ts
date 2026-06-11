@@ -208,6 +208,19 @@ describe('runLoop', () => {
     expect(messages[messages.length - 1].role).toBe('assistant')
   })
 
+  it('finish_reason length 时自动追加续写请求并继续', async () => {
+    script.push(
+      { deltas: ['前半段'], result: { content: '前半段', toolCalls: [], usage, finishReason: 'length' } },
+      { deltas: ['后半段'], result: { content: '后半段', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    const messages: any[] = [{ role: 'user', content: '写很长的东西' }]
+    const { events, ret } = await drain(runLoop(messages, makeDeps([readTool])))
+    expect(ret).toBe('done')
+    expect(events.filter(e => e.type === 'text').map(e => e.delta).join('')).toBe('前半段后半段')
+    const continueMsg = messages.find(m => m.role === 'user' && typeof m.content === 'string' && m.content.includes('截断'))
+    expect(continueMsg).toBeDefined()
+  })
+
   it('reasoning delta 透传为带 reasoning 标志的 text 事件', async () => {
     script.push({
       deltas: [{ type: 'reasoning', delta: '思考中' }, '答案'],
