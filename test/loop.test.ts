@@ -4,13 +4,13 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 // 脚本化的 chatStream：每次调用从 script 取下一幕
-const script: Array<{ deltas?: string[]; result: any }> = []
+const script: Array<{ deltas?: any[]; result: any }> = []
 vi.mock('../src/api.js', () => ({
   chatStream: vi.fn(() =>
     (async function* () {
       const scene = script.shift()
       if (!scene) throw new Error('script exhausted')
-      for (const d of scene.deltas ?? []) yield { type: 'text', delta: d }
+      for (const d of scene.deltas ?? []) yield typeof d === 'string' ? { type: 'text', delta: d } : d
       return scene.result
     })(),
   ),
@@ -206,5 +206,20 @@ describe('runLoop', () => {
     expect(rwRan).toBe(false)
     expect(messages.find(m => m.tool_call_id === 'a2').content).toContain('中断')
     expect(messages[messages.length - 1].role).toBe('assistant')
+  })
+
+  it('reasoning delta 透传为带 reasoning 标志的 text 事件', async () => {
+    script.push({
+      deltas: [{ type: 'reasoning', delta: '思考中' }, '答案'],
+      result: { content: '答案', toolCalls: [], usage, finishReason: 'stop' },
+    })
+    const messages: any[] = [{ role: 'user', content: 'hi' }]
+    const { events } = await drain(runLoop(messages, makeDeps([readTool])))
+    const r = events.find(e => e.type === 'text' && e.reasoning === true)
+    expect(r?.delta).toBe('思考中')
+    const plain = events.find(e => e.type === 'text' && !e.reasoning)
+    expect(plain?.delta).toBe('答案')
+    // reasoning 不进 messages
+    expect(messages.find(m => m.role === 'assistant').content).toBe('答案')
   })
 })

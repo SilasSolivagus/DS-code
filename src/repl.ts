@@ -57,7 +57,7 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean }): Promis
   console.log(`deepcode | 模型 ${model}${opts.yolo ? '（yolo 模式）' : ''} | /help 查看命令，Esc 中断，/exit 退出`)
 
   while (true) {
-    const line = (await question('\n› ')).trim()
+    const line = (await question('› ')).trim()
     if (!line) continue
     if (line === '/exit') break
     if (line === '/help') {
@@ -107,10 +107,15 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean }): Promis
         },
       }
       const gen = runLoop(messages, deps)
+      let lastWasReasoning = false
       let step
       while (!(step = await gen.next()).done) {
         const ev = step.value
-        if (ev.type === 'text') process.stdout.write(ev.reasoning ? `${C.dim}${ev.delta}${C.reset}` : ev.delta)
+        if (ev.type === 'text') {
+          if (lastWasReasoning && !ev.reasoning) process.stdout.write('\n')
+          lastWasReasoning = !!ev.reasoning
+          process.stdout.write(ev.reasoning ? `${C.dim}${ev.delta}${C.reset}` : ev.delta)
+        }
         else if (ev.type === 'tool_start') process.stdout.write(`\n${C.cyan}⏺ ${ev.name}(${ev.desc.slice(0, 120)})${C.reset}`)
         else if (ev.type === 'tool_end') process.stdout.write(`\n${ev.ok ? C.green : C.red}  ⎿ ${ev.preview}${C.reset}`)
         else if (ev.type === 'turn_end') {
@@ -118,7 +123,7 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean }): Promis
           totals.output += ev.usage.completion_tokens
           totals.cacheHit += ev.usage.prompt_cache_hit_tokens
           process.stdout.write(
-            `\n${C.dim}[入 ${ev.usage.prompt_tokens}（缓存命中 ${ev.usage.prompt_cache_hit_tokens}）出 ${ev.usage.completion_tokens} | 累计 入 ${totals.input} 出 ${totals.output}]${C.reset}`,
+            `\n${C.dim}[入 ${ev.usage.prompt_tokens}（缓存命中 ${ev.usage.prompt_cache_hit_tokens}）出 ${ev.usage.completion_tokens} | 累计 入 ${totals.input} 出 ${totals.output}]${C.reset}\n`,
           )
         }
       }
