@@ -1,0 +1,34 @@
+{
+  "meta": {
+    "日期": "2026-06-11",
+    "CC 版本": "2.1.173 (Claude Code)",
+    "模型": "deepseek-v4-flash（cc 轨经 sonnet 映射）",
+    "每场景次数": "1"
+  },
+  "results": [
+    {
+      "scenario": "s1-assembler",
+      "track": "deepcode",
+      "run": 1,
+      "success": true,
+      "missedKeywords": [],
+      "wallMs": 13821,
+      "tokensIn": 7433,
+      "tokensOut": 1099,
+      "cacheHit": 3840,
+      "toolCalls": 4
+    },
+    {
+      "scenario": "s1-assembler",
+      "track": "cc",
+      "run": 1,
+      "success": true,
+      "missedKeywords": [],
+      "wallMs": 170902,
+      "tokensIn": 498571,
+      "tokensOut": 1427,
+      "cacheHit": 342528,
+      "toolCalls": 6
+    }
+  ]
+}

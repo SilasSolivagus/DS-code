@@ -85,6 +85,7 @@ src/
 - [ ] **M2 能干活**：Edit/Write + 强制 read-before-edit（fileState 已就位）+ acceptEdits 模式
 - [ ] **M3 不丢活**：会话 JSONL 持久化、`--continue`/`/resume`、`/cost`
 - [ ] **M4 跑长活**：上下文压缩 compact、TodoWrite + system-reminder、只读 subagent、`/init` `/context` 与自定义命令
+- [ ] **M4+ 视觉 sidecar（可选）**：DeepSeek API 不收图，但可以加 `ImageRead` 工具——挂任意 OpenAI 兼容的视觉模型（GLM-4V/Qwen-VL/Gemini），主模型带着具体问题问图（"这张报错截图的 stack trace 第一行是什么"），把回答作为工具结果回灌。有损但够用，截图排错类场景即可解锁
 
 里程碑规格与实施计划在 [docs/specs/](docs/specs/) 与 [docs/plans/](docs/plans/)，M1 验收报告见 [docs/specs/m1-acceptance.md](docs/specs/m1-acceptance.md)。
 
