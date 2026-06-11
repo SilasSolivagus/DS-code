@@ -61,4 +61,23 @@ describe('session', () => {
     nodeFs.writeFileSync(path.join(dir, 'broken.jsonl'), '{not json')
     expect(() => listSessions('/x', dir)).not.toThrow()
   })
+
+  it('meta 行字段缺失时用默认值兜底，不产生 undefined', () => {
+    const fsmod = nodeFs
+    const f = path.join(dir, 'partial.jsonl')
+    fsmod.writeFileSync(f, JSON.stringify({ t: 'meta', cwd: '/p' }) + '\n')
+    const loaded = loadSession(f)
+    expect(loaded.meta.cwd).toBe('/p')
+    expect(loaded.meta.model).toBe('deepseek-v4-flash')
+    expect(loaded.meta.thinking).toBe(false)
+    expect(loaded.meta.permMode).toBe('default')
+  })
+
+  it('assistant content 为 null 时往返保真（无文本工具调用轮）', () => {
+    const h = newSession(meta('/p'), dir)
+    h.appendMessage({ role: 'assistant', content: null, tool_calls: [{ id: 't1', type: 'function', function: { name: 'Read', arguments: '{}' } }] })
+    const loaded = loadSession(h.file)
+    expect(loaded.messages[0].content).toBeNull()
+    expect(loaded.messages[0].tool_calls[0].id).toBe('t1')
+  })
 })

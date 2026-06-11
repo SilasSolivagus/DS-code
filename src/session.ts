@@ -71,7 +71,12 @@ export function loadSession(file: string): LoadedSession {
   for (const line of lines) {
     let r: any
     try { r = JSON.parse(line) } catch { continue }
-    if (r.t === 'meta') meta = { cwd: r.cwd, model: r.model, thinking: r.thinking, permMode: r.permMode }
+    if (r.t === 'meta') meta = {
+      cwd: r.cwd ?? '',
+      model: r.model ?? 'deepseek-v4-flash',
+      thinking: r.thinking ?? false,
+      permMode: r.permMode ?? 'default',
+    }
     else if (r.t === 'msg') messages.push(r.m)
     else if (r.t === 'usage') usages.push({ usage: r.usage, model: r.model })
     else if (r.t === 'fs') fileState = r.entries // 最后一条覆盖，得到最新快照
