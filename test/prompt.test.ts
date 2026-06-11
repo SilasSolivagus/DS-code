@@ -1,0 +1,43 @@
+import { describe, it, expect } from 'vitest'
+import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { findMemoryFiles, buildSystemPrompt } from '../src/prompt.js'
+
+describe('findMemoryFiles', () => {
+  it('从 cwd 向上收集 CLAUDE.md/AGENTS.md，再加全局 DEEPCODE.md', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'dc-'))
+    mkdirSync(path.join(root, 'a/b'), { recursive: true })
+    writeFileSync(path.join(root, 'CLAUDE.md'), 'root memory')
+    writeFileSync(path.join(root, 'a/b/AGENTS.md'), 'leaf memory')
+    const home = mkdtempSync(path.join(tmpdir(), 'dc-home-'))
+    mkdirSync(path.join(home, '.deepcode'))
+    writeFileSync(path.join(home, '.deepcode/DEEPCODE.md'), 'global memory')
+
+    const files = findMemoryFiles(path.join(root, 'a/b'), home)
+    expect(files[0].endsWith('AGENTS.md')).toBe(true)
+    expect(files.some(f => f.endsWith('CLAUDE.md'))).toBe(true)
+    expect(files.at(-1)!.endsWith('DEEPCODE.md')).toBe(true)
+  })
+
+  it('同目录 CLAUDE.md 优先于 AGENTS.md，只取一个', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'dc-'))
+    writeFileSync(path.join(root, 'CLAUDE.md'), 'c')
+    writeFileSync(path.join(root, 'AGENTS.md'), 'a')
+    const files = findMemoryFiles(root, mkdtempSync(path.join(tmpdir(), 'dc-home-')))
+    expect(files.filter(f => f.startsWith(root)).length).toBe(1)
+    expect(files[0].endsWith('CLAUDE.md')).toBe(true)
+  })
+})
+
+describe('buildSystemPrompt', () => {
+  it('包含身份、守则、环境与项目记忆', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'dc-'))
+    writeFileSync(path.join(root, 'CLAUDE.md'), '用中文回复测试标记XYZ')
+    const p = buildSystemPrompt(root, mkdtempSync(path.join(tmpdir(), 'dc-home-')))
+    expect(p).toContain('deepcode')
+    expect(p).toContain('必须先用 Read')
+    expect(p).toContain(root)
+    expect(p).toContain('测试标记XYZ')
+  })
+})
