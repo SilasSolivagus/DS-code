@@ -30,6 +30,13 @@
       "repo": "/Users/silas/Documents/123plane",
       "prompt": "checkRole 支持哪几个角色？它们的层级关系如何？",
       "expected": ["admin", "member", "viewer"]
+    },
+    {
+      "id": "s6-fix-bug",
+      "type": "fix",
+      "fixture": "fixtures/buggy-calc",
+      "prompt": "运行 npm test，找出失败原因，修复代码使所有测试通过。做最小改动，不要改测试文件。",
+      "verifyCmd": "npm test"
     }
   ]
 }

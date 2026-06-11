@@ -4,6 +4,7 @@
 import { spawn, execSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
+import os from 'node:os'
 import { fileURLToPath } from 'node:url'
 
 const BENCH_DIR = path.dirname(fileURLToPath(import.meta.url))
@@ -14,7 +15,15 @@ if (!API_KEY) {
   process.exit(1)
 }
 
-interface Scenario { id: string; repo: string; prompt: string; expected: string[] }
+interface Scenario {
+  id: string
+  repo?: string
+  fixture?: string
+  type?: 'qa' | 'fix'
+  prompt: string
+  expected?: string[]
+  verifyCmd?: string
+}
 interface RunResult {
   scenario: string
   track: 'deepcode' | 'cc'
@@ -43,6 +52,25 @@ const { scenarios } = JSON.parse(fs.readFileSync(path.join(BENCH_DIR, 'scenarios
 }
 
 const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '')
+
+/** fix 型场景：把 fixture 复制到临时目录（每次 run 全新副本，互不污染） */
+function materializeRepo(s: Scenario): string {
+  if (s.fixture) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bench-'))
+    fs.cpSync(path.join(BENCH_DIR, s.fixture), dir, { recursive: true })
+    return dir
+  }
+  return s.repo!
+}
+
+function verifyFix(cwd: string, cmd: string): boolean {
+  try {
+    execSync(cmd, { cwd, stdio: 'ignore', timeout: 60_000 })
+    return true
+  } catch {
+    return false
+  }
+}
 
 function grade(text: string, expected: string[]): { success: boolean; missed: string[] } {
   const missed = expected.filter(p => !new RegExp(p, 'i').test(text))
@@ -75,18 +103,18 @@ function spawnCapture(
   })
 }
 
-async function runDeepcode(s: Scenario, run: number): Promise<RunResult> {
+async function runDeepcode(s: Scenario, run: number, repoDir: string): Promise<RunResult> {
   const t0 = Date.now()
   const { stdout, timedOut } = await spawnCapture('npx', ['tsx', DEEPCODE_ENTRY, '--yolo'], {
-    cwd: s.repo,
+    cwd: repoDir,
     env: { ...process.env, DEEPSEEK_API_KEY: API_KEY },
     stdinData: `${s.prompt}\n/exit\n`,
-    timeoutMs: 240_000,
+    timeoutMs: s.type === 'fix' ? 360_000 : 240_000,
   })
   const wallMs = Date.now() - t0
   const clean = stripAnsi(stdout)
   if (timedOut) {
-    return { scenario: s.id, track: 'deepcode', run, success: false, missedKeywords: s.expected, wallMs, tokensIn: 0, tokensOut: 0, cacheHit: 0, toolCalls: null, error: 'timeout' }
+    return { scenario: s.id, track: 'deepcode', run, success: false, missedKeywords: s.expected ?? [], wallMs, tokensIn: 0, tokensOut: 0, cacheHit: 0, toolCalls: null, error: 'timeout' }
   }
   // usage 行：[入 N（缓存命中 M）出 K | 累计 入 X 出 Y]
   const usageRe = /\[入 (\d+)（缓存命中 (\d+)）出 (\d+) \| 累计 入 (\d+) 出 (\d+)\]/g
@@ -98,22 +126,29 @@ async function runDeepcode(s: Scenario, run: number): Promise<RunResult> {
     tokensOut = Number(m[5])
   }
   const toolCalls = (clean.match(/⏺ /g) ?? []).length
-  // 评分只看模型文本：剔除横幅/提示符/工具行/usage 行
-  const modelText = clean
-    .split('\n')
-    .filter(l => !/^(deepcode \||›|⏺ |\s*⎿ |\[入 )/.test(l))
-    .join('\n')
-  const { success, missed } = grade(modelText, s.expected)
+  let success: boolean
+  let missed: string[] = []
+  if (s.type === 'fix') {
+    success = verifyFix(repoDir, s.verifyCmd!)
+    if (!success) missed = ['verifyCmd 未通过']
+  } else {
+    // 评分只看模型文本：剔除横幅/提示符/工具行/usage 行
+    const modelText = clean
+      .split('\n')
+      .filter(l => !/^(deepcode \||›|⏺ |\s*⎿ |\[入 )/.test(l))
+      .join('\n')
+    ;({ success, missed } = grade(modelText, s.expected!))
+  }
   return { scenario: s.id, track: 'deepcode', run, success, missedKeywords: missed, wallMs, tokensIn, tokensOut, cacheHit, toolCalls }
 }
 
-async function runCC(s: Scenario, run: number): Promise<RunResult> {
+async function runCC(s: Scenario, run: number, repoDir: string): Promise<RunResult> {
   const t0 = Date.now()
   const { stdout, timedOut } = await spawnCapture(
     'claude',
     ['-p', s.prompt, '--model', 'sonnet', '--output-format', 'json', '--dangerously-skip-permissions'],
     {
-      cwd: s.repo,
+      cwd: repoDir,
       env: {
         ...process.env,
         ANTHROPIC_BASE_URL: 'https://api.deepseek.com/anthropic',
@@ -124,13 +159,20 @@ async function runCC(s: Scenario, run: number): Promise<RunResult> {
   )
   const wallMs = Date.now() - t0
   if (timedOut) {
-    return { scenario: s.id, track: 'cc', run, success: false, missedKeywords: s.expected, wallMs, tokensIn: 0, tokensOut: 0, cacheHit: 0, toolCalls: null, error: 'timeout' }
+    return { scenario: s.id, track: 'cc', run, success: false, missedKeywords: s.expected ?? [], wallMs, tokensIn: 0, tokensOut: 0, cacheHit: 0, toolCalls: null, error: 'timeout' }
   }
   try {
     const jsonStart = stdout.indexOf('{"type"')
     const j = JSON.parse(stdout.slice(jsonStart))
     const text: string = j.result ?? ''
-    const { success, missed } = grade(text, s.expected)
+    let success: boolean
+    let missed: string[] = []
+    if (s.type === 'fix') {
+      success = verifyFix(repoDir, s.verifyCmd!)
+      if (!success) missed = ['verifyCmd 未通过']
+    } else {
+      ;({ success, missed } = grade(text, s.expected!))
+    }
     return {
       scenario: s.id,
       track: 'cc',
@@ -144,7 +186,7 @@ async function runCC(s: Scenario, run: number): Promise<RunResult> {
       toolCalls: j.num_turns ?? null,
     }
   } catch {
-    return { scenario: s.id, track: 'cc', run, success: false, missedKeywords: s.expected, wallMs, tokensIn: 0, tokensOut: 0, cacheHit: 0, toolCalls: null, error: 'json parse failed: ' + stdout.slice(0, 200) }
+    return { scenario: s.id, track: 'cc', run, success: false, missedKeywords: s.expected ?? [], wallMs, tokensIn: 0, tokensOut: 0, cacheHit: 0, toolCalls: null, error: 'json parse failed: ' + stdout.slice(0, 200) }
   }
 }
 
@@ -184,11 +226,11 @@ const main = async () => {
     for (let run = 1; run <= RUNS; run++) {
       if (ONLY_TRACK !== 'cc') {
         process.stderr.write(`[${s.id}] deepcode run ${run}...\n`)
-        results.push(await runDeepcode(s, run))
+        results.push(await runDeepcode(s, run, materializeRepo(s)))
       }
       if (ONLY_TRACK !== 'deepcode') {
         process.stderr.write(`[${s.id}] cc run ${run}...\n`)
-        results.push(await runCC(s, run))
+        results.push(await runCC(s, run, materializeRepo(s)))
       }
     }
   }
