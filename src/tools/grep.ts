@@ -21,7 +21,7 @@ function rgSearch(pattern: string, dir: string, glob?: string): Promise<string |
     execFile('rg', args, { cwd: dir, maxBuffer: 10 * 1024 * 1024 }, (err: any, stdout) => {
       if (err && err.code === 'ENOENT') return resolve(null) // 没装 rg
       if (err && err.code === 1) return resolve('') // rg 退出码 1 = 无匹配
-      if (err) return resolve('')
+      if (err) return resolve(err.code === 2 ? null : '') // 2 = rg 自身错误（如非法正则）→ 降级 jsSearch 给出真实报错
       resolve(stdout)
     })
   })
@@ -60,7 +60,13 @@ export const grepTool: Tool<typeof schema> = {
   async call(input, ctx) {
     const dir = input.path ? path.resolve(ctx.cwd(), input.path) : ctx.cwd()
     let result = await rgSearch(input.pattern, dir, input.glob)
-    if (result === null) result = await jsSearch(input.pattern, dir, input.glob)
+    if (result === null) {
+      try {
+        result = await jsSearch(input.pattern, dir, input.glob)
+      } catch (e) {
+        return `Grep 错误：${(e as Error).message}`
+      }
+    }
     if (!result.trim()) return '没有匹配'
     const lines = result.trim().split('\n')
     const shown = lines.slice(0, MAX_RESULTS)

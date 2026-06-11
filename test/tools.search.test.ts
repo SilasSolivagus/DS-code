@@ -37,4 +37,8 @@ describe('Grep', () => {
     const out = await grepTool.call({ pattern: 'hi', glob: '*.ts' }, makeCtx(dir))
     expect(out).toContain('没有匹配')
   })
+  it('非法正则返回明确错误而非「没有匹配」', async () => {
+    const out = await grepTool.call({ pattern: '(?invalid' }, makeCtx(dir))
+    expect(out).toContain('Grep 错误')
+  })
 })

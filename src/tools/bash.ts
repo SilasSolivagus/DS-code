@@ -40,6 +40,7 @@ export const bashTool: Tool<typeof schema> = {
           if (idx >= 0) {
             const tail = out.slice(idx + MARKER.length)
             out = out.slice(0, idx).replace(/\n$/, '')
+            // 用 lastIndexOf：退出码永远是最后一个 | 之后的字段，$PWD 本身含 | 也不会解析错
             const sep = tail.lastIndexOf('|')
             const newCwd = tail.slice(0, sep)
             exitCode = Number(tail.slice(sep + 1)) || 0
