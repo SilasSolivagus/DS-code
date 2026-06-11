@@ -35,3 +35,16 @@ describe('withRetry', () => {
     await expect(withRetry(fn, 3, noSleep)).resolves.toBe('ok')
   })
 })
+
+describe('createClient', () => {
+  it('缺少 DEEPSEEK_API_KEY 抛中文错误', async () => {
+    const { createClient } = await import('../src/api.js')
+    const saved = { key: process.env.DEEPSEEK_API_KEY, p1: process.env.https_proxy }
+    delete process.env.DEEPSEEK_API_KEY
+    try {
+      expect(() => createClient()).toThrow('DEEPSEEK_API_KEY')
+    } finally {
+      if (saved.key) process.env.DEEPSEEK_API_KEY = saved.key
+    }
+  })
+})
