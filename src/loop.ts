@@ -23,6 +23,13 @@ export interface LoopDeps {
 
 const CONCURRENCY = 5
 
+/** 退出 loop 前调用：若 messages 以 tool 结尾，补一条收尾 assistant，保证下一轮 user 消息序列合法 */
+function sealMessages(messages: any[], note: string): void {
+  if (messages[messages.length - 1]?.role === 'tool') {
+    messages.push({ role: 'assistant', content: note })
+  }
+}
+
 function previewOf(content: string): string {
   const first = content.split('\n')[0]
   return first.length > 80 ? first.slice(0, 80) + '…' : first
@@ -80,7 +87,10 @@ export async function* runLoop(
         yield { type: 'text', delta: step.value }
       }
     } catch (e) {
-      if (deps.ctx.signal.aborted) return 'aborted'
+      if (deps.ctx.signal.aborted) {
+        sealMessages(messages, '（本轮已被用户中断。）')
+        return 'aborted'
+      }
       throw e
     }
 
@@ -97,8 +107,10 @@ export async function* runLoop(
           }
         : {}),
     })
-    yield { type: 'turn_end', usage: result.usage }
-    if (!result.toolCalls.length) return 'done'
+    if (!result.toolCalls.length) {
+      yield { type: 'turn_end', usage: result.usage }
+      return 'done'
+    }
 
     // 只读并发（上限 5），非只读串行；未知工具默认归入只读批（execCall 会返回错误结果）
     const outcomes = new Map<string, { ok: boolean; content: string }>()
@@ -129,7 +141,12 @@ export async function* runLoop(
     for (const c of result.toolCalls) {
       messages.push({ role: 'tool', tool_call_id: c.id, content: outcomes.get(c.id)!.content })
     }
-    if (deps.ctx.signal.aborted) return 'aborted'
+    yield { type: 'turn_end', usage: result.usage }
+    if (deps.ctx.signal.aborted) {
+      sealMessages(messages, '（本轮已被用户中断。）')
+      return 'aborted'
+    }
   }
+  sealMessages(messages, '（已达最大轮数上限，已停止。）')
   return 'max_turns'
 }

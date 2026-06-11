@@ -147,4 +147,64 @@ describe('runLoop', () => {
     const { ret } = await drain(runLoop([{ role: 'user', content: 'hi' }], deps))
     expect(ret).toBe('max_turns')
   })
+
+  it('混合只读+写调用按原始顺序回灌', async () => {
+    const { z } = await import('zod')
+    const order: string[] = []
+    const mk = (name: string, ro: boolean): any => ({
+      name, isReadOnly: ro, needsPermission: () => false,
+      inputSchema: z.object({}), call: async () => { order.push(name); return `${name}-result` },
+    })
+    script.push(
+      {
+        result: {
+          content: '',
+          toolCalls: [
+            { id: 'c1', name: 'RoA', args: '{}' },
+            { id: 'c2', name: 'Rw', args: '{}' },
+            { id: 'c3', name: 'RoB', args: '{}' },
+          ],
+          usage, finishReason: 'tool_calls',
+        },
+      },
+      { result: { content: 'ok', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    const messages: any[] = [{ role: 'user', content: 'hi' }]
+    await drain(runLoop(messages, makeDeps([mk('RoA', true), mk('Rw', false), mk('RoB', true)])))
+    const toolMsgs = messages.filter(m => m.role === 'tool')
+    expect(toolMsgs.map(m => m.tool_call_id)).toEqual(['c1', 'c2', 'c3'])
+    expect(toolMsgs.map(m => m.content)).toEqual(['RoA-result', 'Rw-result', 'RoB-result'])
+  })
+
+  it('中断后写工具不执行，且 messages 以收尾 assistant 结束', async () => {
+    const { z } = await import('zod')
+    const ac = new AbortController()
+    let rwRan = false
+    const roAborter: any = {
+      name: 'Ro', isReadOnly: true, needsPermission: () => false,
+      inputSchema: z.object({}), call: async () => { ac.abort(); return 'ro-done' },
+    }
+    const rwTool: any = {
+      name: 'Rw', isReadOnly: false, needsPermission: () => false,
+      inputSchema: z.object({}), call: async () => { rwRan = true; return 'rw-done' },
+    }
+    script.push({
+      result: {
+        content: '',
+        toolCalls: [
+          { id: 'a1', name: 'Ro', args: '{}' },
+          { id: 'a2', name: 'Rw', args: '{}' },
+        ],
+        usage, finishReason: 'tool_calls',
+      },
+    })
+    const deps = makeDeps([roAborter, rwTool])
+    deps.ctx = { cwd: () => '/tmp', setCwd: () => {}, signal: ac.signal, fileState: new Map() }
+    const messages: any[] = [{ role: 'user', content: 'hi' }]
+    const { ret } = await drain(runLoop(messages, deps))
+    expect(ret).toBe('aborted')
+    expect(rwRan).toBe(false)
+    expect(messages.find(m => m.tool_call_id === 'a2').content).toContain('中断')
+    expect(messages[messages.length - 1].role).toBe('assistant')
+  })
 })
