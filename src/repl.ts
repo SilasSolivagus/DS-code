@@ -61,6 +61,8 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean; continueS
     usageLog.length = 0
     usageLog.push(...loaded.usages)
     session = openSession(file)
+    // 恢复后重置会话内状态，防止旧 todo/compact 标记/token 计数泄漏到新对话
+    todos.reset(); compacted = false; lastPromptTokens = 0
     // Step 2b: doCompact 崩溃在 appendCompact 与首条 re-append 之间的兜底
     if (messages.length === 0 || messages[0]?.role !== 'system') {
       messages.unshift({ role: 'system', content: buildSystemPrompt(cwd) })
@@ -92,7 +94,7 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean; continueS
   const doCompact = async (): Promise<void> => {
     process.stdout.write(`${C.dim}[compact 总结中…]${C.reset}`)
     const ac = new AbortController()
-    const { summary, usage: u } = await summarize(opts.client, messages, ac.signal)
+    const { summary, usage: u, truncated } = await summarize(opts.client, messages, ac.signal)
     usageLog.push({ usage: u, model: 'deepseek-v4-flash' })
     session.appendUsage(u, 'deepseek-v4-flash')
     const rebuilt = rebuildMessages(messages, summary)
@@ -103,6 +105,7 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean; continueS
     compacted = true
     lastPromptTokens = 0
     console.log(` 完成：历史已压缩为总结 + 最近 8 条（fileState 保留）`)
+    if (truncated) process.stdout.write(`${C.dim}${C.red}[compact 警告] 总结被长度截断，信息可能有损${C.reset}\n`)
   }
 
   const sessionCost = () => usageLog.reduce((s, u) => s + costUSD(u.model, u.usage.prompt_tokens, u.usage.prompt_cache_hit_tokens, u.usage.completion_tokens), 0)
@@ -214,7 +217,7 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean; continueS
       console.log(formatContext(messages, usageLog[usageLog.length - 1]?.usage))
       continue
     }
-    if (line.startsWith('/permissions')) {
+    if (line === '/permissions' || line.startsWith('/permissions ')) {
       const arg = line.slice('/permissions'.length).trim()
       const m = arg.match(/^rm\s+(\d+)$/)
       if (m) {
@@ -326,7 +329,7 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean; continueS
     }
 
     // 自动 compact（在 finally 落盘之后，当前轮消息已持久化，compact 记录清晰可恢复）
-    if (lastPromptTokens > settings.compactTokens) {
+    if (!closed && lastPromptTokens > settings.compactTokens) {
       try { await doCompact() } catch (e: any) { console.error(`\n${C.red}[自动 compact 失败，将在下轮重试] ${e?.message ?? e}${C.reset}`) }
     }
   }
