@@ -29,12 +29,24 @@ describe('summarize', () => {
     const r = await summarize({} as any, messages, new AbortController().signal)
     expect(r.summary).toContain('总结')
     expect(r.usage.prompt_tokens).toBe(100)
+    expect(r.truncated).toBe(false)
     // 送给总结模型的消息不含 system，且末尾追加了总结指令
     const { chatStream } = await import('../src/api.js')
     const sent = (chatStream as any).mock.calls[0][1].messages
     expect(sent.some((m: any) => m.role === 'system')).toBe(false)
     expect(sent[sent.length - 1].content).toContain('总结')
     expect((chatStream as any).mock.calls[0][1].model).toBe('deepseek-v4-flash')
+  })
+
+  it('总结被输出限制截断时返回 truncated: true', async () => {
+    script.push({ result: { content: '## 总结\n...超出限制', toolCalls: [], usage, finishReason: 'length' } })
+    const messages = [
+      { role: 'system', content: 'SYS' },
+      { role: 'user', content: '修 bug' },
+      { role: 'assistant', content: '修好了' },
+    ]
+    const r = await summarize({} as any, messages, new AbortController().signal)
+    expect(r.truncated).toBe(true)
   })
 })
 
@@ -58,13 +70,13 @@ describe('rebuildMessages', () => {
   it('切口落在 tool 消息上时向前扩到所属 assistant，保证序列合法', () => {
     const asst = { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'Read', arguments: '{}' } }] }
     const tool = { role: 'tool', tool_call_id: 'c1', content: 'R' }
-    // 末尾 8 条的第一条恰好是 tool —— 必须把 asst 也带上
+    // 末尾 7 条的第一条恰好是 tool —— 必须把 asst 也带上
     const messages = [sys, um(1), am(1), um(2), am(2), um(3), am(3), um(4), asst, tool, um(5), am(5), um(6), am(6), um(7), am(7)]
-    const out = rebuildMessages(messages, 'S', 8)
+    const out = rebuildMessages(messages, 'S', 7)
     const tail = out.slice(2)
-    expect(tail[0].role).not.toBe('tool')
-    const ti = tail.findIndex(m => m.role === 'tool')
-    if (ti > 0) expect(tail[ti - 1].tool_calls ?? tail.slice(0, ti).some((m: any) => m.tool_calls)).toBeTruthy()
+    expect(tail[0]).toBe(asst)
+    expect(tail[0].tool_calls?.[0]?.id).toBe('c1')
+    expect(tail[1].role).toBe('tool')
   })
 
   it('切口落在并行 tool_calls 的多条 tool 中间时也向前扩齐', () => {
