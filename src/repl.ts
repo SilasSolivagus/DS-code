@@ -10,6 +10,11 @@ import { isDangerous, type Decision, type PermissionMode } from './permissions.j
 import type { ToolContext } from './tools/types.js'
 import { newSession, openSession, listSessions, loadSession, type SessionHandle, type UsageRecord } from './session.js'
 import { costUSD } from './pricing.js'
+import { summarize, rebuildMessages } from './compact.js'
+import { TodoStore } from './todo.js'
+import { todoWriteTool } from './tools/todowrite.js'
+import { makeAgentTool } from './tools/agent.js'
+import { loadCustomCommands, expandCommand, INIT_PROMPT, formatContext } from './commands.js'
 
 const C = { dim: '\x1b[2m', cyan: '\x1b[36m', red: '\x1b[31m', green: '\x1b[32m', reset: '\x1b[0m' }
 
@@ -23,15 +28,21 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean; continueS
   let model = 'deepseek-v4-flash'
   let thinking = false
   let permMode: PermissionMode = opts.yolo ? 'yolo' : 'default'
+  const todos = new TodoStore()
   const ctx: ToolContext = {
     cwd: () => cwd,
     setCwd: d => { cwd = d },
     get signal() { return abort.signal },
     fileState: new Map(),
+    todos,
   }
   const messages: any[] = [{ role: 'system', content: buildSystemPrompt(cwd) }]
   const usageLog: UsageRecord[] = []
   let session!: SessionHandle
+  let compacted = false       // compact 后首条用户消息的一次性提醒
+  let lastPromptTokens = 0    // 自动 compact 触发依据
+  let costWarned = false      // $阈值提醒只发一次
+  const customCommands = loadCustomCommands(cwd)
 
   /** 恢复会话到内存：消息、模型设置、fileState（mtime 校验）、usage，并续写该文件。返回恢复的 user 轮数。 */
   const restoreSession = (file: string): number => {
@@ -50,6 +61,11 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean; continueS
     usageLog.length = 0
     usageLog.push(...loaded.usages)
     session = openSession(file)
+    // Step 2b: doCompact 崩溃在 appendCompact 与首条 re-append 之间的兜底
+    if (messages.length === 0 || messages[0]?.role !== 'system') {
+      messages.unshift({ role: 'system', content: buildSystemPrompt(cwd) })
+      session.appendMessage(messages[0])
+    }
     return loaded.messages.filter(m => m.role === 'user').length
   }
 
@@ -61,6 +77,32 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean; continueS
   } else {
     session = newSession({ cwd, model, thinking, permMode }, undefined)
     session.appendMessage(messages[0]) // 持久化 system 消息
+  }
+
+  const tools = [
+    ...allTools,
+    todoWriteTool,
+    makeAgentTool({
+      client: opts.client,
+      onUsage: (u, m) => { usageLog.push({ usage: u, model: m }); session.appendUsage(u, m) },
+    }),
+  ]
+
+  /** compact：总结→重建消息→落盘 compact 记录与新前缀。失败不破坏现场（messages 仅在成功后替换）。 */
+  const doCompact = async (): Promise<void> => {
+    process.stdout.write(`${C.dim}[compact 总结中…]${C.reset}`)
+    const ac = new AbortController()
+    const { summary, usage: u } = await summarize(opts.client, messages, ac.signal)
+    usageLog.push({ usage: u, model: 'deepseek-v4-flash' })
+    session.appendUsage(u, 'deepseek-v4-flash')
+    const rebuilt = rebuildMessages(messages, summary)
+    messages.length = 0
+    messages.push(...rebuilt)
+    session.appendCompact()
+    for (const m of messages) session.appendMessage(m)
+    compacted = true
+    lastPromptTokens = 0
+    console.log(` 完成：历史已压缩为总结 + 最近 8 条（fileState 保留）`)
   }
 
   const sessionCost = () => usageLog.reduce((s, u) => s + costUSD(u.model, u.usage.prompt_tokens, u.usage.prompt_cache_hit_tokens, u.usage.completion_tokens), 0)
@@ -98,14 +140,23 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean; continueS
     return a === 'a' ? 'always' : a === 'y' ? 'yes' : 'no'
   }
 
-  console.log(`deepcode | 模型 ${model}${opts.yolo ? '（yolo 模式）' : ''} | /help 查看命令，Esc 中断，/exit 退出`)
+  // Step 3: Ctrl+C 两次退出
+  let lastSigint = 0
+  rl.on('SIGINT', () => {
+    const now = Date.now()
+    if (now - lastSigint < 2000) { rl.close(); return }
+    lastSigint = now
+    process.stdout.write(`\n${C.dim}（再按一次 Ctrl+C 退出）${C.reset}\n`)
+  })
+
+  console.log(`deepcode | 模型 ${model}${opts.yolo ? '（yolo 模式）' : ''} | /help 查看命令，Esc 中断，Ctrl+C×2 或 /exit 退出`)
 
   while (true) {
     const line = (await question(statusPrompt())).trim()
     if (!line) continue
     if (line === '/exit') break
     if (line === '/help') {
-      console.log('/model  flash↔pro 切换\n/think  thinking 模式开关\n/accept acceptEdits 模式开关（Edit/Write 免确认，Bash 仍确认）\n/cost   本会话花费明细\n/resume 列出并恢复本目录历史会话\n/exit   退出')
+      console.log('/model  flash↔pro 切换\n/think  thinking 模式开关\n/accept acceptEdits 模式开关（Edit/Write 免确认，Bash 仍确认）\n/cost   本会话花费明细\n/context 上下文占比与上次 usage\n/compact 手动压缩对话历史\n/clear  清空对话（开新会话文件，花费累计保留）\n/resume 列出并恢复本目录历史会话\n/permissions 查看/删除已保存权限规则（/permissions rm <编号>）\n/init   分析项目生成 CLAUDE.md\n/exit   退出\n自定义命令：~/.deepcode/commands/*.md 或 <项目>/.deepcode/commands/*.md（$ARGUMENTS 占位）')
       continue
     }
     if (line === '/model') {
@@ -144,12 +195,73 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean; continueS
       console.log(`已恢复会话（${turns} 轮对话）`)
       continue
     }
-    if (line.startsWith('/')) {
-      console.log(`未知命令 ${line}，/help 查看可用命令`)
+    if (line === '/compact') {
+      try { await doCompact() } catch (e: any) { console.error(`\n${C.red}[compact 失败] ${e?.message ?? e}${C.reset}`) }
+      continue
+    }
+    if (line === '/clear') {
+      messages.length = 1 // 保留 system
+      ctx.fileState.clear()
+      todos.reset()
+      compacted = false
+      lastPromptTokens = 0
+      session = newSession({ cwd, model, thinking, permMode }, undefined)
+      session.appendMessage(messages[0])
+      console.log('对话已清空，已开新会话文件（本会话花费累计保留）')
+      continue
+    }
+    if (line === '/context') {
+      console.log(formatContext(messages, usageLog[usageLog.length - 1]?.usage))
+      continue
+    }
+    if (line.startsWith('/permissions')) {
+      const arg = line.slice('/permissions'.length).trim()
+      const m = arg.match(/^rm\s+(\d+)$/)
+      if (m) {
+        const i = Number(m[1]) - 1
+        if (settings.permissions.allow[i] !== undefined) {
+          console.log(`已删除：${settings.permissions.allow.splice(i, 1)[0]}`)
+          saveSettings(settings)
+        } else console.log('编号无效')
+      } else if (settings.permissions.allow.length) {
+        settings.permissions.allow.forEach((r, i) => console.log(`  ${i + 1}. ${r}`))
+        console.log('（/permissions rm <编号> 删除对应规则）')
+      } else console.log('没有已保存的权限规则')
       continue
     }
 
-    const userMsg = { role: 'user', content: line }
+    // 斜杠命令：/init 和自定义命令；未知则报错
+    let userText = line
+    if (line === '/init') {
+      userText = INIT_PROMPT
+    } else if (line.startsWith('/')) {
+      const [name, ...rest] = line.slice(1).split(' ')
+      const tpl = customCommands.get(name)
+      if (!tpl) { console.log(`未知命令 /${name}，/help 查看可用命令`); continue }
+      userText = expandCommand(tpl, rest.join(' '))
+    }
+
+    // 用户消息边界提醒：compact 一次性提示 + fileState 外部修改检测
+    const boundary: string[] = []
+    if (compacted) {
+      boundary.push('以上对话历史为有损总结，修改任何关键文件前请先 Read 重新确认其当前内容。')
+      compacted = false
+    }
+    for (const [p, mtime] of ctx.fileState) {
+      try {
+        if (fs.statSync(p).mtimeMs !== mtime) {
+          boundary.push(`文件 ${p} 在你上次读取后被外部修改，使用前请重新 Read。`)
+          ctx.fileState.delete(p)
+        }
+      } catch {
+        boundary.push(`文件 ${p} 已被删除。`)
+        ctx.fileState.delete(p)
+      }
+    }
+    const userMsg = {
+      role: 'user',
+      content: boundary.length ? `${userText}\n\n<system-reminder>\n${boundary.join('\n')}\n</system-reminder>` : userText,
+    }
     messages.push(userMsg)
     session.appendMessage(userMsg) // user 输入即时落盘
     const lenBefore = messages.length
@@ -159,7 +271,7 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean; continueS
     try {
       const deps: LoopDeps = {
         client: opts.client,
-        tools: allTools,
+        tools,
         model,
         thinking,
         ctx,
@@ -168,6 +280,11 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean; continueS
           rules: settings.permissions.allow,
           saveRule: r => { settings.permissions.allow.push(r); saveSettings(settings) },
           ask,
+        },
+        reminders: () => {
+          todos.tick()
+          const note = todos.staleReminder()
+          return note ? [note] : []
         },
       }
       const gen = runLoop(messages, deps)
@@ -181,7 +298,7 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean; continueS
           process.stdout.write(ev.reasoning ? `${C.dim}${ev.delta}${C.reset}` : ev.delta)
         }
         else if (ev.type === 'tool_start') process.stdout.write(`\n${C.cyan}⏺ ${ev.name}(${ev.desc.slice(0, 120)})${C.reset}`)
-        else if (ev.type === 'tool_end') process.stdout.write(`\n${ev.ok ? C.green : C.red}  ⎿ ${ev.preview}${C.reset}`)
+        else if (ev.type === 'tool_end') process.stdout.write(`\n${ev.ok ? C.green : C.red}  ⎿ ${ev.preview}（${(ev.ms / 1000).toFixed(1)}s）${C.reset}`)
         else if (ev.type === 'turn_end') {
           usageLog.push({ usage: ev.usage, model })
           session.appendUsage(ev.usage, model)
@@ -190,6 +307,11 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean; continueS
           process.stdout.write(
             `\n${C.dim}[入 ${ev.usage.prompt_tokens}（缓存命中 ${ev.usage.prompt_cache_hit_tokens}）出 ${ev.usage.completion_tokens} | 累计 入 ${totIn} 出 ${totOut} $${sessionCost().toFixed(4)}]${C.reset}\n`,
           )
+          lastPromptTokens = ev.usage.prompt_tokens
+          if (!costWarned && sessionCost() > settings.costWarnUSD) {
+            costWarned = true
+            process.stdout.write(`\n${C.red}[花费提醒] 本会话已超 $${settings.costWarnUSD}（/cost 查看明细，阈值在 settings.json 的 costWarnUSD）${C.reset}\n`)
+          }
         }
       }
       if (step.value === 'aborted') console.log(`\n${C.red}[已中断]${C.reset}`)
@@ -201,6 +323,11 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean; continueS
       // 本轮 loop 内部新增的 assistant/tool 消息补落盘 + fileState 快照
       for (const m of messages.slice(lenBefore)) session.appendMessage(m)
       session.appendFileState([...ctx.fileState])
+    }
+
+    // 自动 compact（在 finally 落盘之后，当前轮消息已持久化，compact 记录清晰可恢复）
+    if (lastPromptTokens > settings.compactTokens) {
+      try { await doCompact() } catch (e: any) { console.error(`\n${C.red}[自动 compact 失败，将在下轮重试] ${e?.message ?? e}${C.reset}`) }
     }
   }
   rl.close()
