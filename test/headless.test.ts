@@ -14,9 +14,10 @@ vi.mock('../src/api.js', () => ({
 }))
 
 import { runHeadless } from '../src/headless.js'
+import { chatStream } from '../src/api.js'
 
 const usage = { prompt_tokens: 50, completion_tokens: 20, prompt_cache_hit_tokens: 10 }
-beforeEach(() => { script.length = 0 })
+beforeEach(() => { script.length = 0; vi.mocked(chatStream).mockClear() })
 
 describe('runHeadless', () => {
   it('跑完单 prompt 返回最终文本与累计 usage/cost/轮数', async () => {
@@ -50,5 +51,52 @@ describe('runHeadless', () => {
     )
     const r = await runHeadless({ client: {} as any, prompt: '建个文件', yolo: false })
     expect(r.status).toBe('done') // 不挂起、不抛错，拒绝理由按正常机制喂回模型
+  })
+
+  it('todo 过期时在工具消息中注入 system-reminder', async () => {
+    // Turn 1: TodoWrite 设置清单（in_progress 条目），lastUpdateTurn=0，tick→currentTurn=1，delta=1
+    // Turn 2: Glob，tick→currentTurn=2，delta=2，无提醒
+    // Turn 3: Glob，tick→currentTurn=3，delta=3，提醒触发
+    // Turn 4: Glob，tick→currentTurn=4，delta=4（4%3≠0），无提醒
+    // Turn 5: stop
+    script.push(
+      {
+        result: {
+          content: '',
+          toolCalls: [{ id: 'tw1', name: 'TodoWrite', args: JSON.stringify({ todos: [{ content: '修 bug', status: 'in_progress' }] }) }],
+          usage, finishReason: 'tool_calls',
+        },
+      },
+      {
+        result: {
+          content: '',
+          toolCalls: [{ id: 'g1', name: 'Glob', args: '{"pattern":"*"}' }],
+          usage, finishReason: 'tool_calls',
+        },
+      },
+      {
+        result: {
+          content: '',
+          toolCalls: [{ id: 'g2', name: 'Glob', args: '{"pattern":"*"}' }],
+          usage, finishReason: 'tool_calls',
+        },
+      },
+      {
+        result: {
+          content: '',
+          toolCalls: [{ id: 'g3', name: 'Glob', args: '{"pattern":"*"}' }],
+          usage, finishReason: 'tool_calls',
+        },
+      },
+      { result: { content: '完成', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    await runHeadless({ client: {} as any, prompt: '做任务', yolo: true })
+    // 找到最终一次 chatStream 调用，检查其 messages 参数中是否有包含 <system-reminder> + '修 bug' 的 tool 消息
+    const allCalls = vi.mocked(chatStream).mock.calls
+    const allMessages: any[] = allCalls.flatMap(([_client, opts]) => opts.messages ?? [])
+    const reminderMsg = allMessages.find(
+      m => m.role === 'tool' && typeof m.content === 'string' && m.content.includes('<system-reminder>') && m.content.includes('修 bug'),
+    )
+    expect(reminderMsg).toBeDefined()
   })
 })

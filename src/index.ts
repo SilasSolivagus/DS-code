@@ -19,11 +19,12 @@ try {
     } else {
       console.log(r.text)
     }
-    process.exit(r.status === 'done' ? 0 : 1)
+    process.exitCode = r.status === 'done' ? 0 : 1
+  } else {
+    await startRepl({ client, yolo, continueSession })
+    process.exit(0) // readline 持有 event loop；需显式退出
   }
-  await startRepl({ client, yolo, continueSession })
-  process.exit(0)
 } catch (e: any) {
   console.error(e?.message ?? e)
-  process.exit(1)
+  process.exitCode = 1
 }

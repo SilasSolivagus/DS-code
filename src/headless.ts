@@ -24,12 +24,13 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
   const settings = loadSettings()
   const model = 'deepseek-v4-flash'
   let cwd = process.cwd()
+  const todos = new TodoStore()
   const ctx: ToolContext = {
     cwd: () => cwd,
     setCwd: d => { cwd = d },
     signal: new AbortController().signal,
     fileState: new Map(),
-    todos: new TodoStore(),
+    todos,
   }
   const total: Usage = { prompt_tokens: 0, completion_tokens: 0, prompt_cache_hit_tokens: 0 }
   let turns = 0
@@ -54,6 +55,11 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
       rules: settings.permissions.allow,
       saveRule: () => { /* headless 不持久化规则 */ },
       ask: async () => 'no', // 无人值守：默认拒绝，拒绝理由按正常机制喂回模型
+    },
+    reminders: () => {
+      todos.tick()
+      const note = todos.staleReminder()
+      return note ? [note] : []
     },
   })
   let step
