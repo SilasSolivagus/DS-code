@@ -31,24 +31,33 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean; continueS
   }
   const messages: any[] = [{ role: 'system', content: buildSystemPrompt(cwd) }]
   const usageLog: UsageRecord[] = []
-  let session: SessionHandle
+  let session!: SessionHandle
 
-  // 恢复（--continue）或新建会话
-  const recovered = opts.continueSession ? listSessions(cwd)[0] : undefined
-  if (recovered) {
-    const loaded = loadSession(recovered.file)
+  /** 恢复会话到内存：消息、模型设置、fileState（mtime 校验）、usage，并续写该文件。返回恢复的 user 轮数。 */
+  const restoreSession = (file: string): number => {
+    const loaded = loadSession(file)
     messages.length = 0
     messages.push(...loaded.messages)
     model = loaded.meta.model
     thinking = loaded.meta.thinking
-    if (!opts.yolo) permMode = loaded.meta.permMode as PermissionMode
+    // yolo 必须每次启动显式 --yolo，恢复的模式只允许 default/acceptEdits（含篡改文件兜底）
+    if (!opts.yolo) permMode = loaded.meta.permMode === 'acceptEdits' ? 'acceptEdits' : 'default'
     // fileState 按 mtime 校验：文件已变则丢弃该条（自动失效，迫使模型重读）
+    ctx.fileState.clear()
     for (const [p, mtime] of loaded.fileState) {
       try { if (fs.statSync(p).mtimeMs === mtime) ctx.fileState.set(p, mtime) } catch { /* 文件没了，跳过 */ }
     }
+    usageLog.length = 0
     usageLog.push(...loaded.usages)
-    session = openSession(recovered.file)
-    console.log(`已恢复会话（${loaded.messages.filter(m => m.role === 'user').length} 轮对话），继续写入 ${recovered.file}`)
+    session = openSession(file)
+    return loaded.messages.filter(m => m.role === 'user').length
+  }
+
+  // 恢复（--continue）或新建会话
+  const recovered = opts.continueSession ? listSessions(cwd)[0] : undefined
+  if (recovered) {
+    const turns = restoreSession(recovered.file)
+    console.log(`已恢复会话（${turns} 轮对话），继续写入 ${recovered.file}`)
   } else {
     session = newSession({ cwd, model, thinking, permMode }, undefined)
     session.appendMessage(messages[0]) // 持久化 system 消息
@@ -101,17 +110,20 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean; continueS
     }
     if (line === '/model') {
       model = model === 'deepseek-v4-flash' ? 'deepseek-v4-pro' : 'deepseek-v4-flash'
+      session.appendMeta({ cwd, model, thinking, permMode })
       console.log(`已切换到 ${model}`)
       continue
     }
     if (line === '/think') {
       thinking = !thinking
+      session.appendMeta({ cwd, model, thinking, permMode })
       console.log(`thinking 模式：${thinking ? '开' : '关'}`)
       continue
     }
     if (line === '/accept') {
       if (opts.yolo) { console.log('当前是 yolo 模式，所有操作均已放行'); continue }
       permMode = permMode === 'acceptEdits' ? 'default' : 'acceptEdits'
+      session.appendMeta({ cwd, model, thinking, permMode })
       console.log(`acceptEdits 模式：${permMode === 'acceptEdits' ? '开（Edit/Write 免确认，Bash 仍需确认）' : '关'}`)
       continue
     }
@@ -123,25 +135,13 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean; continueS
       continue
     }
     if (line === '/resume') {
-      const sessions = listSessions(cwd)
-      if (!sessions.length) { console.log('本目录没有历史会话'); continue }
-      sessions.slice(0, 10).forEach((s, i) => console.log(`  ${i + 1}. ${s.preview}`))
+      const shown = listSessions(cwd).slice(0, 10)
+      if (!shown.length) { console.log('本目录没有历史会话'); continue }
+      shown.forEach((s, i) => console.log(`  ${i + 1}. ${s.preview}`))
       const pick = Number((await question('恢复哪个会话编号（回车取消）› ')).trim())
-      if (!pick || pick < 1 || pick > sessions.length) { console.log('已取消'); continue }
-      const loaded = loadSession(sessions[pick - 1].file)
-      messages.length = 0
-      messages.push(...loaded.messages)
-      model = loaded.meta.model
-      thinking = loaded.meta.thinking
-      if (!opts.yolo) permMode = loaded.meta.permMode as PermissionMode
-      ctx.fileState.clear()
-      for (const [p, mtime] of loaded.fileState) {
-        try { if (fs.statSync(p).mtimeMs === mtime) ctx.fileState.set(p, mtime) } catch { /* skip */ }
-      }
-      usageLog.length = 0
-      usageLog.push(...loaded.usages)
-      session = openSession(sessions[pick - 1].file)
-      console.log(`已恢复会话（${loaded.messages.filter(m => m.role === 'user').length} 轮对话）`)
+      if (!pick || pick < 1 || pick > shown.length) { console.log('已取消'); continue }
+      const turns = restoreSession(shown[pick - 1].file)
+      console.log(`已恢复会话（${turns} 轮对话）`)
       continue
     }
     if (line.startsWith('/')) {

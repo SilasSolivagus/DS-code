@@ -20,6 +20,7 @@ export interface SessionHandle {
   appendMessage(m: any): void
   appendUsage(usage: UsageRecord['usage'], model: string): void
   appendFileState(entries: [string, number][]): void
+  appendMeta(meta: SessionMeta): void
 }
 
 export interface LoadedSession {
@@ -38,12 +39,21 @@ export interface SessionInfo {
 const DEFAULT_DIR = path.join(os.homedir(), '.deepcode', 'sessions')
 
 function makeHandle(file: string): SessionHandle {
-  const append = (obj: any) => fs.appendFileSync(file, JSON.stringify(obj) + '\n')
+  let dead = false // 首次写失败后降级为仅内存，避免磁盘问题杀死 REPL
+  const append = (obj: any) => {
+    if (dead) return
+    try { fs.appendFileSync(file, JSON.stringify(obj) + '\n') }
+    catch (e: any) {
+      dead = true
+      console.error('[session] 落盘失败，本会话改为仅内存：' + (e?.message ?? e))
+    }
+  }
   return {
     file,
     appendMessage: m => append({ t: 'msg', m }),
     appendUsage: (usage, model) => append({ t: 'usage', usage, model }),
     appendFileState: entries => append({ t: 'fs', entries }),
+    appendMeta: meta => append({ t: 'meta', ...meta }),
   }
 }
 
@@ -81,7 +91,23 @@ export function loadSession(file: string): LoadedSession {
     else if (r.t === 'usage') usages.push({ usage: r.usage, model: r.model })
     else if (r.t === 'fs') fileState = r.entries // 最后一条覆盖，得到最新快照
   }
-  return { meta, messages, usages, fileState }
+  return { meta, messages: sanitizeDanglingToolCalls(messages), usages, fileState }
+}
+
+/** 崩溃/截断可能留下没有 tool 结果的 assistant tool_calls，恢复后会被 API 拒收；补合成结果保持可恢复。 */
+function sanitizeDanglingToolCalls(messages: any[]): any[] {
+  const answered = new Set<string>()
+  for (const m of messages) if (m?.role === 'tool' && m.tool_call_id) answered.add(m.tool_call_id)
+  const out: any[] = []
+  for (const m of messages) {
+    out.push(m)
+    if (m?.role === 'assistant' && Array.isArray(m.tool_calls)) {
+      for (const tc of m.tool_calls) {
+        if (tc?.id && !answered.has(tc.id)) out.push({ role: 'tool', tool_call_id: tc.id, content: '（中断，无结果）' })
+      }
+    }
+  }
+  return out
 }
 
 /** 列出某 cwd 下的会话，新到旧，附首条 user 消息预览。损坏文件跳过。 */
