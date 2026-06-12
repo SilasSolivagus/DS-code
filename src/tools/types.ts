@@ -1,5 +1,6 @@
 // src/tools/types.ts
 import type { z } from 'zod'
+import type { TodoStore } from '../todo.js'
 
 export interface ToolContext {
   cwd: () => string
@@ -7,6 +8,8 @@ export interface ToolContext {
   readonly signal: AbortSignal
   /** 绝对路径 -> mtimeMs。Read 记录；M2 的 Edit 用它强制 read-before-edit */
   fileState: Map<string, number>
+  /** 任务清单（REPL/headless 注入；子代理不注入） */
+  todos?: TodoStore
 }
 
 export interface Tool<S extends z.ZodTypeAny = z.ZodTypeAny> {
