@@ -4,7 +4,8 @@ export interface TodoItem {
   status: 'pending' | 'in_progress' | 'completed'
 }
 
-/** 任务清单 + 走神检测：连续 3 轮（loop turn）未更新且有未完成项 → 周期性提醒 */
+/** 任务清单 + 走神检测：连续 3 轮（loop turn）未更新且有未完成项 → 周期性提醒。
+ *  tick() 在执行了 TodoWrite 的同一轮末尾也会跑，所以阈值把更新轮自身计入（实际节奏 = 更新轮 + 2 个空轮后首次提醒）。 */
 export class TodoStore {
   items: TodoItem[] = []
   private lastUpdateTurn = 0

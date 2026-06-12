@@ -221,6 +221,48 @@ describe('runLoop', () => {
     expect(continueMsg).toBeDefined()
   })
 
+  it('reminders 返回非空时，附加到本轮最后一条 tool 消息（不另起消息）', async () => {
+    script.push(
+      {
+        result: {
+          content: '', toolCalls: [{ id: 'r1', name: 'Glob', args: '{"pattern":"*"}' }],
+          usage, finishReason: 'tool_calls',
+        },
+      },
+      { result: { content: 'ok', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    const { globTool } = await import('../src/tools/glob.js')
+    const deps = makeDeps([globTool])
+    let calls = 0
+    deps.reminders = () => { calls++; return calls === 1 ? ['提醒A', '提醒B'] : [] }
+    const messages: any[] = [{ role: 'user', content: 'hi' }]
+    await drain(runLoop(messages, deps))
+    const toolMsgs = messages.filter(m => m.role === 'tool')
+    const last = toolMsgs[toolMsgs.length - 1]
+    expect(last.content).toContain('<system-reminder>')
+    expect(last.content).toContain('提醒A')
+    expect(last.content).toContain('提醒B')
+    // 没有因 reminder 多出独立消息
+    expect(messages.filter(m => m.role === 'user').length).toBe(1)
+  })
+
+  it('tool_end 事件带毫秒耗时', async () => {
+    script.push(
+      {
+        result: {
+          content: '', toolCalls: [{ id: 'm1', name: 'Glob', args: '{"pattern":"*"}' }],
+          usage, finishReason: 'tool_calls',
+        },
+      },
+      { result: { content: 'ok', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    const { globTool } = await import('../src/tools/glob.js')
+    const { events } = await drain(runLoop([{ role: 'user', content: 'hi' }], makeDeps([globTool])))
+    const end = events.find(e => e.type === 'tool_end')
+    expect(end.ms).toBeTypeOf('number')
+    expect(end.ms).toBeGreaterThanOrEqual(0)
+  })
+
   it('reasoning delta 透传为带 reasoning 标志的 text 事件', async () => {
     script.push({
       deltas: [{ type: 'reasoning', delta: '思考中' }, '答案'],

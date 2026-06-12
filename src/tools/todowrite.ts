@@ -3,11 +3,11 @@ import { z } from 'zod'
 import type { Tool } from './types.js'
 
 const item = z.object({
-  content: z.string().min(1).describe('任务内容，一句话'),
+  content: z.string().min(1).max(200).describe('任务内容，一句话'),
   status: z.enum(['pending', 'in_progress', 'completed']).describe('任务状态'),
 })
 const schema = z.object({
-  todos: z.array(item).describe('完整的任务清单（全量覆盖式写入，不是增量）'),
+  todos: z.array(item).max(50).describe('完整的任务清单（全量覆盖式写入，不是增量）'),
 })
 
 export const todoWriteTool: Tool<typeof schema> = {
@@ -15,6 +15,7 @@ export const todoWriteTool: Tool<typeof schema> = {
   description:
     '维护当前任务清单。多步任务（3 步以上）开始时先列出计划；每完成一项立即把它标为 completed 并把下一项标为 in_progress。每次调用传入完整清单（全量覆盖）。同一时刻至多一项 in_progress。',
   inputSchema: schema,
+  // isReadOnly = 免确认+可并发；本工具仅改进程内状态，无文件副作用
   isReadOnly: true,
   needsPermission: () => false,
   async call(input, ctx) {

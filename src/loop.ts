@@ -8,7 +8,7 @@ import { checkPermission, type PermissionContext } from './permissions.js'
 export type LoopEvent =
   | { type: 'text'; delta: string; reasoning?: boolean }
   | { type: 'tool_start'; id: string; name: string; desc: string }
-  | { type: 'tool_end'; id: string; ok: boolean; preview: string }
+  | { type: 'tool_end'; id: string; ok: boolean; preview: string; ms: number }
   | { type: 'turn_end'; usage: ChatResult['usage'] }
 
 export interface LoopDeps {
@@ -19,6 +19,10 @@ export interface LoopDeps {
   permission: PermissionContext
   ctx: ToolContext
   maxTurns?: number
+  /** 每个 loop turn 在工具结果回灌前调用一次；返回的条目合并为一个 <system-reminder> 块
+   *  附加到本轮最后一条 tool 消息末尾（只动最新后缀，不破坏 KV 缓存）。
+   *  调用方可借此推进轮计数（如 TodoStore.tick）。 */
+  reminders?: () => string[]
 }
 
 const CONCURRENCY = 5
@@ -61,6 +65,12 @@ async function execCall(call: ToolCall, deps: LoopDeps): Promise<{ ok: boolean; 
   } catch (e: any) {
     return { ok: false, content: `错误：${e?.message ?? String(e)}` }
   }
+}
+
+async function timedExec(call: ToolCall, deps: LoopDeps): Promise<{ ok: boolean; content: string; ms: number }> {
+  const t0 = Date.now()
+  const r = await execCall(call, deps)
+  return { ...r, ms: Date.now() - t0 }
 }
 
 export async function* runLoop(
@@ -122,7 +132,7 @@ export async function* runLoop(
     }
 
     // 只读并发（上限 5），非只读串行；未知工具默认归入只读批（execCall 会返回错误结果）
-    const outcomes = new Map<string, { ok: boolean; content: string }>()
+    const outcomes = new Map<string, { ok: boolean; content: string; ms: number }>()
     const isRO = (c: ToolCall) => deps.tools.find(t => t.name === c.name)?.isReadOnly ?? true
     const ro = result.toolCalls.filter(isRO)
     const rw = result.toolCalls.filter(c => !isRO(c))
@@ -130,25 +140,31 @@ export async function* runLoop(
     for (const c of ro) yield { type: 'tool_start', id: c.id, name: c.name, desc: c.args }
     for (let i = 0; i < ro.length; i += CONCURRENCY) {
       const batch = ro.slice(i, i + CONCURRENCY)
-      const results = await Promise.all(batch.map(c => execCall(c, deps)))
+      const results = await Promise.all(batch.map(c => timedExec(c, deps)))
       batch.forEach((c, j) => outcomes.set(c.id, results[j]))
     }
     for (const c of ro) {
       const o = outcomes.get(c.id)!
-      yield { type: 'tool_end', id: c.id, ok: o.ok, preview: previewOf(o.content) }
+      yield { type: 'tool_end', id: c.id, ok: o.ok, preview: previewOf(o.content), ms: o.ms }
     }
 
     for (const c of rw) {
       yield { type: 'tool_start', id: c.id, name: c.name, desc: c.args }
-      if (deps.ctx.signal.aborted) outcomes.set(c.id, { ok: false, content: '已被用户中断，未执行' })
-      else outcomes.set(c.id, await execCall(c, deps))
+      if (deps.ctx.signal.aborted) outcomes.set(c.id, { ok: false, content: '已被用户中断，未执行', ms: 0 })
+      else outcomes.set(c.id, await timedExec(c, deps))
       const o = outcomes.get(c.id)!
-      yield { type: 'tool_end', id: c.id, ok: o.ok, preview: previewOf(o.content) }
+      yield { type: 'tool_end', id: c.id, ok: o.ok, preview: previewOf(o.content), ms: o.ms }
     }
 
     // 工具结果必须按原始 tool_calls 顺序回灌
     for (const c of result.toolCalls) {
       messages.push({ role: 'tool', tool_call_id: c.id, content: outcomes.get(c.id)!.content })
+    }
+    // system-reminder：附加到本轮最后一条 tool 消息（即将发送的最新后缀）
+    const notes = deps.reminders?.() ?? []
+    if (notes.length) {
+      const last = messages[messages.length - 1] // 上面刚推完 tool 消息，必为 tool
+      last.content += `\n\n<system-reminder>\n${notes.join('\n\n')}\n</system-reminder>`
     }
     yield { type: 'turn_end', usage: result.usage }
     if (deps.ctx.signal.aborted) {
