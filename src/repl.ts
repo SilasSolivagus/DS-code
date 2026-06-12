@@ -329,7 +329,8 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean; continueS
     }
 
     // 自动 compact（在 finally 落盘之后，当前轮消息已持久化，compact 记录清晰可恢复）
-    if (!closed && lastPromptTokens > settings.compactTokens) {
+    // closed=true 但 lineQueue 仍有待处理行时（管道输入场景），照常压缩
+    if ((!closed || lineQueue.length > 0) && lastPromptTokens > settings.compactTokens) {
       try { await doCompact() } catch (e: any) { console.error(`\n${C.red}[自动 compact 失败，将在下轮重试] ${e?.message ?? e}${C.reset}`) }
     }
   }
