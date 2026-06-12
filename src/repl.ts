@@ -139,7 +139,7 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean; continueS
       if (!shown.length) { console.log('本目录没有历史会话'); continue }
       shown.forEach((s, i) => console.log(`  ${i + 1}. ${s.preview}`))
       const pick = Number((await question('恢复哪个会话编号（回车取消）› ')).trim())
-      if (!pick || pick < 1 || pick > shown.length) { console.log('已取消'); continue }
+      if (!Number.isInteger(pick) || pick < 1 || pick > shown.length) { console.log('已取消'); continue }
       const turns = restoreSession(shown[pick - 1].file)
       console.log(`已恢复会话（${turns} 轮对话）`)
       continue

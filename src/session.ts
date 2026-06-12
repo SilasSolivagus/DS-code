@@ -75,17 +75,21 @@ export function openSession(file: string): SessionHandle {
 export function loadSession(file: string): LoadedSession {
   const lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean)
   let meta: SessionMeta = { cwd: '', model: 'deepseek-v4-flash', thinking: false, permMode: 'default' }
+  let sawMeta = false // cwd 是会话身份，只取首条 meta；其余字段后写覆盖
   const messages: any[] = []
   const usages: UsageRecord[] = []
   let fileState: [string, number][] = []
   for (const line of lines) {
     let r: any
     try { r = JSON.parse(line) } catch { continue }
-    if (r.t === 'meta') meta = {
-      cwd: r.cwd ?? '',
-      model: r.model ?? 'deepseek-v4-flash',
-      thinking: r.thinking ?? false,
-      permMode: r.permMode ?? 'default',
+    if (r.t === 'meta') {
+      meta = {
+        cwd: sawMeta ? meta.cwd : (r.cwd ?? ''),
+        model: r.model ?? 'deepseek-v4-flash',
+        thinking: r.thinking ?? false,
+        permMode: r.permMode ?? 'default',
+      }
+      sawMeta = true
     }
     else if (r.t === 'msg') messages.push(r.m)
     else if (r.t === 'usage') usages.push({ usage: r.usage, model: r.model })

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -109,9 +109,12 @@ describe('session', () => {
   })
 
   it('落盘失败不抛异常（改为仅内存，stderr 警告一次）', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
     const h = openSession(path.join(dir, '不存在的子目录', 'x.jsonl'))
     expect(() => h.appendMessage({ role: 'user', content: 'hi' })).not.toThrow()
     expect(() => h.appendUsage({ prompt_tokens: 1, completion_tokens: 1, prompt_cache_hit_tokens: 0 }, 'm')).not.toThrow()
+    expect(spy).toHaveBeenCalledTimes(1)
+    spy.mockRestore()
   })
 
   it('appendMeta 追加 meta 行，loadSession 以最后一条为准', () => {
@@ -121,5 +124,30 @@ describe('session', () => {
     expect(loaded.meta.model).toBe('deepseek-v4-pro')
     expect(loaded.meta.thinking).toBe(true)
     expect(loaded.meta.permMode).toBe('acceptEdits')
+  })
+
+  it('cwd 是会话身份：只取首条 meta，后续 meta 的 cwd 不生效', () => {
+    const h = newSession(meta('/projA'), dir)
+    h.appendMessage({ role: 'user', content: '任务A' })
+    h.appendMeta({ cwd: '/elsewhere', model: 'deepseek-v4-pro', thinking: false, permMode: 'default' })
+    const loaded = loadSession(h.file)
+    expect(loaded.meta.cwd).toBe('/projA')
+    expect(loaded.meta.model).toBe('deepseek-v4-pro')
+    expect(listSessions('/projA', dir).map(s => s.file)).toContain(h.file)
+  })
+
+  it('部分应答的 tool_calls：合成结果与真实结果连成 tool 块，紧跟 assistant 之后、user 之前', () => {
+    const h = newSession(meta('/p'), dir)
+    h.appendMessage({
+      role: 'assistant', content: null, tool_calls: [
+        { id: 'a', type: 'function', function: { name: 'Read', arguments: '{}' } },
+        { id: 'b', type: 'function', function: { name: 'Edit', arguments: '{}' } },
+      ],
+    })
+    h.appendMessage({ role: 'tool', tool_call_id: 'a', content: '读到了' })
+    h.appendMessage({ role: 'user', content: '继续' })
+    const loaded = loadSession(h.file)
+    expect(loaded.messages.map(m => m.role)).toEqual(['assistant', 'tool', 'tool', 'user'])
+    expect(loaded.messages.slice(1, 3).map(m => m.tool_call_id).sort()).toEqual(['a', 'b'])
   })
 })
