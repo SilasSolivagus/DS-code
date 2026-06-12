@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { renderMarkdown } from '../src/tui/markdown.js'
 
 const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '')
@@ -28,5 +28,24 @@ describe('renderMarkdown', () => {
 
   it('渲染失败时降级返回原文不抛异常', () => {
     expect(renderMarkdown('普通文本')).toContain('普通文本')
+  })
+
+  it('有序列表保留编号，不渲染圆点', () => {
+    const out = strip(renderMarkdown('1. 甲\n2. 乙\n3. 丙'))
+    expect(out).toContain('1. 甲')
+    expect(out).toContain('2. 乙')
+    expect(out).toContain('3. 丙')
+    expect(out).not.toContain('•')
+  })
+
+  it('未知 fence 语言不向 stderr 输出，代码体仍保留', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const out = strip(renderMarkdown('```mermaid\ngraph TD\nA --> B\n```'))
+      expect(spy).not.toHaveBeenCalled()
+      expect(out).toContain('graph TD')
+    } finally {
+      spy.mockRestore()
+    }
   })
 })

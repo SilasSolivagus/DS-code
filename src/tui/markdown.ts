@@ -4,7 +4,7 @@
 // 已知限制：CJK 全角字符在 padEnd 下表格列宽计算有偏差（每个汉字占 2 个终端格但 JS length=1）。
 // 正确做法需引入 east-asian-width 之类依赖，v1 接受此偏差。
 import { marked, type Token, type Tokens } from 'marked'
-import { highlight } from 'cli-highlight'
+import { highlight, supportsLanguage } from 'cli-highlight'
 
 const B = '\x1b[1m'    // 粗体
 const DIM = '\x1b[2m'  // 暗色
@@ -22,7 +22,8 @@ function inline(text: string): string {
 function codeBlock(tok: Tokens.Code): string {
   let body = tok.text
   try {
-    body = highlight(tok.text, { language: tok.lang || 'plaintext', ignoreIllegals: true })
+    const lang = tok.lang && supportsLanguage(tok.lang) ? tok.lang : 'plaintext'
+    body = highlight(tok.text, { language: lang, ignoreIllegals: true })
   } catch { /* 语言不支持时降级原文 */ }
   return body.split('\n').map(l => `${DIM}│${R} ${l}`).join('\n')
 }
@@ -38,6 +39,7 @@ function table(tok: Tokens.Table): string {
     Math.max(...allRows.map(r => (r[i] ?? '').length))
   )
 
+  // 表格单元格故意跳过 inline 样式：ANSI 转义码会破坏 padEnd 宽度计算。
   const line = (cells: string[], bold = false) =>
     cells
       .map((c, i) => (bold ? B : '') + (c ?? '').padEnd(widths[i]) + R)
@@ -59,9 +61,10 @@ function block(tok: Token): string {
 
     case 'list': {
       const listTok = tok as Tokens.List
-      return listTok.items.map(item => {
+      return listTok.items.map((item, idx) => {
+        const marker = listTok.ordered ? `${(listTok.start || 1) + idx}.` : '•'
         const lines = item.text.split('\n')
-        const first = `• ${inline(lines[0])}`
+        const first = `${marker} ${inline(lines[0])}`
         if (lines.length === 1) return first
         return first + '\n  ' + inline(lines.slice(1).join('\n  '))
       }).join('\n')
