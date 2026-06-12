@@ -17,7 +17,7 @@ export function loadCustomCommands(cwd: string, home: string = os.homedir()): Ma
 }
 
 export function expandCommand(template: string, args: string): string {
-  return template.replaceAll('$ARGUMENTS', args)
+  return template.replaceAll('$ARGUMENTS', () => args)
 }
 
 export const INIT_PROMPT = `请分析本项目并生成 CLAUDE.md 项目记忆文件。步骤：

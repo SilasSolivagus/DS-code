@@ -32,6 +32,10 @@ describe('expandCommand', () => {
   it('替换全部 $ARGUMENTS', () => {
     expect(expandCommand('检查 $ARGUMENTS，再测 $ARGUMENTS', 'src/a.ts')).toBe('检查 src/a.ts，再测 src/a.ts')
   })
+
+  it('args 含 $$ 和 $& 时原样保留（不被 replacement pattern 解释）', () => {
+    expect(expandCommand('run $ARGUMENTS', 'echo $$ and $&')).toBe('run echo $$ and $&')
+  })
 })
 
 describe('formatContext', () => {
@@ -49,5 +53,24 @@ describe('formatContext', () => {
 
   it('无 usage 时不崩', () => {
     expect(formatContext([{ role: 'user', content: 'hi' }])).toContain('尚无')
+  })
+
+  it('content 为 null 的 assistant tool_calls 不崩，且计入工具调用与结果', () => {
+    const messages = [
+      { role: 'system', content: 'x'.repeat(400) },
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [{ id: 'c', type: 'function', function: { name: 'Read', arguments: '{}' } }],
+      },
+      { role: 'tool', tool_call_id: 'c', content: 'result' },
+    ]
+    const out = formatContext(messages)
+    const rows = out.split('\n')
+    expect(rows).toHaveLength(4) // 3 占比行 + usage 行
+    expect(out).toContain('工具调用与结果')
+    // 工具桶非零：tool_calls JSON 长度 > 0，结果内容 > 0
+    const toolRow = rows.find(r => r.startsWith('工具调用与结果'))!
+    expect(toolRow).not.toContain('0%')
   })
 })
