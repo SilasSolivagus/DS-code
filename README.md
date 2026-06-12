@@ -52,9 +52,10 @@ npm install
 export DEEPSEEK_API_KEY=sk-...
 npm start            # 在当前目录启动 REPL
 npm start -- --yolo  # 跳过所有权限确认（自担风险）
+npm start -- -p "修一下 README 里的错别字" --json   # headless 单发：跑完输出结果退出（--json 给脚本消费）
 ```
 
-REPL 内命令：`/model`（flash↔pro 切换）、`/think`（thinking 开关）、`/help`、`/exit`，Esc 中断当前轮。
+REPL 内命令：`/model` `/think` `/accept` `/cost` `/context` `/compact` `/clear` `/resume` `/permissions` `/init` `/help` `/exit`，Esc 中断当前轮，Ctrl+C×2 退出。自定义命令放 `~/.deepcode/commands/*.md` 或 `<项目>/.deepcode/commands/*.md`（`$ARGUMENTS` 占位）。
 
 权限规则持久化在 `~/.deepcode/settings.json`。
 
@@ -84,7 +85,7 @@ src/
 - [x] **M1 能对话**：流式 REPL + 只读探查 + Bash + 权限门（`v0.1.0-m1`）
 - [x] **M2 能干活**：Edit/Write + 强制 read-before-edit + acceptEdits 模式（`v0.2.0-m2`）
 - [x] **M3 不丢活**：会话 JSONL 持久化、`--continue`/`/resume`、`/cost`（`v0.3.0-m3`）
-- [ ] **M4 跑长活**：上下文压缩 compact、TodoWrite + system-reminder、只读 subagent、`/init` `/context` 与自定义命令
+- [x] **M4 跑长活**：上下文压缩 compact（手动 `/compact` + 阈值自动触发）、TodoWrite + system-reminder 走神检测、只读 Agent 子代理（并发 ×4）、`/init` `/context` `/permissions` 与自定义命令（`$ARGUMENTS` 模板）、headless `-p "<任务>" [--json]` 单发模式（`v0.4.0-m4`）
 - [ ] **M4+ 视觉 sidecar（可选）**：DeepSeek API 不收图，但可以加 `ImageRead` 工具——挂任意 OpenAI 兼容的视觉模型（GLM-4V/Qwen-VL/Gemini），主模型带着具体问题问图（"这张报错截图的 stack trace 第一行是什么"），把回答作为工具结果回灌。有损但够用，截图排错类场景即可解锁
 
 里程碑规格与实施计划在 [docs/specs/](docs/specs/) 与 [docs/plans/](docs/plans/)，M1 验收报告见 [docs/specs/m1-acceptance.md](docs/specs/m1-acceptance.md)。
