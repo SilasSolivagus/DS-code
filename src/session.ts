@@ -21,6 +21,7 @@ export interface SessionHandle {
   appendUsage(usage: UsageRecord['usage'], model: string): void
   appendFileState(entries: [string, number][]): void
   appendMeta(meta: SessionMeta): void
+  appendCompact(): void
 }
 
 export interface LoadedSession {
@@ -54,6 +55,7 @@ function makeHandle(file: string): SessionHandle {
     appendUsage: (usage, model) => append({ t: 'usage', usage, model }),
     appendFileState: entries => append({ t: 'fs', entries }),
     appendMeta: meta => append({ t: 'meta', ...meta }),
+    appendCompact: () => append({ t: 'compact' }),
   }
 }
 
@@ -94,6 +96,7 @@ export function loadSession(file: string): LoadedSession {
     else if (r.t === 'msg') messages.push(r.m)
     else if (r.t === 'usage') usages.push({ usage: r.usage, model: r.model })
     else if (r.t === 'fs') fileState = r.entries // 最后一条覆盖，得到最新快照
+    else if (r.t === 'compact') messages.length = 0 // 压缩重置：只清消息，usage/fs 不受影响
   }
   return { meta, messages: sanitizeDanglingToolCalls(messages), usages, fileState }
 }

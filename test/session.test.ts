@@ -136,6 +136,21 @@ describe('session', () => {
     expect(listSessions('/projA', dir).map(s => s.file)).toContain(h.file)
   })
 
+  it('appendCompact 后 loadSession 只返回 compact 之后的消息，usage 全量保留', () => {
+    const h = newSession(meta('/p'), dir)
+    h.appendMessage({ role: 'system', content: 's' })
+    h.appendMessage({ role: 'user', content: '旧消息' })
+    h.appendUsage({ prompt_tokens: 10, completion_tokens: 2, prompt_cache_hit_tokens: 0 }, 'deepseek-v4-flash')
+    h.appendCompact()
+    h.appendMessage({ role: 'system', content: 's' })
+    h.appendMessage({ role: 'user', content: '<对话历史总结>...' })
+    h.appendUsage({ prompt_tokens: 20, completion_tokens: 3, prompt_cache_hit_tokens: 0 }, 'deepseek-v4-flash')
+
+    const loaded = loadSession(h.file)
+    expect(loaded.messages.map(m => m.content)).toEqual(['s', '<对话历史总结>...'])
+    expect(loaded.usages.length).toBe(2) // 花费跨 compact 累计
+  })
+
   it('部分应答的 tool_calls：合成结果与真实结果连成 tool 块，紧跟 assistant 之后、user 之前', () => {
     const h = newSession(meta('/p'), dir)
     h.appendMessage({
