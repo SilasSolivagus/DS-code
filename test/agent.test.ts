@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 
 const script: Array<{ deltas?: any[]; result: any }> = []
 vi.mock('../src/api.js', () => ({
@@ -40,14 +43,30 @@ describe('Agent 子代理', () => {
   })
 
   it('子代理只有只读工具，使用独立 fileState', async () => {
-    script.push({ result: { content: '结论', toolCalls: [], usage, finishReason: 'stop' } })
+    const dir = mkdtempSync(path.join(tmpdir(), 'dc-agent-'))
+    const tmpFile = path.join(dir, 'probe.txt')
+    writeFileSync(tmpFile, 'probe content')
+    // 第一幕：子代理调用 Read 读取文件
+    script.push(
+      {
+        result: {
+          content: '',
+          toolCalls: [{ id: 'r1', name: 'Read', args: JSON.stringify({ file_path: tmpFile }) }],
+          usage,
+          finishReason: 'tool_calls',
+        },
+      },
+      // 第二幕：子代理结束
+      { result: { content: '结论', toolCalls: [], usage, finishReason: 'stop' } },
+    )
     const tool = makeAgentTool({ client: {} as any, onUsage: () => {} })
     const c = ctx()
     await tool.call({ description: 'x', prompt: 'y' }, c)
     const { chatStream } = await import('../src/api.js')
     const sentTools = (chatStream as any).mock.calls[0][1].tools.map((t: any) => t.function.name)
     expect(sentTools.sort()).toEqual(['Glob', 'Grep', 'Read'])
-    expect(c.fileState.size).toBe(0) // 主 fileState 不被子代理污染
+    // 子代理读了文件，但主 ctx 的 fileState 不应被污染
+    expect(c.fileState.size).toBe(0)
   })
 
   it('子代理无文本输出时返回兜底文案', async () => {
@@ -55,5 +74,16 @@ describe('Agent 子代理', () => {
     const tool = makeAgentTool({ client: {} as any, onUsage: () => {} })
     const out = await tool.call({ description: 'x', prompt: 'y' }, ctx())
     expect(out).toContain('无输出')
+  })
+
+  it('子代理抛错时 call 拒绝，且信号量槽位已释放（第二次调用仍成功）', async () => {
+    // 脚本为空 → chatStream 抛 'script exhausted' → sub-loop 异常
+    const tool = makeAgentTool({ client: {} as any, onUsage: () => {} })
+    await expect(tool.call({ description: 'err', prompt: 'boom' }, ctx())).rejects.toThrow('script exhausted')
+
+    // 第二次调用要能拿到信号量并正常返回，证明 finally 的 release 执行了
+    script.push({ result: { content: '正常结果', toolCalls: [], usage, finishReason: 'stop' } })
+    const out = await tool.call({ description: 'ok', prompt: 'ok' }, ctx())
+    expect(out).toContain('正常结果')
   })
 })
