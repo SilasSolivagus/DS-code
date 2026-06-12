@@ -5,17 +5,26 @@ import os from 'node:os'
 
 export interface Settings {
   permissions: { allow: string[] }
+  /** 自动 compact 触发阈值（上次请求的 prompt_tokens 超过即触发） */
+  compactTokens: number
+  /** 本会话花费提醒阈值（USD，状态行变色一次） */
+  costWarnUSD: number
 }
 
 const DIR = path.join(os.homedir(), '.deepcode')
 const FILE = path.join(DIR, 'settings.json')
 
 export function loadSettings(): Settings {
+  let raw: any = {}
   try {
-    const raw = JSON.parse(fs.readFileSync(FILE, 'utf8'))
-    return { permissions: { allow: raw?.permissions?.allow ?? [] } }
+    raw = JSON.parse(fs.readFileSync(FILE, 'utf8'))
   } catch {
-    return { permissions: { allow: [] } }
+    // 用默认
+  }
+  return {
+    permissions: { allow: raw?.permissions?.allow ?? [] },
+    compactTokens: raw?.compactTokens ?? 200_000,
+    costWarnUSD: raw?.costWarnUSD ?? 2,
   }
 }
 
