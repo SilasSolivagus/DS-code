@@ -81,28 +81,23 @@ function grade(text: string, expected: string[]): { success: boolean; missed: st
 function spawnCapture(
   cmd: string,
   cmdArgs: string[],
-  opts: { cwd: string; env: NodeJS.ProcessEnv; stdinData?: string; timeoutMs: number; separateStderr?: boolean },
-): Promise<{ stdout: string; timedOut: boolean }> {
+  opts: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number; separateStderr?: boolean },
+): Promise<{ stdout: string; stderr: string; timedOut: boolean }> {
   return new Promise(resolve => {
     const child = spawn(cmd, cmdArgs, { cwd: opts.cwd, env: opts.env })
     let stdout = ''
+    let stderr = ''
     let timedOut = false
     const timer = setTimeout(() => {
       timedOut = true
       child.kill('SIGKILL')
     }, opts.timeoutMs)
     child.stdout.on('data', d => (stdout += d))
-    if (!opts.separateStderr) {
-      child.stderr.on('data', d => (stdout += d))
-    }
+    child.stderr.on('data', d => (opts.separateStderr ? (stderr += d) : (stdout += d)))
     child.on('close', () => {
       clearTimeout(timer)
-      resolve({ stdout, timedOut })
+      resolve({ stdout, stderr, timedOut })
     })
-    if (opts.stdinData !== undefined) {
-      child.stdin.write(opts.stdinData)
-      child.stdin.end()
-    }
   })
 }
 
@@ -110,41 +105,41 @@ async function runDeepcode(s: Scenario, run: number, repoDir: string): Promise<R
   const t0 = Date.now()
   // Use -p/--json headless mode; separateStderr=true so tool-trace lines on stderr
   // don't interleave with the JSON line on stdout (split('\n').pop() would break otherwise)
-  const { stdout, timedOut } = await spawnCapture(
+  const { stdout, stderr, timedOut } = await spawnCapture(
     'npx', ['tsx', DEEPCODE_ENTRY, '-p', s.prompt, '--json', '--yolo'],
     { cwd: repoDir, env: { ...process.env, DEEPSEEK_API_KEY: API_KEY }, timeoutMs: s.type === 'fix' ? 360_000 : 240_000, separateStderr: true },
   )
   const wallMs = Date.now() - t0
   if (timedOut) {
-    return { scenario: s.id, track: 'deepcode', run, success: false, missedKeywords: s.expected ?? [], wallMs, tokensIn: 0, tokensOut: 0, cacheHit: 0, toolCalls: null, error: 'timeout' }
+    return { scenario: s.id, track: 'deepcode', run, success: false, missedKeywords: s.expected ?? [], wallMs, tokensIn: 0, tokensOut: 0, cacheHit: 0, toolCalls: null, error: 'timeout\nstderr: ' + stderr.slice(-300) }
   }
-  let ok: boolean, output: string, tokens: number, costUSD: number
   try {
     const r = JSON.parse(stdout.trim().split('\n').pop() ?? '{}')
-    ok = r.status === 'done'
-    output = r.text ?? ''
-    tokens = (r.usage?.prompt_tokens ?? 0) + (r.usage?.completion_tokens ?? 0)
-    costUSD = r.costUSD ?? 0
+    const ok = r.status === 'done'
+    const output = r.text ?? ''
+    const tokensIn = r.usage?.prompt_tokens ?? 0
+    const tokensOut = r.usage?.completion_tokens ?? 0
+    const cacheHit = r.usage?.prompt_cache_hit_tokens ?? 0
+    const toolCalls = r.turns ?? null
+    let success: boolean
+    let missed: string[] = []
+    if (s.type === 'fix') {
+      success = ok && verifyFix(repoDir, s.verifyCmd!)
+      if (!ok) missed = ['headless run failed']
+      else if (!success) missed = ['verifyCmd 未通过']
+    } else if (s.type === 'negative') {
+      const held = verifyFix(repoDir, s.verifyCmd!)
+      const g = grade(output, s.expected!)
+      success = held && g.success
+      if (!held) missed.push('约束被违反（伪造文件或改测试）')
+      missed.push(...g.missed)
+    } else {
+      ;({ success, missed } = grade(output, s.expected!))
+    }
+    return { scenario: s.id, track: 'deepcode', run, success, missedKeywords: missed, wallMs, tokensIn, tokensOut, cacheHit, toolCalls }
   } catch {
-    return { scenario: s.id, track: 'deepcode', run, success: false, missedKeywords: s.expected ?? [], wallMs, tokensIn: 0, tokensOut: 0, cacheHit: 0, toolCalls: null, error: 'json parse failed: ' + stdout.slice(0, 200) }
+    return { scenario: s.id, track: 'deepcode', run, success: false, missedKeywords: s.expected ?? [], wallMs, tokensIn: 0, tokensOut: 0, cacheHit: 0, toolCalls: null, error: 'json parse failed: ' + stdout.slice(0, 200) + '\nstderr: ' + stderr.slice(-300) }
   }
-  let success: boolean
-  let missed: string[] = []
-  if (s.type === 'fix') {
-    success = ok && verifyFix(repoDir, s.verifyCmd!)
-    if (!ok) missed = ['headless run failed']
-    else if (!success) missed = ['verifyCmd 未通过']
-  } else if (s.type === 'negative') {
-    const held = verifyFix(repoDir, s.verifyCmd!)
-    const g = grade(output, s.expected!)
-    success = held && g.success
-    if (!held) missed.push('约束被违反（伪造文件或改测试）')
-    missed.push(...g.missed)
-  } else {
-    ;({ success, missed } = grade(output, s.expected!))
-  }
-  void costUSD // tracked in JSON output; not surfaced in RunResult currently
-  return { scenario: s.id, track: 'deepcode', run, success, missedKeywords: missed, wallMs, tokensIn: tokens, tokensOut: 0, cacheHit: 0, toolCalls: null }
 }
 
 async function runCC(s: Scenario, run: number, repoDir: string): Promise<RunResult> {
@@ -228,13 +223,12 @@ function toMarkdown(results: RunResult[], meta: Record<string, string>): string 
 }
 
 const main = async () => {
-  const todo = scenarios.filter(s => !ONLY_SCENARIOS || ONLY_SCENARIOS.includes(s.id))
+  const todo = scenarios.filter(s => ONLY_SCENARIOS ? ONLY_SCENARIOS.includes(s.id) : !s.skip)
   const results: RunResult[] = []
   let ccVersion = 'unknown'
   try { ccVersion = execSync('claude --version', { encoding: 'utf8' }).trim() } catch {}
 
   for (const s of todo) {
-    if (s.skip) continue
     for (let run = 1; run <= RUNS; run++) {
       if (ONLY_TRACK !== 'cc') {
         process.stderr.write(`[${s.id}] deepcode run ${run}...\n`)
