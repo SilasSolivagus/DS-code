@@ -21,7 +21,7 @@ const usage = { prompt_tokens: 30, completion_tokens: 10, prompt_cache_hit_token
 const ctx = (): any => ({
   cwd: () => process.cwd(), setCwd: () => {}, signal: new AbortController().signal, fileState: new Map(),
 })
-beforeEach(() => { script.length = 0 })
+beforeEach(() => { script.length = 0; vi.clearAllMocks() })
 
 describe('Agent 子代理', () => {
   it('递归跑 runLoop，返回子代理最终文本，usage 上报', async () => {
@@ -63,8 +63,14 @@ describe('Agent 子代理', () => {
     const c = ctx()
     await tool.call({ description: 'x', prompt: 'y' }, c)
     const { chatStream } = await import('../src/api.js')
+    // call[0] = 第一幕（子代理发起），call[1] = 第二幕（带 tool 结果）
     const sentTools = (chatStream as any).mock.calls[0][1].tools.map((t: any) => t.function.name)
     expect(sentTools.sort()).toEqual(['Glob', 'Grep', 'Read'])
+    // 第二幕的 messages 应包含 Read 的 tool 结果（含文件内容），确保 Read 真正执行了
+    const secondCallMessages: any[] = (chatStream as any).mock.calls[1][1].messages
+    const toolResultMsg = secondCallMessages.find((m: any) => m.role === 'tool')
+    expect(toolResultMsg).toBeDefined()
+    expect(toolResultMsg.content).toContain('probe content')
     // 子代理读了文件，但主 ctx 的 fileState 不应被污染
     expect(c.fileState.size).toBe(0)
   })
