@@ -244,6 +244,8 @@ describe('runLoop', () => {
     expect(last.content).toContain('提醒B')
     // 没有因 reminder 多出独立消息
     expect(messages.filter(m => m.role === 'user').length).toBe(1)
+    // 仅在含工具调用的 turn 调用一次
+    expect(calls).toBe(1)
   })
 
   it('tool_end 事件带毫秒耗时', async () => {
@@ -261,6 +263,32 @@ describe('runLoop', () => {
     const end = events.find(e => e.type === 'tool_end')
     expect(end.ms).toBeTypeOf('number')
     expect(end.ms).toBeGreaterThanOrEqual(0)
+  })
+
+  it('tool_end 的 ms 不含权限等待时间', async () => {
+    const { z } = await import('zod')
+    const slow: any = {
+      name: 'Bash', isReadOnly: false, needsPermission: () => 'echo hi',
+      inputSchema: z.object({}), call: async () => 'done',
+    }
+    script.push(
+      {
+        result: {
+          content: '', toolCalls: [{ id: 'p1', name: 'Bash', args: '{}' }],
+          usage, finishReason: 'tool_calls',
+        },
+      },
+      { result: { content: 'ok', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    const deps = makeDeps([slow])
+    deps.permission = {
+      mode: 'default', rules: [], saveRule: () => {},
+      ask: async () => { await new Promise(r => setTimeout(r, 120)); return 'yes' },
+    }
+    const { events } = await drain(runLoop([{ role: 'user', content: 'hi' }], deps))
+    const end = events.find(e => e.type === 'tool_end')
+    expect(end.ok).toBe(true)
+    expect(end.ms).toBeLessThan(100) // 120ms 的人工等待不得计入
   })
 
   it('reasoning delta 透传为带 reasoning 标志的 text 事件', async () => {

@@ -16,7 +16,7 @@ export class TodoStore {
     this.lastUpdateTurn = this.currentTurn
   }
 
-  /** 每个 loop turn 由调用方推进一次 */
+  /** 每个含工具调用的 loop turn 由调用方推进一次 */
   tick(): void { this.currentTurn++ }
 
   reset(): void { this.items = []; this.lastUpdateTurn = 0; this.currentTurn = 0 }
