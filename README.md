@@ -83,7 +83,7 @@ src/
 
 - [x] **M1 能对话**：流式 REPL + 只读探查 + Bash + 权限门（`v0.1.0-m1`）
 - [x] **M2 能干活**：Edit/Write + 强制 read-before-edit + acceptEdits 模式（`v0.2.0-m2`）
-- [ ] **M3 不丢活**：会话 JSONL 持久化、`--continue`/`/resume`、`/cost`
+- [x] **M3 不丢活**：会话 JSONL 持久化、`--continue`/`/resume`、`/cost`（`v0.3.0-m3`）
 - [ ] **M4 跑长活**：上下文压缩 compact、TodoWrite + system-reminder、只读 subagent、`/init` `/context` 与自定义命令
 - [ ] **M4+ 视觉 sidecar（可选）**：DeepSeek API 不收图，但可以加 `ImageRead` 工具——挂任意 OpenAI 兼容的视觉模型（GLM-4V/Qwen-VL/Gemini），主模型带着具体问题问图（"这张报错截图的 stack trace 第一行是什么"），把回答作为工具结果回灌。有损但够用，截图排错类场景即可解锁
 
