@@ -1,5 +1,6 @@
 // src/repl.ts
 import readline from 'node:readline'
+import fs from 'node:fs'
 import type OpenAI from 'openai'
 import { runLoop, type LoopDeps } from './loop.js'
 import { allTools } from './tools/index.js'
@@ -7,10 +8,12 @@ import { buildSystemPrompt } from './prompt.js'
 import { loadSettings, saveSettings } from './config.js'
 import { isDangerous, type Decision, type PermissionMode } from './permissions.js'
 import type { ToolContext } from './tools/types.js'
+import { newSession, openSession, listSessions, loadSession, type SessionHandle, type UsageRecord } from './session.js'
+import { costUSD } from './pricing.js'
 
 const C = { dim: '\x1b[2m', cyan: '\x1b[36m', red: '\x1b[31m', green: '\x1b[32m', reset: '\x1b[0m' }
 
-export async function startRepl(opts: { client: OpenAI; yolo: boolean }): Promise<void> {
+export async function startRepl(opts: { client: OpenAI; yolo: boolean; continueSession?: boolean }): Promise<void> {
   const settings = loadSettings()
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
   readline.emitKeypressEvents(process.stdin, rl)
@@ -27,9 +30,41 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean }): Promis
     fileState: new Map(),
   }
   const messages: any[] = [{ role: 'system', content: buildSystemPrompt(cwd) }]
-  const totals = { input: 0, output: 0, cacheHit: 0 }
+  const usageLog: UsageRecord[] = []
+  let session: SessionHandle
 
-  // Buffer lines so piped input isn't lost while the loop processes a command.
+  // 恢复（--continue）或新建会话
+  const recovered = opts.continueSession ? listSessions(cwd)[0] : undefined
+  if (recovered) {
+    const loaded = loadSession(recovered.file)
+    messages.length = 0
+    messages.push(...loaded.messages)
+    model = loaded.meta.model
+    thinking = loaded.meta.thinking
+    if (!opts.yolo) permMode = loaded.meta.permMode as PermissionMode
+    // fileState 按 mtime 校验：文件已变则丢弃该条（自动失效，迫使模型重读）
+    for (const [p, mtime] of loaded.fileState) {
+      try { if (fs.statSync(p).mtimeMs === mtime) ctx.fileState.set(p, mtime) } catch { /* 文件没了，跳过 */ }
+    }
+    usageLog.push(...loaded.usages)
+    session = openSession(recovered.file)
+    console.log(`已恢复会话（${loaded.messages.filter(m => m.role === 'user').length} 轮对话），继续写入 ${recovered.file}`)
+  } else {
+    session = newSession({ cwd, model, thinking, permMode }, undefined)
+    session.appendMessage(messages[0]) // 持久化 system 消息
+  }
+
+  const sessionCost = () => usageLog.reduce((s, u) => s + costUSD(u.model, u.usage.prompt_tokens, u.usage.prompt_cache_hit_tokens, u.usage.completion_tokens), 0)
+  const shortModel = () => (model === 'deepseek-v4-pro' ? 'pro' : 'flash')
+  const statusPrompt = () => {
+    const tags = [shortModel()]
+    if (thinking) tags.push('think')
+    if (permMode === 'acceptEdits') tags.push('accept')
+    if (permMode === 'yolo') tags.push('yolo')
+    return `${C.dim}[${tags.join('·')} $${sessionCost().toFixed(4)}]${C.reset} › `
+  }
+
+  // 行缓冲：piped 输入在处理命令期间不丢失
   const lineQueue: string[] = []
   let lineWaiter: ((line: string) => void) | null = null
   let closed = false
@@ -57,11 +92,11 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean }): Promis
   console.log(`deepcode | 模型 ${model}${opts.yolo ? '（yolo 模式）' : ''} | /help 查看命令，Esc 中断，/exit 退出`)
 
   while (true) {
-    const line = (await question('› ')).trim()
+    const line = (await question(statusPrompt())).trim()
     if (!line) continue
     if (line === '/exit') break
     if (line === '/help') {
-      console.log('/model  flash↔pro 切换\n/think  thinking 模式开关\n/accept acceptEdits 模式开关（Edit/Write 免确认，Bash 仍确认）\n/exit   退出')
+      console.log('/model  flash↔pro 切换\n/think  thinking 模式开关\n/accept acceptEdits 模式开关（Edit/Write 免确认，Bash 仍确认）\n/cost   本会话花费明细\n/resume 列出并恢复本目录历史会话\n/exit   退出')
       continue
     }
     if (line === '/model') {
@@ -75,12 +110,38 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean }): Promis
       continue
     }
     if (line === '/accept') {
-      if (opts.yolo) {
-        console.log('当前是 yolo 模式，所有操作均已放行')
-        continue
-      }
+      if (opts.yolo) { console.log('当前是 yolo 模式，所有操作均已放行'); continue }
       permMode = permMode === 'acceptEdits' ? 'default' : 'acceptEdits'
       console.log(`acceptEdits 模式：${permMode === 'acceptEdits' ? '开（Edit/Write 免确认，Bash 仍需确认）' : '关'}`)
+      continue
+    }
+    if (line === '/cost') {
+      const inTok = usageLog.reduce((s, u) => s + u.usage.prompt_tokens, 0)
+      const hitTok = usageLog.reduce((s, u) => s + u.usage.prompt_cache_hit_tokens, 0)
+      const outTok = usageLog.reduce((s, u) => s + u.usage.completion_tokens, 0)
+      console.log(`本会话：输入 ${inTok}（缓存命中 ${hitTok}）出 ${outTok} | 估算花费 $${sessionCost().toFixed(6)}`)
+      continue
+    }
+    if (line === '/resume') {
+      const sessions = listSessions(cwd)
+      if (!sessions.length) { console.log('本目录没有历史会话'); continue }
+      sessions.slice(0, 10).forEach((s, i) => console.log(`  ${i + 1}. ${s.preview}`))
+      const pick = Number((await question('恢复哪个会话编号（回车取消）› ')).trim())
+      if (!pick || pick < 1 || pick > sessions.length) { console.log('已取消'); continue }
+      const loaded = loadSession(sessions[pick - 1].file)
+      messages.length = 0
+      messages.push(...loaded.messages)
+      model = loaded.meta.model
+      thinking = loaded.meta.thinking
+      if (!opts.yolo) permMode = loaded.meta.permMode as PermissionMode
+      ctx.fileState.clear()
+      for (const [p, mtime] of loaded.fileState) {
+        try { if (fs.statSync(p).mtimeMs === mtime) ctx.fileState.set(p, mtime) } catch { /* skip */ }
+      }
+      usageLog.length = 0
+      usageLog.push(...loaded.usages)
+      session = openSession(sessions[pick - 1].file)
+      console.log(`已恢复会话（${loaded.messages.filter(m => m.role === 'user').length} 轮对话）`)
       continue
     }
     if (line.startsWith('/')) {
@@ -88,7 +149,10 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean }): Promis
       continue
     }
 
-    messages.push({ role: 'user', content: line })
+    const userMsg = { role: 'user', content: line }
+    messages.push(userMsg)
+    session.appendMessage(userMsg) // user 输入即时落盘
+    const lenBefore = messages.length
     abort = new AbortController()
     const onKey = (_: string, key: any) => { if (key?.name === 'escape') abort.abort() }
     process.stdin.on('keypress', onKey)
@@ -119,11 +183,12 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean }): Promis
         else if (ev.type === 'tool_start') process.stdout.write(`\n${C.cyan}⏺ ${ev.name}(${ev.desc.slice(0, 120)})${C.reset}`)
         else if (ev.type === 'tool_end') process.stdout.write(`\n${ev.ok ? C.green : C.red}  ⎿ ${ev.preview}${C.reset}`)
         else if (ev.type === 'turn_end') {
-          totals.input += ev.usage.prompt_tokens
-          totals.output += ev.usage.completion_tokens
-          totals.cacheHit += ev.usage.prompt_cache_hit_tokens
+          usageLog.push({ usage: ev.usage, model })
+          session.appendUsage(ev.usage, model)
+          const totIn = usageLog.reduce((s, u) => s + u.usage.prompt_tokens, 0)
+          const totOut = usageLog.reduce((s, u) => s + u.usage.completion_tokens, 0)
           process.stdout.write(
-            `\n${C.dim}[入 ${ev.usage.prompt_tokens}（缓存命中 ${ev.usage.prompt_cache_hit_tokens}）出 ${ev.usage.completion_tokens} | 累计 入 ${totals.input} 出 ${totals.output}]${C.reset}\n`,
+            `\n${C.dim}[入 ${ev.usage.prompt_tokens}（缓存命中 ${ev.usage.prompt_cache_hit_tokens}）出 ${ev.usage.completion_tokens} | 累计 入 ${totIn} 出 ${totOut} $${sessionCost().toFixed(4)}]${C.reset}\n`,
           )
         }
       }
@@ -133,6 +198,9 @@ export async function startRepl(opts: { client: OpenAI; yolo: boolean }): Promis
       console.error(`\n${C.red}[错误] ${e?.message ?? e}${C.reset}`)
     } finally {
       process.stdin.off('keypress', onKey)
+      // 本轮 loop 内部新增的 assistant/tool 消息补落盘 + fileState 快照
+      for (const m of messages.slice(lenBefore)) session.appendMessage(m)
+      session.appendFileState([...ctx.fileState])
     }
   }
   rl.close()
