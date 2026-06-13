@@ -7,15 +7,23 @@ import { transcriptReducer } from '../src/tui/useChat.js'
 import type { TranscriptItem } from '../src/tui/useChat.js'
 
 describe('Transcript', () => {
-  it('user 块带 › 前缀，完成的 assistant 块走 markdown 渲染', () => {
+  it('user 块带 > 前缀，完成的 assistant 块走 markdown 渲染并带 ⏺ 项目符号', () => {
     const items: TranscriptItem[] = [
       { kind: 'user', text: '你好' },
       { kind: 'assistant', text: '**重点** 内容', done: true },
     ]
     const { lastFrame } = render(<Transcript items={items} />)
-    expect(lastFrame()).toContain('› 你好')
+    expect(lastFrame()).toContain('> 你好')   // CC 用户行 `> message`
+    expect(lastFrame()).toContain('⏺ ')        // 完成 assistant 带 ⏺ 项目符号
     expect(lastFrame()).toContain('重点')   // markdown 渲染后无 ** 字面量
     expect(lastFrame()).not.toContain('**重点**')
+  })
+
+  it('进行中 assistant 块（原文）也带 ⏺ 项目符号', () => {
+    const items: TranscriptItem[] = [{ kind: 'assistant', text: '流式文本', done: false }]
+    const f = render(<Transcript items={items} />).lastFrame()!
+    expect(f).toContain('⏺ ')
+    expect(f).toContain('流式文本')
   })
 
   it('运行中工具行只显示 ⏺ Name(arg) 无 ⎿，完成后追加 ⎿ 预览', () => {

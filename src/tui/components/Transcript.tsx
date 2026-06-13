@@ -22,30 +22,38 @@ function isDone(item: TranscriptItem): boolean {
   return true
 }
 
+/** CC 风格 ⏺ 项目符号 + 悬挂缩进：首行带 accent 圆点，续行缩进 2 空格。 */
+function withBullet(content: string): React.ReactNode {
+  const lines = content.split('\n')
+  return (
+    <Box flexDirection="column">
+      {lines.map((line, i) => (
+        <Text key={i}>
+          {i === 0 ? <Text color={T.accent}>{'⏺ '}</Text> : '  '}
+          {line}
+        </Text>
+      ))}
+    </Box>
+  )
+}
+
 function renderItem(item: TranscriptItem, index: number): React.ReactNode {
   switch (item.kind) {
     case 'user':
       return (
         <Box key={index}>
-          <Text color={T.accent}>{'› '}</Text>
+          <Text color={T.accent}>{'> '}</Text>
           <Text dimColor>{item.text}</Text>
         </Box>
       )
 
     case 'assistant':
       if (item.done) {
-        return (
-          <Box key={index}>
-            <Text>{renderMarkdown(item.text)}</Text>
-          </Box>
-        )
+        // 完成：markdown 渲染（ANSI 着色串），⏺ 项目符号 + 悬挂缩进
+        return <Box key={index}>{withBullet(renderMarkdown(item.text))}</Box>
       }
-      // 进行中：原文（不跑 markdown，内容还不完整）
-      return (
-        <Box key={index}>
-          <Text>{item.text}</Text>
-        </Box>
-      )
+      // 进行中：原文（不跑 markdown，内容还不完整），同样带 ⏺ 项目符号
+      return <Box key={index}>{withBullet(item.text)}</Box>
 
     case 'reasoning':
       if (item.done) {
@@ -56,15 +64,15 @@ function renderItem(item: TranscriptItem, index: number): React.ReactNode {
           </Box>
         )
       }
-      // 进行中：显示 "✻ 思考中…" + 最近 3 行
+      // 进行中：显示 "✻ 思考中…" + 最近 3 行（CC 同款 dim 灰斜体，非紫色）
       {
         const lines = item.text.split('\n')
         const tail = lines.slice(-3)
         return (
           <Box key={index} flexDirection="column">
-            <Text color={T.reasoning} italic>✻ 思考中…</Text>
+            <Text dimColor italic>✻ 思考中…</Text>
             {tail.map((l, i) => (
-              <Text key={i} color={T.reasoning} italic>{l}</Text>
+              <Text key={i} dimColor italic>{l}</Text>
             ))}
           </Box>
         )
