@@ -41,6 +41,10 @@ export function computeSuggestions(input: string, env: { cwd: string; customComm
   if (input.startsWith('/') && !input.includes(' ')) {
     const all = [...BUILTIN_COMMANDS, ...[...env.customCommands.keys()].map(n => ({ value: `/${n}`, hint: '自定义命令' }))]
     const filtered = all.filter(s => s.value.startsWith(input))
+    // 输入精确等于某命令全名时隐藏菜单，让回车直接提交该命令（对齐 CC）。
+    // 否则补全菜单会永久接管回车：菜单对精确匹配仍显示该单项 → Suggestions 吞掉回车
+    // → handlePick 设的 draft 与原值相同、App 的 suggestions useMemo 不重算 → 死锁。
+    if (filtered.length === 1 && filtered[0].value === input) return []
     // bare "/" shows all; further prefix filtering caps at 8
     return input === '/' ? filtered : filtered.slice(0, 8)
   }

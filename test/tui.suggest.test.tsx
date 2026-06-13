@@ -31,6 +31,26 @@ describe('computeSuggestions', () => {
   it('非 / 非 @ 输入不出菜单', () => {
     expect(computeSuggestions('普通话', { cwd: '/tmp', customCommands: new Map() })).toEqual([])
   })
+
+  // P4 死锁修复：键入完整命令全名后，菜单必须让位，否则补全菜单永久接管回车导致命令无法提交
+  it('精确等于某命令全名时返回空菜单（让回车直接提交，对齐 CC）', () => {
+    expect(computeSuggestions('/exit', { cwd: '/tmp', customCommands: new Map() })).toEqual([])
+    expect(computeSuggestions('/think', { cwd: '/tmp', customCommands: new Map() })).toEqual([])
+  })
+
+  it('精确全名隐藏仅对精确匹配生效，部分前缀仍出菜单', () => {
+    expect(computeSuggestions('/ex', { cwd: '/tmp', customCommands: new Map() }).map(s => s.value)).toContain('/exit')
+    // /co 是 /cost /context /compact /clear 的共同前缀但不精确等于任何一个，菜单照出
+    const co = computeSuggestions('/co', { cwd: '/tmp', customCommands: new Map() }).map(s => s.value)
+    expect(co).toEqual(expect.arrayContaining(['/cost', '/context', '/compact']))
+    expect(co.length).toBeGreaterThan(1)
+  })
+
+  it('自定义命令精确全名同样隐藏菜单', () => {
+    const env = { cwd: '/tmp', customCommands: new Map([['deploy', 'x']]) }
+    expect(computeSuggestions('/deploy', env)).toEqual([])
+    expect(computeSuggestions('/dep', env).map(s => s.value)).toContain('/deploy')
+  })
 })
 
 describe('Suggestions 组件', () => {
