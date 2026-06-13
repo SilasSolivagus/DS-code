@@ -61,13 +61,20 @@
 - Banner 标题 `🐳 deepcode` → `🐳 deepcode v{VERSION}`。
 - 发布时 bump `package.json` `0.1.0 → 0.6.0`（与 tag 序列对齐，发布动作里做，非本设计预先改）。
 
-### 6. WebFetch 工具（src/tools/webfetch.ts 新建）
+### 6. WebFetch 工具（CC 式，src/tools/webfetch.ts 新建）
 
-- 入参 zod：`{ url: string, prompt?: string }`（prompt 暂仅作意图注解，最小实现不做子模型总结）。
-- 实现：undici `fetch`（复用 `api.ts` 的 ProxyAgent dispatcher，走 `127.0.0.1:8118`）GET url → 按 content-type：HTML 则剥 `<script>/<style>` + 去标签 + 折叠空白；非 HTML 直接文本 → 截断 ~10k 字符（超出标 `… 已截断`）。
-- 非 2xx / 超时 / 非 http(s) → 返回错误字符串（不抛，喂回模型）。
-- **权限**：复用现有权限闸门（与 Bash 同机制，可弹窗/可 always-allow per host），因访问外网有副作用 + 泄漏 URL。headless 按 yolo/已存规则。
-- 注册进 `src/tools/registry.ts`。
+CC 式 = 抓取网页 + 用用户问题让子模型从内容中作答（不是返回原始 HTML）。
+
+- **工厂注入**：`makeWebFetchTool(deps: { client: OpenAI; onUsage })`，与 `makeAgentTool`（agent.ts:36）同款模式——工具内部需调模型，client 由 registry 装配时注入。
+- 入参 zod：`{ url: string, prompt: string }`（prompt 是「针对该页要回答/抽取什么」，CC 式下是必填）。
+- 实现：
+  1. undici `fetch`（复用 `api.ts` 的 ProxyAgent dispatcher，走 `127.0.0.1:8118`）GET url，传 `ctx.signal`（Esc 可中断）。
+  2. 按 content-type：HTML 剥 `<script>/<style>` + 去标签 + 折叠空白；非 HTML 直接文本。截断到 ~30k 字符喂模型（控成本，超出标注）。
+  3. **单次** chat completion（非整 loop）：用 `SUB_MODEL`（flash，省钱），system「你从网页内容中按用户问题提取/总结，只依据给定内容、不编造」+ user「URL:{url}\n问题:{prompt}\n\n内容:\n{正文}」→ 返回助手文本。
+  4. `deps.onUsage(usage, SUB_MODEL)` 计入会话花费。
+- 非 2xx / 超时 / 非 http(s) 协议 → 返回错误字符串（不抛，喂回主模型）。
+- **权限**：`isReadOnly:false`、`needsPermission` 返回 host 描述 → 复用现有闸门（可弹窗/可 always-allow per host），因访问外网有副作用 + 泄漏 URL + 产生 token 花费。headless 按 yolo/已存规则。
+- 注册进 `src/tools/registry.ts`（registry 须能拿到 client + onUsage 来构造，参照 agent 工具的装配处）。
 
 ### 7. README（公开向）
 
@@ -77,7 +84,7 @@
 
 - `config.ts`：env 优先 / 仅配置文件 / 都无 / 坏 JSON 降级；`saveApiKey` 合并字段 + 权限位。
 - `version.ts`：导出非空、与 package.json 一致。
-- `webfetch.ts`：mock fetch → HTML 剥离+截断、非 HTML 直返、非 200 错误、非 http(s) 拒绝、权限闸门交互。
+- `webfetch.ts`：mock fetch + mock client → HTML 剥离+截断、子模型按 prompt 作答（断言 content 进了 user 消息）、非 200 错误、非 http(s) 拒绝、onUsage 计费、权限闸门（needsPermission 返回 host）。
 - `Setup.tsx`：ink-testing — 无 key 渲染向导、输入回车后调 saveApiKey。
 - 删 repl 相关测试。
 - **集成验收**：`npm run build` 出 dist 且 `node dist/index.js` 起 TUI；`npm pack` 产物只含 dist+README+package.json（无 src/test）；首跑冒烟（无 key→向导→写 config→二次启动直进）；现有 210 测试不回归 + typecheck 干净。
