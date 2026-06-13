@@ -13,6 +13,7 @@ import { runLoop, type LoopDeps, type LoopEvent } from '../loop.js'
 import { allTools } from '../tools/index.js'
 import { todoWriteTool } from '../tools/todowrite.js'
 import { makeAgentTool } from '../tools/agent.js'
+import { makeWebFetchTool } from '../tools/webfetch.js'
 import { buildSystemPrompt } from '../prompt.js'
 import { loadSettings, saveSettings } from '../config.js'
 import { isDangerous, type Decision, type PermissionMode } from '../permissions.js'
@@ -266,6 +267,10 @@ export function createChatCore(opts: {
     ...allTools,
     todoWriteTool,
     makeAgentTool({
+      client: opts.client,
+      onUsage: (u, m) => { usageLog.push({ usage: u, model: m }); session.appendUsage(u, m) },
+    }),
+    makeWebFetchTool({
       client: opts.client,
       onUsage: (u, m) => { usageLog.push({ usage: u, model: m }); session.appendUsage(u, m) },
     }),

@@ -4,6 +4,7 @@ import { runLoop } from './loop.js'
 import { allTools } from './tools/index.js'
 import { todoWriteTool } from './tools/todowrite.js'
 import { makeAgentTool } from './tools/agent.js'
+import { makeWebFetchTool } from './tools/webfetch.js'
 import { buildSystemPrompt } from './prompt.js'
 import { loadSettings } from './config.js'
 import { TodoStore } from './todo.js'
@@ -46,7 +47,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
   ]
   const gen = runLoop(messages, {
     client: opts.client,
-    tools: [...allTools, todoWriteTool, makeAgentTool({ client: opts.client, onUsage: (u, _model) => addUsage(u) })],
+    tools: [...allTools, todoWriteTool, makeAgentTool({ client: opts.client, onUsage: (u, _model) => addUsage(u) }), makeWebFetchTool({ client: opts.client, onUsage: (u, _model) => addUsage(u) })],
     model,
     thinking: false,
     ctx,
