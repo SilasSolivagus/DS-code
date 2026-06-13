@@ -45,6 +45,14 @@ describe('buildSystemPrompt', () => {
     const p = buildSystemPrompt(mkdtempSync(path.join(tmpdir(), 'dc-')), mkdtempSync(path.join(tmpdir(), 'dc-home-')))
     expect(p).toContain('歧义')
     expect(p).toContain('tty')
-    expect(p).toContain('自己的终端')
+    expect(p).toContain('用户自己运行')
+  })
+
+  it('守则包含 P5 终点线交付三条：先验证能用 / 选可打开的介质 / 如实汇报', () => {
+    const p = buildSystemPrompt(mkdtempSync(path.join(tmpdir(), 'dc-')), mkdtempSync(path.join(tmpdir(), 'dc-home-')))
+    expect(p).toContain('终点线')      // 报告完成前先实际验证
+    expect(p).toContain('HTML')        // 优先选可打开/可运行的介质
+    expect(p).toContain('xdg-open')
+    expect(p).toContain('如实汇报')    // 诚实性条款
   })
 })
