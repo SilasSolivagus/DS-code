@@ -40,4 +40,11 @@ describe('buildSystemPrompt', () => {
     expect(p).toContain(root)
     expect(p).toContain('测试标记XYZ')
   })
+
+  it('守则包含歧义先确认与 Bash 无 tty 两条规则', () => {
+    const p = buildSystemPrompt(mkdtempSync(path.join(tmpdir(), 'dc-')), mkdtempSync(path.join(tmpdir(), 'dc-home-')))
+    expect(p).toContain('歧义')
+    expect(p).toContain('tty')
+    expect(p).toContain('自己的终端')
+  })
 })

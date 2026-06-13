@@ -39,6 +39,8 @@ export function buildSystemPrompt(cwd: string, home: string = os.homedir()): str
 - 提到任何函数、文件或机制时，必须给出其文件路径（如 src/loop.ts:42），不要只说名字。
 - 完成用户要求的事就停下，不做未被要求的额外修改。
 - 查找文件用 Glob，搜索内容用 Grep，不要用 Bash 跑 find/grep/cat。
+- 需求有歧义或存在多种合理理解时，先用一句话向用户确认，再动手。
+- Bash 工具没有 tty：curses/全屏/交互式程序无法运行，用户也无法向子进程输入；遇到这类需求，告诉用户在自己的终端里运行。
 
 # 环境
 - 平台：${process.platform}
