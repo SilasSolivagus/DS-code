@@ -111,14 +111,18 @@ TypeScript 类型检查：`tsc --noEmit` 无错误。✅
 
 ---
 
-## 待发布步骤（人工执行）
+## 发布结果 ✅ 已发布
 
-以下步骤**已验收通过，等待人工 go-ahead**：
+2026-06-14 **已发布 npm：`@silassolivagus/deepcode@0.6.0`**，命令 `deepcode`。
+端到端验证通过：`npm i -g @silassolivagus/deepcode` 全局安装 → `deepcode` 启动，
+欢迎页正确显示 `🐳 deepcode v0.6.0`（version.ts 在已发布 dist 中读对 package.json）。
 
-1. `npm version 0.6.0`（package.json 从 0.1.0 → 0.6.0）
-2. `git tag v0.6.0-m6`
-3. `npm login`（或确认 registry 凭据）
-4. `npm publish --access public`
+执行记录：
+1. bump 0.1.0 → 0.6.0 + 补 package.json `description` ✅
+2. tag `v0.6.0-m6`（annotated，接 m1–m5 序列）✅
+3. **包名**：无 scope 的 `ds-code` 被 npm 仿冒过滤器拦（与 `ts-node` 太像），改用 scoped `@silassolivagus/deepcode`（命令名仍 `deepcode`，bin 解耦）✅
+4. `npm publish --access public` ✅
+5. `npm i -g @silassolivagus/deepcode && deepcode` 验证通过 ✅
 
 ---
 
@@ -135,6 +139,6 @@ TypeScript 类型检查：`tsc --noEmit` 无错误。✅
 
 | 问题 | 优先级 |
 |------|--------|
-| `package.json` 缺 `description` 字段 | 发布前补填（npm registry 显示用） |
+| `package.json` 缺 `license` 字段 | 发布时 npm warn（未失败）；待用户定协议（MIT 等）后补 |
 | `WebFetch` 中 `SUB_MODEL` 常量与 `agent.ts` 重复 | 可选 DRY（低风险） |
 | `WebFetch` 截断分支未有单测 | 低风险，可补测 |
