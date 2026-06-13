@@ -6,13 +6,13 @@ import { Banner } from '../src/tui/components/Banner.js'
 import { SelectList } from '../src/tui/components/SelectList.js'
 
 describe('Banner', () => {
-  it('显示欢迎框：鲸鱼名称、/help 提示、cwd 与模型', () => {
+  it('显示双列欢迎框：鲸鱼名称、欢迎语、上手提示、cwd 与模型', () => {
     const f = render(<Banner cwd="/tmp/demo" model="deepseek-v4-flash" />).lastFrame()!
     expect(f).toContain('🐳 deepcode')
+    expect(f).toContain('欢迎')          // 欢迎回来/欢迎使用
+    expect(f).toContain('上手')          // 右列上手提示
     expect(f).toContain('/help')
-    expect(f).toContain('cwd:')
-    expect(f).toContain('/tmp/demo')
-    expect(f).toContain('模型:')
+    expect(f).toContain('/tmp/demo')     // cwd（无 cwd: 标签）
     expect(f).toContain('deepseek-v4-flash')
   })
 })
