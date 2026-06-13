@@ -35,6 +35,7 @@ export type ReducerAction =
   | LoopEvent & { type: 'tool_start' | 'tool_end' }
   | { type: 'turn_end'; usage: { prompt_tokens: number; completion_tokens: number; prompt_cache_hit_tokens: number }; totals?: { in: number; out: number; cost: number } }
   | { type: 'push'; item: TranscriptItem }
+  | { type: 'seal' }  // 关闭所有未完成的 assistant/reasoning 块（空文本块直接丢弃）
   | { type: 'clear' }
 
 /** 纯函数：永远返回新数组（React 状态纪律） */
@@ -62,11 +63,18 @@ export function transcriptReducer(state: TranscriptItem[], a: ReducerAction): Tr
         : it,
     )
   }
+  if (a.type === 'seal') {
+    // 关闭所有进行中的 assistant/reasoning 块；空文本块直接丢弃（避免跨 turn 合并残留）
+    return state
+      .map(it =>
+        (it.kind === 'assistant' || it.kind === 'reasoning') && !it.done ? { ...it, done: true } : it,
+      )
+      .filter(it => (it.kind === 'assistant' || it.kind === 'reasoning') ? it.text.length > 0 : true)
+  }
   if (a.type === 'turn_end') {
-    // 关闭所有进行中的 assistant/reasoning 块，并追加 usage 行
-    const next: TranscriptItem[] = state.map(it =>
-      (it.kind === 'assistant' || it.kind === 'reasoning') && !it.done ? { ...it, done: true } : it,
-    )
+    // 关闭所有进行中的 assistant/reasoning 块，并追加 usage 行（复用 seal 语义）
+    const sealed = transcriptReducer(state, { type: 'seal' })
+    const next: TranscriptItem[] = [...sealed]
     next.push({
       kind: 'usage',
       in: a.usage.prompt_tokens,
@@ -117,6 +125,7 @@ export function createChatCore(opts: {
   yolo: boolean
   cwd: string
   continueSession?: boolean
+  sessionDir?: string  // 测试注入：隔离 session 落盘目录，避免污染 ~/.deepcode/sessions
   onState: (s: ChatState) => void
 }): ChatCore {
   const settings = loadSettings()
@@ -200,12 +209,13 @@ export function createChatCore(opts: {
   }
 
   // 恢复（--continue）或新建会话（对齐 repl.ts 74-82）
-  const recovered = opts.continueSession ? listSessions(cwd)[0] : undefined
+  const sessionDir = opts.sessionDir  // undefined → newSession/listSessions 使用默认路径
+  const recovered = opts.continueSession ? listSessions(cwd, sessionDir)[0] : undefined
   if (recovered) {
     const turns = restoreSession(recovered.file)
     notice('info', `已恢复会话（${turns} 轮对话），继续写入 ${recovered.file}`)
   } else {
-    session = newSession({ cwd, model, thinking, permMode }, undefined)
+    session = newSession({ cwd, model, thinking, permMode }, sessionDir)
     session.appendMessage(messages[0]) // 持久化 system 消息
   }
 
@@ -323,6 +333,8 @@ export function createChatCore(opts: {
     } catch (e: any) {
       notice('error', `[错误] ${e?.message ?? e}`)
     } finally {
+      // 中断或异常后封闭所有悬空的 assistant/reasoning 块，防止下一轮 delta 追加进旧块（跨 turn 合并 bug）
+      dispatch({ type: 'seal' })
       // 本轮 loop 内部新增的 assistant/tool 消息补落盘 + fileState 快照
       for (const m of messages.slice(lenBefore)) session.appendMessage(m)
       session.appendFileState([...ctx.fileState])
@@ -384,7 +396,7 @@ export function createChatCore(opts: {
       todos.reset()
       compacted = false
       lastPromptTokens = 0
-      session = newSession({ cwd, model, thinking, permMode }, undefined)
+      session = newSession({ cwd, model, thinking, permMode }, sessionDir)
       session.appendMessage(messages[0])
       dispatch({ type: 'clear' })
       notice('info', '对话已清空，已开新会话文件（本会话花费累计保留）')
@@ -425,7 +437,12 @@ export function createChatCore(opts: {
   return {
     get state() { return state },
     send,
-    interrupt: () => abort.abort(), // 空闲时调用也安全：下一轮 runTurn 会换新 AbortController
+    interrupt: () => {
+      // 若权限弹窗挂起（pendingAsk），checkPermission 内的 ask Promise 永不 resolve，
+      // generator 永不返回，busy 永远 true——必须先拒绝掉再 abort，否则死锁。
+      if (pendingAsk) { const p = pendingAsk; pendingAsk = null; setState(); p.resolve('no') }
+      abort.abort()
+    },
     resolveAsk: (d: Decision) => {
       if (!pendingAsk) return
       const p = pendingAsk
@@ -433,7 +450,7 @@ export function createChatCore(opts: {
       setState()
       p.resolve(d)
     },
-    resumeList: () => listSessions(cwd).slice(0, 10).map(s => ({ file: s.file, preview: s.preview })),
+    resumeList: () => listSessions(cwd, sessionDir).slice(0, 10).map(s => ({ file: s.file, preview: s.preview })),
     resume: (file: string) => {
       if (busy) return
       const turns = restoreSession(file)

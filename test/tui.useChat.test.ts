@@ -1,5 +1,8 @@
 // test/tui.useChat.test.ts
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 
 const script: Array<{ deltas?: any[]; result: any }> = []
 vi.mock('../src/api.js', async orig => ({
@@ -17,7 +20,14 @@ vi.mock('../src/api.js', async orig => ({
 import { transcriptReducer, type TranscriptItem, createChatCore } from '../src/tui/useChat.js'
 
 const usage = { prompt_tokens: 50, completion_tokens: 20, prompt_cache_hit_tokens: 40 }
-beforeEach(() => { script.length = 0; vi.clearAllMocks() }) // 清调用计数：测试 2 断言 /cost /clear 零请求
+
+let sessionDir: string
+beforeEach(() => {
+  script.length = 0
+  vi.clearAllMocks()
+  // 每个测试独立的 session 目录，防止写入 ~/.deepcode/sessions
+  sessionDir = mkdtempSync(path.join(tmpdir(), 'deepcode-test-'))
+})
 
 describe('transcriptReducer', () => {
   it('text delta 追加到进行中 assistant 块；reasoning delta 进思考块', () => {
@@ -43,6 +53,19 @@ describe('transcriptReducer', () => {
     expect(s.every(i => i.kind !== 'assistant' || i.done)).toBe(true)
     expect(s.at(-1)!.kind).toBe('usage')
   })
+
+  it('seal 关闭所有进行中块并丢弃空文本块', () => {
+    // 一个有内容的进行中块 + 一个空的进行中块
+    let s = transcriptReducer([], { type: 'delta', delta: '内容', reasoning: false })
+    s = [...s, { kind: 'assistant' as const, text: '', done: false }]
+    s = transcriptReducer(s, { type: 'seal' })
+    // 有内容的块应保留且 done=true
+    expect(s.some(i => i.kind === 'assistant' && (i as any).done && (i as any).text === '内容')).toBe(true)
+    // 空文本块应被丢弃
+    expect(s.filter(i => i.kind === 'assistant' && (i as any).text === '').length).toBe(0)
+    // 所有 assistant 块都 done
+    expect(s.every(i => i.kind !== 'assistant' || (i as any).done)).toBe(true)
+  })
 })
 
 describe('createChatCore.runTurn', () => {
@@ -51,7 +74,7 @@ describe('createChatCore.runTurn', () => {
       { deltas: ['好', '的'], result: { content: '好的', toolCalls: [], usage, finishReason: 'stop' } },
     )
     const frames: TranscriptItem[][] = []
-    const core = createChatCore({ client: {} as any, yolo: true, cwd: '/tmp', onState: s => frames.push(s.transcript) })
+    const core = createChatCore({ client: {} as any, yolo: true, cwd: '/tmp', sessionDir, onState: s => frames.push(s.transcript) })
     await core.send('随便说点')
     const last = frames.at(-1)!
     expect(last.some(i => i.kind === 'user' && i.text === '随便说点')).toBe(true)
@@ -61,7 +84,7 @@ describe('createChatCore.runTurn', () => {
   })
 
   it('斜杠命令 /cost /clear 走本地语义不发请求', async () => {
-    const core = createChatCore({ client: {} as any, yolo: true, cwd: '/tmp', onState: () => {} })
+    const core = createChatCore({ client: {} as any, yolo: true, cwd: '/tmp', sessionDir, onState: () => {} })
     await core.send('/cost')
     expect(core.state.transcript.some(i => i.kind === 'notice' && i.text.includes('本会话'))).toBe(true)
     await core.send('/clear')
@@ -74,10 +97,130 @@ describe('createChatCore.runTurn', () => {
       deltas: ['长', '回', '答'],
       result: { content: '长回答', toolCalls: [], usage, finishReason: 'stop' },
     })
-    const core = createChatCore({ client: {} as any, yolo: true, cwd: '/tmp', onState: () => {} })
+    const core = createChatCore({ client: {} as any, yolo: true, cwd: '/tmp', sessionDir, onState: () => {} })
     const p = core.send('说个长的')
     core.interrupt() // chatStream mock 不感知 signal——这里验证 interrupt 不抛、状态机不卡死
     await p
     expect(core.state.busy).toBe(false)
+  })
+
+  // ── Fix 4a: ask-chain ──────────────────────────────────────────────────────
+  it('ask-chain: 权限拒绝后工具结果含拒绝原因，最终 busy=false', async () => {
+    // 第一次 chatStream: 返回 Bash 工具调用
+    script.push({
+      deltas: [],
+      result: {
+        content: '',
+        toolCalls: [{ id: 'tc1', name: 'Bash', args: '{"command":"echo hello"}' }],
+        usage,
+        finishReason: 'tool_calls',
+      },
+    })
+    // 第二次 chatStream: 模型收到拒绝结果后的回复（loop 内第二轮）
+    script.push({
+      deltas: ['好的，已取消。'],
+      result: { content: '好的，已取消。', toolCalls: [], usage, finishReason: 'stop' },
+    })
+
+    const states: any[] = []
+    // 非 yolo 模式，Bash 工具需要权限确认
+    const core = createChatCore({ client: {} as any, yolo: false, cwd: '/tmp', sessionDir, onState: s => states.push(s) })
+
+    // 等待 pendingAsk 被设置（轮询 onState 帧）
+    const pendingAskSet = new Promise<void>(resolve => {
+      const unsub = core.subscribe(() => {
+        if (core.state.pendingAsk) { unsub(); resolve() }
+      })
+    })
+
+    const sendP = core.send('请执行命令')
+    await pendingAskSet
+
+    // 确认 pendingAsk 存在
+    expect(core.state.pendingAsk).not.toBeNull()
+    expect(core.state.pendingAsk!.toolName).toBe('Bash')
+
+    // 拒绝操作
+    core.resolveAsk('no')
+
+    await sendP
+    expect(core.state.busy).toBe(false)
+
+    // transcript 中的工具 end 项 preview 应包含拒绝理由
+    const toolItems = core.state.transcript.filter(i => i.kind === 'tool') as any[]
+    expect(toolItems.length).toBeGreaterThan(0)
+    expect(toolItems.some(t => t.preview?.includes('用户拒绝了此操作'))).toBe(true)
+  })
+
+  // ── Fix 4b: interrupt-during-ask (C1 regression test) ────────────────────
+  it('interrupt-during-ask: interrupt 时 pendingAsk 不为 null，send Promise 正常 resolve', async () => {
+    // 第一次 chatStream: 返回 Bash 工具调用，触发权限弹窗
+    script.push({
+      deltas: [],
+      result: {
+        content: '',
+        toolCalls: [{ id: 'tc2', name: 'Bash', args: '{"command":"rm -rf /"}' }],
+        usage,
+        finishReason: 'tool_calls',
+      },
+    })
+    // 注意：interrupt 后 loop 因 abort 提前返回，不需要第二个 scene
+
+    const core = createChatCore({ client: {} as any, yolo: false, cwd: '/tmp', sessionDir, onState: () => {} })
+
+    // 等待 pendingAsk 被设置
+    const pendingAskSet = new Promise<void>(resolve => {
+      const unsub = core.subscribe(() => {
+        if (core.state.pendingAsk) { unsub(); resolve() }
+      })
+    })
+
+    const sendP = core.send('危险操作')
+    await pendingAskSet
+
+    // pendingAsk 此时非 null，这是 C1 deadlock 场景
+    expect(core.state.pendingAsk).not.toBeNull()
+
+    // interrupt 应同时解除 pendingAsk 并 abort（Fix 1 防止死锁）
+    core.interrupt()
+
+    // send Promise 必须 resolve（没有 Fix 1 时此处会永远 hang）
+    await sendP
+
+    expect(core.state.busy).toBe(false)
+    expect(core.state.pendingAsk).toBeNull()
+  })
+
+  // ── Fix 4c: seal — chatStream 抛出时没有 done=false 残留块 ─────────────────
+  it('seal: chatStream 抛出后无 done=false 残留块，第二次回复为独立条目', async () => {
+    // 第一次：无 scene → chatStream 抛出 'script exhausted'
+    // 不推任何 scene
+
+    const core = createChatCore({ client: {} as any, yolo: true, cwd: '/tmp', sessionDir, onState: () => {} })
+
+    await core.send('第一次（会抛出）')
+
+    // 应有 error notice
+    expect(core.state.transcript.some(i => i.kind === 'notice' && (i as any).level === 'error')).toBe(true)
+    // 不应有任何 done=false 的 assistant/reasoning 块
+    expect(core.state.transcript.some(i => (i.kind === 'assistant' || i.kind === 'reasoning') && !(i as any).done)).toBe(false)
+
+    // 记录当前 assistant 块数量
+    const assistantCountBefore = core.state.transcript.filter(i => i.kind === 'assistant').length
+
+    // 第二次：正常场景
+    script.push({
+      deltas: ['新的回复'],
+      result: { content: '新的回复', toolCalls: [], usage, finishReason: 'stop' },
+    })
+    await core.send('第二次（正常）')
+
+    // 新的 assistant 块数量应增加（独立的新块，不是追加到旧块）
+    const assistantCountAfter = core.state.transcript.filter(i => i.kind === 'assistant').length
+    expect(assistantCountAfter).toBeGreaterThan(assistantCountBefore)
+
+    // 第二次回复的内容不应混入第一次的内容
+    const lastAssistant = core.state.transcript.filter(i => i.kind === 'assistant').at(-1) as any
+    expect(lastAssistant.text).toBe('新的回复')
   })
 })
