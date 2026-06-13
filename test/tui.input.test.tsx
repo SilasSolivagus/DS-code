@@ -13,7 +13,7 @@ describe('InputBox', () => {
     const r = render(<InputBox onSubmit={noop} onInterrupt={noop} history={[]} busy={false} />)
     await delay()
     expect(r.lastFrame()).toContain('随便问点什么…')
-    expect(r.lastFrame()).toContain('>')
+    expect(r.lastFrame()).toContain('❯')
     expect(r.lastFrame()).toContain('? 查看快捷键')
     r.stdin.write('你好')
     expect(r.lastFrame()).toContain('你好')
