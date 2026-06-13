@@ -137,6 +137,8 @@ export interface ChatState {
   pendingAsk: PendingAsk | null
   usageLog: UsageRecord[]
   lastTokPerSec: number | null
+  turnStartAt: number | null // 当前轮开始时间戳（spinner 计算耗时秒数；空闲为 null）
+  turnOutTokens: number      // 当前轮累计输出 token（spinner 实时显示；流式估算，turn 边界用真实值校准）
   sessionCost(): number
   cacheHitRate(): number // usageLog 累计 hit/prompt，DeepSeek 状态行核心指标
 }
@@ -191,6 +193,8 @@ export function createChatCore(opts: {
   let busy = false
   let pendingAsk: PendingAsk | null = null
   let lastTokPerSec: number | null = null
+  let turnStartAt: number | null = null
+  let turnOutTokens = 0
 
   const sessionCost = () =>
     usageLog.reduce((s, u) => s + costUSD(u.model, u.usage.prompt_tokens, u.usage.prompt_cache_hit_tokens, u.usage.completion_tokens), 0)
@@ -202,7 +206,7 @@ export function createChatCore(opts: {
   // 所有状态变更走 setState：换新快照对象 → onState 回调 + 订阅者通知
   const listeners = new Set<() => void>()
   const snap = (): ChatState => ({
-    transcript, busy, model, thinking, permMode, pendingAsk, usageLog, lastTokPerSec, sessionCost, cacheHitRate,
+    transcript, busy, model, thinking, permMode, pendingAsk, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, sessionCost, cacheHitRate,
   })
   let state = snap()
   const setState = (): void => {
@@ -292,6 +296,9 @@ export function createChatCore(opts: {
   /** 非斜杠输入：边界 reminders → user 消息落盘 → runLoop 驱动 →落盘 + 自动 compact（对齐 repl.ts 247-335） */
   const runTurn = async (displayLine: string, userText: string): Promise<void> => {
     busy = true
+    turnStartAt = Date.now()
+    turnOutTokens = 0
+    let sendOutTokens = 0 // 本次 send 累计真实输出 token（每个 turn_end 校准 turnOutTokens）
     // 用户消息边界提醒：compact 一次性提示 + fileState 外部修改检测
     const boundary: string[] = []
     if (compacted) {
@@ -344,6 +351,8 @@ export function createChatCore(opts: {
         const ev = step.value
         if (ev.type === 'text') {
           if (firstDeltaAt === null) firstDeltaAt = Date.now()
+          // spinner 实时输出 token 估算（非思考流；中文偏低估，仅作动态观感）
+          if (!ev.reasoning) turnOutTokens += Math.ceil(ev.delta.length / 3)
           dispatch({ type: 'delta', delta: ev.delta, reasoning: !!ev.reasoning })
         } else if (ev.type === 'tool_start' || ev.type === 'tool_end') {
           dispatch(ev)
@@ -351,6 +360,9 @@ export function createChatCore(opts: {
           usageLog.push({ usage: ev.usage, model })
           session.appendUsage(ev.usage, model)
           lastPromptTokens = ev.usage.prompt_tokens
+          // turn 边界用真实累计输出 token 校准估算值（覆盖本 turn 期间的粗估）
+          sendOutTokens += ev.usage.completion_tokens
+          turnOutTokens = sendOutTokens
           if (firstDeltaAt !== null) {
             lastTokPerSec = ev.usage.completion_tokens / Math.max((Date.now() - firstDeltaAt) / 1000, 0.001)
             firstDeltaAt = null
@@ -381,6 +393,7 @@ export function createChatCore(opts: {
       try { await doCompact() } catch (e: any) { notice('error', `[自动 compact 失败，将在下轮重试] ${e?.message ?? e}`) }
     }
     busy = false
+    turnStartAt = null
     setState()
   }
 

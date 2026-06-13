@@ -69,6 +69,22 @@ describe('transcriptReducer', () => {
 })
 
 describe('createChatCore.runTurn', () => {
+  it('初始 state 含 turnStartAt=null、turnOutTokens=0（spinner 数据契约）', () => {
+    const core = createChatCore({ client: {} as any, yolo: true, cwd: '/tmp', sessionDir, onState: () => {} })
+    expect(core.state.turnStartAt).toBeNull()
+    expect(core.state.turnOutTokens).toBe(0)
+  })
+
+  it('一轮结束后 turnStartAt 复位为 null，turnOutTokens 为真实输出 token', async () => {
+    script.push(
+      { deltas: ['好', '的'], result: { content: '好的', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    const core = createChatCore({ client: {} as any, yolo: true, cwd: '/tmp', sessionDir, onState: () => {} })
+    await core.send('随便说点')
+    expect(core.state.turnStartAt).toBeNull()
+    expect(core.state.turnOutTokens).toBe(usage.completion_tokens)
+  })
+
   it('完整一轮：脚本驱动事件流，状态可被订阅者观察，usage 落 usageLog', async () => {
     script.push(
       { deltas: ['好', '的'], result: { content: '好的', toolCalls: [], usage, finishReason: 'stop' } },
