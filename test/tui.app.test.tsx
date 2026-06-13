@@ -110,7 +110,7 @@ describe('App 集成', () => {
     r.stdin.write('问')
     r.stdin.write('\r')
     await vi.waitFor(() => expect(r.lastFrame()).toContain('答'), { timeout: 5000 })
-    expect(r.lastFrame()).toContain('缓存命中')
+    expect(r.lastFrame()).toContain('tokens')  // CC 式精简 usage 行（本轮输出 token）
   })
 
   it('输入 "/" 浮出补全菜单', async () => {

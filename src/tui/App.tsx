@@ -194,7 +194,8 @@ export function App(props: {
 
   return (
     <Box flexDirection="column">
-      <Banner cwd={props.cwd} model={state.model} />
+      {/* 欢迎框只在对话为空（启动）时显示；发出第一条消息后即隐去，不再夹在历史与输入框之间（仿 CC 滚走） */}
+      {state.transcript.length === 0 && <Banner cwd={props.cwd} model={state.model} />}
       <Transcript items={state.transcript} />
       {state.pendingAsk
         ? <PermissionDialog ask={state.pendingAsk} onDecide={d => core.resolveAsk(d)} />

@@ -53,11 +53,12 @@ describe('Transcript', () => {
     expect(f).not.toContain('第二行')   // 折叠
   })
 
-  it('usage 行渲染入/缓存/出/累计', () => {
+  it('usage 行 CC 式精简：本轮输出 token + 累计花费', () => {
     const items: TranscriptItem[] = [{ kind: 'usage', in: 100, hit: 80, out: 9, totalIn: 100, totalOut: 9, cost: 0.0001 }]
     const f = render(<Transcript items={items} />).lastFrame()!
-    expect(f).toContain('100')
-    expect(f).toContain('80')
+    expect(f).toContain('9 tokens')
+    expect(f).toContain('$0.0001')
+    expect(f).not.toContain('缓存命中')  // 详细信息移到底部 footer
   })
 
   // 回归测试：前导文本 + 工具调用场景下 Static done-list 严格追加
