@@ -46,6 +46,13 @@ describe('buildPreview', () => {
     }
   })
 
+  it('C1 单字节 CSI（\\x9b）也被剥除', () => {
+    const p = buildPreview('Bash', JSON.stringify({ command: 'ls\x9b2K' }))
+    for (const line of p.lines) {
+      expect(line.text).not.toMatch(/\x9b/)
+    }
+  })
+
   it('Edit new_string 含 $& 字面量：+ 行原样显示 pre-$&-post', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'dp-'))
     const f = path.join(dir, 'b.ts')
@@ -122,5 +129,19 @@ describe('PermissionDialog', () => {
     await delay()
     r.stdin.write('\x1b')
     expect(onDecide).toHaveBeenCalledWith('no')
+  })
+  it('换新 ask 重渲染（组件不卸载）时选中位置重置回"允许"', async () => {
+    const onDecide = vi.fn()
+    const ask1 = { ...base, resolve: onDecide }
+    const r = render(<PermissionDialog ask={ask1} onDecide={onDecide} />)
+    await delay()
+    r.stdin.write('\x1b[B')
+    await delay()
+    expect(r.lastFrame()).toContain('❯ 总是允许')
+    const ask2 = { ...base, desc: '{"file_path":"/tmp/y","old_string":"c","new_string":"d"}', resolve: onDecide }
+    r.rerender(<PermissionDialog ask={ask2} onDecide={onDecide} />)
+    await delay()
+    expect(r.lastFrame()).toContain('❯ 允许')
+    expect(r.lastFrame()).not.toContain('❯ 总是允许')
   })
 })

@@ -1,6 +1,6 @@
 // src/tui/components/PermissionDialog.tsx
 // 权限确认弹窗：accent 边框面板，diff 预览，高危警告，CC 式 ↑↓+Enter 方向键菜单（y/n/a 快捷键保留）。
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Box, Text, useInput } from 'ink'
 import { T } from '../theme.js'
 import { buildPreview } from '../diffPreview.js'
@@ -20,6 +20,10 @@ export function PermissionDialog(props: {
   const { ask, onDecide } = props
   const preview = buildPreview(ask.toolName, ask.desc)
   const [idx, setIdx] = useState(0)
+
+  // 连续两个弹窗间组件可能不卸载（resolve→下一个 ask 仅隔一个微任务），
+  // 选中位置必须随 ask 重置，否则上一个弹窗选到"总是允许"后快速 Enter 会误授下一个工具。
+  useEffect(() => { setIdx(0) }, [ask])
 
   useInput((input, key) => {
     if (key.upArrow) { setIdx(i => Math.max(0, i - 1)); return }

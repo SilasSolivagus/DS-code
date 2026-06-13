@@ -4,4 +4,5 @@
 // 攻击面有二：① 权限弹窗中模型生成参数嵌入 \x1b[2K\r，可在"批准 ls"后视觉上显示成
 // "批准 rm -rf"的幻象；② 工具结果预览中全屏程序输出的 \x1b[?1049h 等序列直接灌进画面。
 // 保留 \t（\x09）；\n（\x0a）也会被剥除，调用方需先按行 split 再清洗。
-export const sanitize = (s: string) => s.replace(/[\x00-\x08\x0a-\x1f\x7f]/g, '')
+// C1 区（\x80-\x9f）一并剥除：\x9b 是单字节 CSI，部分终端（VTE/xterm）即使 UTF-8 模式也会响应。
+export const sanitize = (s: string) => s.replace(/[\x00-\x08\x0a-\x1f\x7f-\x9f]/g, '')
