@@ -8,6 +8,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { Box, Text } from 'ink'
 import { T } from '../theme.js'
+import { VERSION } from '../../version.js'
 
 // 鲸鱼吉祥物（像素块）：头朝右，左侧尾鳍 ◀，头顶喷水，圆身，眼睛用负空间（块中留空）透出
 const WHALE = [
@@ -49,7 +50,7 @@ export function Banner(p: { cwd: string; model: string }) {
   try { user = os.userInfo().username } catch { /* 兜底空 */ }
 
   const left: Seg[] = [
-    { text: '🐳 deepcode', color: T.accent, bold: true },
+    { text: `🐳 deepcode v${VERSION}`, color: T.accent, bold: true },
     { text: user ? `欢迎回来，${user}！` : '欢迎使用 deepcode！', bold: true },
     { text: '' },
     ...WHALE.map(l => ({ text: l, color: T.accent, whale: true })),

@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // src/index.ts
 import { createClient } from './api.js'
 
