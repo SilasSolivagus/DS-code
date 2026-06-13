@@ -56,4 +56,13 @@ describe('WebFetch', () => {
     const out = await tool.call({ url: 'https://example.com', prompt: 'q' }, ctx)
     expect(out).toContain('404')
   })
+
+  it('超长内容截断到 30k 并标注', async () => {
+    fetchMock.mockResolvedValue(resp('a'.repeat(40_000), 'text/plain'))
+    await tool.call({ url: 'https://example.com', prompt: 'q' }, ctx)
+    const user = lastMessages.find(m => m.role === 'user')!
+    expect(user.content).toContain('内容已截断')
+    // 正文被截到 ~30k（未截则约 40k）；用长度上界判断，避免数 URL 里的字符
+    expect(user.content.length).toBeLessThan(31_000)
+  })
 })

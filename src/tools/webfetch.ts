@@ -7,8 +7,8 @@ import { fetch as undiciFetch, ProxyAgent } from 'undici'
 import type { Tool, ToolContext } from './types.js'
 import type { Usage } from '../api.js'
 import { runLoop } from '../loop.js'
+import { SUB_MODEL } from './constants.js'
 
-const SUB_MODEL = 'deepseek-v4-flash'
 const MAX_CHARS = 30_000
 
 const schema = z.object({
@@ -32,7 +32,9 @@ export function makeWebFetchTool(deps: { client: OpenAI; onUsage: (u: Usage, mod
     description: '抓取一个 http(s) URL 的内容，并按 prompt 从中提取或总结信息后返回（用于读取网页/在线文档）。',
     inputSchema: schema,
     isReadOnly: false,
-    needsPermission: input => `WebFetch ${(() => { try { return new URL(input.url).host } catch { return input.url } })()}`,
+    needsPermission: input => {
+      try { return `WebFetch ${new URL(input.url).host}` } catch { return `WebFetch ${input.url}` }
+    },
     async call(input, ctx) {
       if (!/^https?:\/\//i.test(input.url)) return '错误：仅支持 http(s) URL'
       let body: string, ctype: string

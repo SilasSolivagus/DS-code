@@ -7,13 +7,12 @@ import { runLoop } from '../loop.js'
 import { readTool } from './read.js'
 import { globTool } from './glob.js'
 import { grepTool } from './grep.js'
+import { SUB_MODEL } from './constants.js'
 
 const schema = z.object({
   description: z.string().describe('任务的一句话描述（显示给用户）'),
   prompt: z.string().describe('给子代理的完整任务指令。子代理看不到当前对话，指令必须自包含（含路径、要找什么、期望输出）'),
 })
-
-const SUB_MODEL = 'deepseek-v4-flash'
 
 const SUB_SYSTEM = `你是一个只读探查子代理，在终端代码库中工作。可用工具：Read/Glob/Grep。
 你的最终回复会作为工具结果原文返回给主代理：只输出调查结论与证据（带文件路径与行号），不要寒暄、不要提问。

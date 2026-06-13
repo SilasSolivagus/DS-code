@@ -1,7 +1,7 @@
 // src/tui/useChat.ts
-// repl.ts 状态机的 React 化（repl.ts 冻结不动，语义逐条对齐）。三层：
+// 会话状态机的 React 实现。三层：
 //  1. transcriptReducer：纯函数，LoopEvent/本地动作 → TranscriptItem[]（可独立测试）
-//  2. createChatCore：与 React 无关的会话核心（session 持久化/compact/斜杠命令/usage——逻辑对齐 repl.ts，
+//  2. createChatCore：与 React 无关的会话核心（session 持久化/compact/斜杠命令/usage，
 //     权限 ask 通过 pendingAsk 状态暴露给 UI，UI 用 resolveAsk 回答）
 //  3. useChat：薄 React 包装（useSyncExternalStore 订阅 core）
 import { useSyncExternalStore } from 'react'
@@ -147,7 +147,7 @@ export interface ChatState {
 
 export interface ChatCore {
   state: ChatState
-  send(line: string): Promise<void> // 斜杠命令本地处理；其余走 runLoop（含边界 reminders、落盘、自动 compact——逐项对齐 repl.ts 157-335）
+  send(line: string): Promise<void> // 斜杠命令本地处理；其余走 runLoop（含边界 reminders、落盘、自动 compact）
   interrupt(): void // Esc
   resolveAsk(d: Decision): void // 权限弹窗回答
   resumeList(): { file: string; preview: string }[]
@@ -252,7 +252,7 @@ export function createChatCore(opts: {
     return loaded.messages.filter(m => m.role === 'user').length
   }
 
-  // 恢复（--continue）或新建会话（对齐 repl.ts 74-82）
+  // 恢复（--continue）或新建会话
   const sessionDir = opts.sessionDir  // undefined → newSession/listSessions 使用默认路径
   const recovered = opts.continueSession ? listSessions(cwd, sessionDir)[0] : undefined
   if (recovered) {
@@ -276,7 +276,7 @@ export function createChatCore(opts: {
     }),
   ]
 
-  /** compact：总结→重建消息→落盘 compact 记录与新前缀。失败不破坏现场（messages 仅在成功后替换）。（对齐 repl.ts 94-109） */
+  /** compact：总结→重建消息→落盘 compact 记录与新前缀。失败不破坏现场（messages 仅在成功后替换）。 */
   const doCompact = async (): Promise<void> => {
     notice('info', '[compact 总结中…]')
     const ac = new AbortController()
@@ -301,7 +301,7 @@ export function createChatCore(opts: {
       setState()
     })
 
-  /** 非斜杠输入：边界 reminders → user 消息落盘 → runLoop 驱动 →落盘 + 自动 compact（对齐 repl.ts 247-335） */
+  /** 非斜杠输入：边界 reminders → user 消息落盘 → runLoop 驱动 →落盘 + 自动 compact */
   const runTurn = async (displayLine: string, userText: string): Promise<void> => {
     busy = true
     turnStartAt = Date.now()
@@ -405,7 +405,7 @@ export function createChatCore(opts: {
     setState()
   }
 
-  /** 斜杠命令本地处理（对齐 repl.ts 161-245；/resume 由 UI 走 resumeList/resume，/exit 归 UI） */
+  /** 斜杠命令本地处理（/resume 由 UI 走 resumeList/resume，/exit 归 UI） */
   const send = async (line: string): Promise<void> => {
     line = line.trim()
     if (!line || busy) return
