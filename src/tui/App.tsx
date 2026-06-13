@@ -4,9 +4,6 @@
 // 补全菜单隐藏策略：onPick 后设置 justPickedValue，若 draft === justPickedValue 则不展示菜单；用户再输入时 draft 变化即恢复。
 import React, { useMemo, useState, useRef, useEffect } from 'react'
 import { Box, Text, useApp, useInput } from 'ink'
-import fs from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import path from 'node:path'
 import { createChatCore, useChat } from './useChat.js'
 import { computeSuggestions } from './suggest.js'
 import { Banner } from './components/Banner.js'
@@ -15,14 +12,7 @@ import { InputBox } from './components/InputBox.js'
 import { Suggestions } from './components/Suggestions.js'
 import { PermissionDialog } from './components/PermissionDialog.js'
 import { SelectList } from './components/SelectList.js'
-
-// 从 package.json 读取版本号（模块级，只读一次）
-let _version = '0.5.0'
-try {
-  const pkgPath = path.resolve(fileURLToPath(import.meta.url), '../../..', 'package.json')
-  const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as { version: string }
-  _version = pkg.version
-} catch { /* 保持默认值 */ }
+import { Spinner } from './components/Spinner.js'
 
 export function App(props: {
   client: any
@@ -127,6 +117,7 @@ export function App(props: {
               onCancel={() => setResumeMode(false)}
             />
           : <>
+              {state.busy && <Spinner turnStartAt={state.turnStartAt} turnOutTokens={state.turnOutTokens} />}
               {suggestionsActive && (
                 <Suggestions items={suggestions} onPick={handlePick} />
               )}
