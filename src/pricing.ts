@@ -8,9 +8,11 @@ const PRICES: Record<string, { hit: number; miss: number; out: number }> = {
 /**
  * 计算一次调用的美元成本。
  * promptTokens 是总输入；cacheHit 是其中命中前缀缓存的部分；其余按未命中计价。
+ * 未知模型（含自定义 baseURL 接入的第三方模型）返回 0，不做错误猜测。
  */
 export function costUSD(model: string, promptTokens: number, cacheHit: number, output: number): number {
-  const p = PRICES[model] ?? PRICES['deepseek-v4-flash']
+  const p = PRICES[model]
+  if (!p) return 0
   const miss = Math.max(0, promptTokens - cacheHit)
   return (cacheHit * p.hit + miss * p.miss + output * p.out) / 1_000_000
 }

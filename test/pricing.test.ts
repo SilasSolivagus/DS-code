@@ -11,8 +11,9 @@ describe('costUSD', () => {
     expect(costUSD('deepseek-v4-pro', 1000, 0, 1000)).toBeCloseTo(0.001305, 8)
   })
 
-  it('未知模型回退到 flash 费率，不抛错', () => {
-    expect(costUSD('whatever', 1000, 0, 0)).toBeCloseTo(1000 / 1e6 * 0.14, 8)
+  it('未知模型返回 0（非 deepseek 系列计价按 0 估算），不抛错', () => {
+    expect(costUSD('whatever', 1000, 0, 0)).toBe(0)
+    expect(costUSD('gpt-4o', 10000, 5000, 500)).toBe(0)
   })
 
   it('全命中时输入近乎免费', () => {

@@ -51,4 +51,12 @@ describe('settings 读写 round-trip', () => {
     expect(s.costWarnUSD).toBe(2) // 缺省字段回落默认
     expect(s.permissions.allow).toEqual([])
   })
+
+  it('settings 支持 model/baseURL 自定义，缺省为 undefined', () => {
+    const s = loadSettings()
+    expect('model' in s).toBe(true)
+    expect('baseURL' in s).toBe(true)
+    expect(s.model).toBeUndefined()
+    expect(s.baseURL).toBeUndefined()
+  })
 })

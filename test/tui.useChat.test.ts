@@ -191,6 +191,26 @@ describe('createChatCore.runTurn', () => {
     expect(core.state.pendingAsk).toBeNull()
   })
 
+  // ── Task 10: /model 参数化 ────────────────────────────────────────────────
+  it('/model <名> 切换到任意模型，notice 含 已切换到；非 deepseek 加计价提示', async () => {
+    const core = createChatCore({ client: {} as any, yolo: true, cwd: '/tmp', sessionDir, onState: () => {} })
+    await core.send('/model my-custom-model')
+    expect(core.state.model).toBe('my-custom-model')
+    const notices = core.state.transcript.filter(i => i.kind === 'notice') as any[]
+    expect(notices.some(n => n.text.includes('已切换到') && n.text.includes('my-custom-model'))).toBe(true)
+    expect(notices.some(n => n.text.includes('非 deepseek 系列计价按 0 估算'))).toBe(true)
+  })
+
+  it('/model 无参从自定义模型切回 flash', async () => {
+    const core = createChatCore({ client: {} as any, yolo: true, cwd: '/tmp', sessionDir, onState: () => {} })
+    // 先切到自定义模型
+    await core.send('/model my-custom-model')
+    expect(core.state.model).toBe('my-custom-model')
+    // 裸 /model 应切回 flash（从自定义模型落到 flash）
+    await core.send('/model')
+    expect(core.state.model).toBe('deepseek-v4-flash')
+  })
+
   // ── Fix 4c: seal — chatStream 抛出时没有 done=false 残留块 ─────────────────
   it('seal: chatStream 抛出后无 done=false 残留块，第二次回复为独立条目', async () => {
     // 第一次：无 scene → chatStream 抛出 'script exhausted'

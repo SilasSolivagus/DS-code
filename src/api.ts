@@ -1,5 +1,6 @@
 import OpenAI from 'openai'
 import { fetch as undiciFetch, ProxyAgent } from 'undici'
+import { loadSettings } from './config.js'
 
 export interface Usage {
   prompt_tokens: number
@@ -90,9 +91,10 @@ export function createClient(): OpenAI {
   // Node fetch 不读代理环境变量；显式接入，否则需走代理的网络环境下请求会超时
   const proxy =
     process.env.https_proxy ?? process.env.HTTPS_PROXY ?? process.env.http_proxy ?? process.env.HTTP_PROXY
+  const baseURL = loadSettings().baseURL ?? 'https://api.deepseek.com'
   return new OpenAI({
     apiKey,
-    baseURL: 'https://api.deepseek.com',
+    baseURL,
     maxRetries: 0, // 重试统一由 withRetry 负责，避免与 SDK 自带重试叠加
     // dispatcher 必须配同一 undici 包的 fetch，混用 Node 内置 fetch 会 InvalidArgumentError
     ...(proxy ? { fetch: undiciFetch as any, fetchOptions: { dispatcher: new ProxyAgent(proxy) } as any } : {}),

@@ -167,7 +167,7 @@ export function createChatCore(opts: {
   const settings = loadSettings()
   let cwd = opts.cwd
   let abort = new AbortController()
-  let model = 'deepseek-v4-flash'
+  let model = settings.model ?? 'deepseek-v4-flash'
   let thinking = false
   let permMode: PermissionMode = opts.yolo ? 'yolo' : 'default'
   const todos = new TodoStore()
@@ -407,10 +407,21 @@ export function createChatCore(opts: {
       notice('info', HELP_TEXT)
       return
     }
-    if (line === '/model') {
-      model = model === 'deepseek-v4-flash' ? 'deepseek-v4-pro' : 'deepseek-v4-flash'
-      session.appendMeta({ cwd, model, thinking, permMode })
-      notice('info', `已切换到 ${model}`)
+    if (line === '/model' || line.startsWith('/model ')) {
+      const arg = line.slice('/model'.length).trim()
+      if (arg) {
+        // /model <名>：切换到任意指定模型（配合自定义 baseURL 可接 OpenAI 兼容端点）
+        model = arg
+        const isDeepSeek = arg.startsWith('deepseek')
+        const suffix = isDeepSeek ? '' : '（非 deepseek 系列计价按 0 估算）'
+        session.appendMeta({ cwd, model, thinking, permMode })
+        notice('info', `已切换到 ${model}${suffix}`)
+      } else {
+        // /model 无参：flash↔pro 轮换（从自定义模型返回时，落到 flash）
+        model = model === 'deepseek-v4-flash' ? 'deepseek-v4-pro' : 'deepseek-v4-flash'
+        session.appendMeta({ cwd, model, thinking, permMode })
+        notice('info', `已切换到 ${model}`)
+      }
       return
     }
     if (line === '/think') {
