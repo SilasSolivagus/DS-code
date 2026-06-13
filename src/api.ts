@@ -86,8 +86,8 @@ export async function withRetry<T>(
 }
 
 export function createClient(): OpenAI {
-  const apiKey = process.env.DEEPSEEK_API_KEY
-  if (!apiKey) throw new Error('缺少 DEEPSEEK_API_KEY 环境变量。请先 export DEEPSEEK_API_KEY=sk-...')
+  const apiKey = process.env.DEEPSEEK_API_KEY ?? loadSettings().apiKey
+  if (!apiKey) throw new Error('缺少 DeepSeek API key。运行 deepcode 进入首跑向导配置，或 export DEEPSEEK_API_KEY=sk-...')
   // Node fetch 不读代理环境变量；显式接入，否则需走代理的网络环境下请求会超时
   const proxy =
     process.env.https_proxy ?? process.env.HTTPS_PROXY ?? process.env.http_proxy ?? process.env.HTTP_PROXY

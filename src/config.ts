@@ -13,6 +13,8 @@ export interface Settings {
   model?: string
   /** 自定义 API baseURL（undefined = https://api.deepseek.com） */
   baseURL?: string
+  /** DeepSeek API key（首跑向导写入；env DEEPSEEK_API_KEY 优先级更高） */
+  apiKey?: string
 }
 
 const DIR = path.join(os.homedir(), '.deepcode')
@@ -31,10 +33,22 @@ export function loadSettings(): Settings {
     costWarnUSD: raw?.costWarnUSD ?? 2,
     model: raw?.model,
     baseURL: raw?.baseURL,
+    apiKey: raw?.apiKey,
   }
 }
 
 export function saveSettings(s: Settings): void {
   fs.mkdirSync(DIR, { recursive: true })
   fs.writeFileSync(FILE, JSON.stringify(s, null, 2))
+}
+
+export function hasApiKey(): boolean {
+  return !!(process.env.DEEPSEEK_API_KEY ?? loadSettings().apiKey)
+}
+
+export function saveApiKey(key: string): void {
+  const s = loadSettings()
+  s.apiKey = key || undefined
+  saveSettings(s)
+  try { fs.chmodSync(FILE, 0o600) } catch { /* 尽力而为 */ }
 }

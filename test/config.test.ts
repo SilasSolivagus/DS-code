@@ -14,7 +14,7 @@ vi.mock('node:os', async importOriginal => {
 import os from 'node:os'
 import fs from 'node:fs'
 import path from 'node:path'
-import { loadSettings, saveSettings } from '../src/config.js'
+import { loadSettings, saveSettings, saveApiKey, hasApiKey } from '../src/config.js'
 
 const fakeHome = os.homedir()
 const settingsFile = path.join(fakeHome, '.deepcode', 'settings.json')
@@ -58,5 +58,23 @@ describe('settings 读写 round-trip', () => {
     expect('baseURL' in s).toBe(true)
     expect(s.model).toBeUndefined()
     expect(s.baseURL).toBeUndefined()
+  })
+})
+
+describe('apiKey 持久化', () => {
+  it('saveApiKey 写入并能读回，loadSettings 含 apiKey', () => {
+    saveApiKey('sk-test-123')
+    expect(loadSettings().apiKey).toBe('sk-test-123')
+  })
+
+  it('hasApiKey：env 优先，否则看 settings', () => {
+    delete process.env.DEEPSEEK_API_KEY
+    saveApiKey('sk-from-settings')
+    expect(hasApiKey()).toBe(true)
+    saveApiKey('')
+    expect(hasApiKey()).toBe(false)
+    process.env.DEEPSEEK_API_KEY = 'sk-from-env'
+    expect(hasApiKey()).toBe(true)
+    delete process.env.DEEPSEEK_API_KEY
   })
 })
