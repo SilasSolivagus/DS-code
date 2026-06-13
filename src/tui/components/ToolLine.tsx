@@ -1,8 +1,10 @@
 // src/tui/components/ToolLine.tsx
-// 工具行：运行中显示 spinner（80ms 轮换），完成后显示 ⎿ 预览 + 耗时。
-import React, { useState, useEffect } from 'react'
-import { Text } from 'ink'
-import { T, SPINNER_FRAMES } from '../theme.js'
+// 工具行（CC 1:1）：⏺ Name(主参数)，accent 色；完成后追加 ⎿ 预览（dim，错误时红）。
+// 运行中只显示 ⏺ 行；整体"工作中"由底部 Spinner 指示，本行不做 per-tool 计时/spinner。
+import React from 'react'
+import { Box, Text } from 'ink'
+import { T } from '../theme.js'
+import { formatToolArg } from '../toolArg.js'
 
 interface ToolLineProps {
   name: string
@@ -10,28 +12,18 @@ interface ToolLineProps {
   running: boolean
   ok?: boolean
   preview?: string
-  ms?: number
+  ms?: number   // 保留以兼容 Transcript 透传，当前不渲染
 }
 
-export function ToolLine({ name, desc, running, ok, preview, ms }: ToolLineProps) {
-  const [frameIdx, setFrameIdx] = useState(0)
-
-  useEffect(() => {
-    if (!running) return
-    const id = setInterval(() => {
-      setFrameIdx(i => (i + 1) % SPINNER_FRAMES.length)
-    }, 80)
-    return () => clearInterval(id)
-  }, [running])
-
-  if (running) {
-    const frame = SPINNER_FRAMES[frameIdx]
-    return (
-      <Text color={T.accent}>{frame} {name}({desc.slice(0, 80)})</Text>
-    )
-  }
-
+export function ToolLine({ name, desc, running, ok, preview }: ToolLineProps) {
   return (
-    <Text color={ok ? T.ok : T.err}>{'  ⎿ '}{preview}（{((ms ?? 0) / 1000).toFixed(1)}s）</Text>
+    <Box flexDirection="column">
+      <Text color={T.accent}>⏺ {name}({formatToolArg(name, desc)})</Text>
+      {!running && (
+        ok === false
+          ? <Text color={T.err}>{'  ⎿  '}{preview}</Text>
+          : <Text dimColor>{'  ⎿  '}{preview}</Text>
+      )}
+    </Box>
   )
 }

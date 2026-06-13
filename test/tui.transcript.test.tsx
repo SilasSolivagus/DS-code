@@ -18,15 +18,22 @@ describe('Transcript', () => {
     expect(lastFrame()).not.toContain('**重点**')
   })
 
-  it('运行中工具行显示 spinner 字符，完成后显示 ⎿ 预览与耗时', () => {
-    const running: TranscriptItem[] = [{ kind: 'tool', id: 't', name: 'Read', desc: '{"f":1}', running: true }]
+  it('运行中工具行只显示 ⏺ Name(arg) 无 ⎿，完成后追加 ⎿ 预览', () => {
+    const running: TranscriptItem[] = [{ kind: 'tool', id: 't', name: 'Read', desc: '{"file_path":"src/foo.ts"}', running: true }]
     const f1 = render(<Transcript items={running} />).lastFrame()!
-    expect(f1).toContain('Read')
-    expect(/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/.test(f1)).toBe(true)
-    const done: TranscriptItem[] = [{ kind: 'tool', id: 't', name: 'Read', desc: '', running: false, ok: true, preview: '42 行', ms: 230 }]
+    expect(f1).toContain('⏺ Read(src/foo.ts)')
+    expect(f1).not.toContain('⎿')   // 运行中无结果行
+    const done: TranscriptItem[] = [{ kind: 'tool', id: 't', name: 'Read', desc: '{"file_path":"src/foo.ts"}', running: false, ok: true, preview: '42 行', ms: 230 }]
     const f2 = render(<Transcript items={done} />).lastFrame()!
-    expect(f2).toContain('⎿ 42 行')
-    expect(f2).toContain('0.2s')
+    expect(f2).toContain('⏺ Read(src/foo.ts)')   // 首行
+    expect(f2).toContain('⎿  42 行')              // 结果行（两空格）
+  })
+
+  it('工具出错（ok:false）结果行渲染预览', () => {
+    const done: TranscriptItem[] = [{ kind: 'tool', id: 't', name: 'Bash', desc: '{"command":"false"}', running: false, ok: false, preview: '命令失败', ms: 10 }]
+    const f = render(<Transcript items={done} />).lastFrame()!
+    expect(f).toContain('⏺ Bash(false)')
+    expect(f).toContain('⎿  命令失败')
   })
 
   it('进行中 reasoning 块带思考前缀，完成后折叠为一行', () => {
