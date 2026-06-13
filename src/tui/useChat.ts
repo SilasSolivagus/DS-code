@@ -54,7 +54,11 @@ export function transcriptReducer(state: TranscriptItem[], a: ReducerAction): Tr
     return [...state, { kind, text: a.delta, done: false }]
   }
   if (a.type === 'tool_start') {
-    return [...state, { kind: 'tool', id: a.id, name: a.name, desc: a.desc, running: true }]
+    // 工具调用开始前先封闭所有进行中的 assistant/reasoning 块（复用 seal 语义）。
+    // 保证 done 列表严格追加：文本块在工具条目之前进入 done，过滤后的索引稳定，
+    // ink <Static> 不会出现中间插入导致工具行重复渲染或文本块永久丢失的问题。
+    const sealed = transcriptReducer(state, { type: 'seal' })
+    return [...sealed, { kind: 'tool', id: a.id, name: a.name, desc: a.desc, running: true }]
   }
   if (a.type === 'tool_end') {
     return state.map(it =>

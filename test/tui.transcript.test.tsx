@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest'
 import React from 'react'
 import { render } from 'ink-testing-library'
 import { Transcript } from '../src/tui/components/Transcript.js'
+import { transcriptReducer } from '../src/tui/useChat.js'
 import type { TranscriptItem } from '../src/tui/useChat.js'
 
 describe('Transcript', () => {
@@ -42,6 +43,33 @@ describe('Transcript', () => {
     const f = render(<Transcript items={items} />).lastFrame()!
     expect(f).toContain('100')
     expect(f).toContain('80')
+  })
+
+  // 回归测试：前导文本 + 工具调用场景下 Static done-list 严格追加
+  // 真实事件顺序：delta('前导') → tool_start(t1) → tool_end(t1) → turn_end
+  // 修复前：assistant 文本块在 tool_start 之后才被 seal（turn_end 时），进入 doneItems
+  // 的位置在 tool 条目之后，导致 ink Static 重复渲染工具行且文本块永久丢失。
+  // 修复后：tool_start 先 seal 文本块，done 列表严格追加，文本与工具均正确渲染一次。
+  it('前导文本 + 工具调用：文本与工具预览各出现恰好一次（Static append-only 回归）', () => {
+    const usage = { prompt_tokens: 50, completion_tokens: 10, prompt_cache_hit_tokens: 0 }
+
+    let state: TranscriptItem[] = []
+    state = transcriptReducer(state, { type: 'delta', delta: '前导', reasoning: false })
+    state = transcriptReducer(state, { type: 'tool_start', id: 't1', name: 'Read', desc: '{}' })
+    state = transcriptReducer(state, { type: 'tool_end', id: 't1', ok: true, preview: 'UNIQUE-PREVIEW', ms: 50 })
+    state = transcriptReducer(state, { type: 'turn_end', usage })
+
+    const { rerender, lastFrame } = render(<Transcript items={state} />)
+
+    // 重渲染同一状态（模拟 ink 典型 re-render，验证 Static dedup 正确）
+    rerender(<Transcript items={state} />)
+
+    const frame = lastFrame()!
+    // 前导文本必须出现
+    expect(frame).toContain('前导')
+    // 工具预览只出现一次（Static dedup 正确，没有中间插入导致的重复）
+    const occurrences = frame.split('UNIQUE-PREVIEW').length - 1
+    expect(occurrences).toBe(1)
   })
 
   // 额外测试：Static dedup —— done 项从动态区迁移到 Static 后不应出现两次

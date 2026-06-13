@@ -2,9 +2,11 @@
 // 转录展示：ink <Static> 承载已完成块（只渲染一次，流式 CLI 正确姿势，CC 同款），
 // 动态区渲染进行中块（流式文本、思考块、运行中工具行）。
 //
-// Static 键选用项目在 items 数组中的全局索引（append-mostly，索引稳定）。
-// 注意：ink Static 内部用自己的计数器去重——只要你传给它的 items 数组是追加式增长的，
-// 已渲染过的头部项就不会再渲染，从而保证 done 项从动态区迁入 Static 后不重复输出。
+// Static 键选用项目在 items 数组中的全局索引，索引稳定。
+// 不变式：transcriptReducer 保证 done 项只会追加到 doneItems 数组尾部——
+// tool_start 触发时会先 seal 所有进行中的文本块，使完成顺序与数组顺序一致。
+// ink Static 内部用自己的计数器去重——每次 rerender 只输出相对上次新增的尾部项，
+// 从而保证 done 项迁入时不重复输出。
 import React from 'react'
 import { Box, Text, Static } from 'ink'
 import { T } from '../theme.js'
