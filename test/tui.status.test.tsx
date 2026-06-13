@@ -2,36 +2,18 @@
 import { describe, it, expect, vi } from 'vitest'
 import React from 'react'
 import { render } from 'ink-testing-library'
-import { StatusLine } from '../src/tui/components/StatusLine.js'
 import { Banner } from '../src/tui/components/Banner.js'
 import { SelectList } from '../src/tui/components/SelectList.js'
 
-describe('StatusLine', () => {
-  it('渲染模型短名、缓存命中率、花费、tok/s', () => {
-    const f = render(
-      <StatusLine model="deepseek-v4-flash" thinking={false} permMode="default" cacheHitRate={0.87} cost={0.0042} tokPerSec={38} />,
-    ).lastFrame()!
-    expect(f).toContain('flash')
-    expect(f).toContain('87%')
-    expect(f).toContain('$0.0042')
-    expect(f).toContain('38 tok/s')
-  })
-  it('thinking/accept 标志与无数据占位', () => {
-    const f = render(
-      <StatusLine model="deepseek-v4-pro" thinking={true} permMode="acceptEdits" cacheHitRate={0} cost={0} tokPerSec={null} />,
-    ).lastFrame()!
-    expect(f).toContain('pro')
-    expect(f).toContain('think')
-    expect(f).toContain('accept')
-  })
-})
-
 describe('Banner', () => {
-  it('显示鲸鱼、名称与模型', () => {
-    const f = render(<Banner model="deepseek-v4-flash" yolo={false} version="0.5.0" />).lastFrame()!
-    expect(f).toContain('🐳')
-    expect(f).toContain('deepcode')
-    expect(f).toContain('0.5.0')
+  it('显示欢迎框：鲸鱼名称、/help 提示、cwd 与模型', () => {
+    const f = render(<Banner cwd="/tmp/demo" model="deepseek-v4-flash" />).lastFrame()!
+    expect(f).toContain('🐳 deepcode')
+    expect(f).toContain('/help')
+    expect(f).toContain('cwd:')
+    expect(f).toContain('/tmp/demo')
+    expect(f).toContain('模型:')
+    expect(f).toContain('deepseek-v4-flash')
   })
 })
 

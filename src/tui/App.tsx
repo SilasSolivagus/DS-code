@@ -14,7 +14,6 @@ import { Transcript } from './components/Transcript.js'
 import { InputBox } from './components/InputBox.js'
 import { Suggestions } from './components/Suggestions.js'
 import { PermissionDialog } from './components/PermissionDialog.js'
-import { StatusLine } from './components/StatusLine.js'
 import { SelectList } from './components/SelectList.js'
 
 // 从 package.json 读取版本号（模块级，只读一次）
@@ -117,7 +116,7 @@ export function App(props: {
 
   return (
     <Box flexDirection="column">
-      <Banner model={state.model} yolo={props.yolo} version={_version} />
+      <Banner cwd={props.cwd} model={state.model} />
       <Transcript items={state.transcript} />
       {state.pendingAsk
         ? <PermissionDialog ask={state.pendingAsk} onDecide={d => core.resolveAsk(d)} />
@@ -142,14 +141,6 @@ export function App(props: {
               />
             </>
       }
-      <StatusLine
-        model={state.model}
-        thinking={state.thinking}
-        permMode={state.permMode}
-        cacheHitRate={state.cacheHitRate()}
-        cost={state.sessionCost()}
-        tokPerSec={state.lastTokPerSec}
-      />
     </Box>
   )
 }

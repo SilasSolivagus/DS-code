@@ -102,11 +102,12 @@ export function InputBox(props: {
     <Box flexDirection="column">
       {pending !== '' && <Text dimColor>…续行中（{pending.split('\n').length} 行）</Text>}
       <Box borderStyle="round" borderColor={T.accent} paddingX={1}>
-        <Text color={T.accent}>› </Text>
+        <Text color={T.accent}>{'> '}</Text>
         {value === '' && pending === ''
-          ? <Text dimColor>{props.busy ? '生成中… Esc 中断' : '随便问点什么，/ 看命令，@ 引用文件，! 直跑 shell'}</Text>
+          ? <Text dimColor>{props.busy ? '生成中… esc 中断' : '随便问点什么…'}</Text>
           : <Text>{value}<Text inverse> </Text></Text>}
       </Box>
+      <Text dimColor>? 查看快捷键</Text>
     </Box>
   )
 }

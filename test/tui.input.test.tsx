@@ -9,10 +9,12 @@ const noop = () => {}
 const delay = (ms = 0) => new Promise(res => setTimeout(res, ms))
 
 describe('InputBox', () => {
-  it('空闲时显示 placeholder，输入后显示内容与光标', async () => {
+  it('空闲时显示 placeholder、提示符与快捷键提示，输入后显示内容与光标', async () => {
     const r = render(<InputBox onSubmit={noop} onInterrupt={noop} history={[]} busy={false} />)
     await delay()
-    expect(r.lastFrame()).toContain('随便问点什么')
+    expect(r.lastFrame()).toContain('随便问点什么…')
+    expect(r.lastFrame()).toContain('>')
+    expect(r.lastFrame()).toContain('? 查看快捷键')
     r.stdin.write('你好')
     expect(r.lastFrame()).toContain('你好')
   })
