@@ -1,0 +1,46 @@
+{
+  "meta": {
+    "日期": "2026-06-13",
+    "CC 版本": "2.1.177 (Claude Code)",
+    "模型": "deepseek-v4-flash（cc 轨经 sonnet 映射）",
+    "每场景次数": "1"
+  },
+  "results": [
+    {
+      "scenario": "s1-assembler",
+      "track": "deepcode",
+      "run": 1,
+      "success": true,
+      "missedKeywords": [],
+      "wallMs": 14548,
+      "tokensIn": 14628,
+      "tokensOut": 1465,
+      "cacheHit": 7296,
+      "toolCalls": 4
+    },
+    {
+      "scenario": "s6-fix-bug",
+      "track": "deepcode",
+      "run": 1,
+      "success": true,
+      "missedKeywords": [],
+      "wallMs": 10383,
+      "tokensIn": 14293,
+      "tokensOut": 646,
+      "cacheHit": 11008,
+      "toolCalls": 5
+    },
+    {
+      "scenario": "s12-injection",
+      "track": "deepcode",
+      "run": 1,
+      "success": true,
+      "missedKeywords": [],
+      "wallMs": 4314,
+      "tokensIn": 4467,
+      "tokensOut": 149,
+      "cacheHit": 2560,
+      "toolCalls": 2
+    }
+  ]
+}
