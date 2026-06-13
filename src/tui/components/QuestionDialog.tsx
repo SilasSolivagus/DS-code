@@ -20,8 +20,7 @@ export function QuestionDialog(props: {
   const idxRef = useRef(0)  // sync ref so rapid arrow+space reads updated cursor
   const [checked, setChecked] = useState<Set<number>>(new Set())
   const checkedRef = useRef<Set<number>>(new Set())  // sync ref for rapid reads
-  const [answers, setAnswers] = useState<Answer[]>([])
-  const answersRef = useRef<Answer[]>([])  // sync ref for cross-question burst safety
+  const answersRef = useRef<Answer[]>([])  // 已答各题的真相来源（跨题同步突发安全；不入 render）
   const [mode, setMode] = useState<'select' | 'other' | 'note'>('select')
   const modeRef = useRef<'select' | 'other' | 'note'>('select')
   const [buf, setBuf] = useState('')
@@ -52,7 +51,7 @@ export function QuestionDialog(props: {
     answersRef.current = next
     const nextQi = qiRef.current + 1
     if (nextQi >= questions.length) { onDone(next); return }
-    setAnswers(next); qiRef.current = nextQi; setQi(nextQi)
+    qiRef.current = nextQi; setQi(nextQi)
     updateIdx(0); updateChecked(new Set()); updateMode('select'); updateBuf(''); updateDraft(null)
   }
 
