@@ -46,7 +46,7 @@ echo "<任务>" | deepcode     # 管道喂入走 headless
 
 ## 模型
 
-默认 `deepseek-v4-flash`，`/model pro` 切 `deepseek-v4`，`/think` 开关 thinking。
+默认 `deepseek-v4-flash`，`/model` 无参在 `deepseek-v4-flash`↔`deepseek-v4-pro` 间切换（`/model <模型名>` 指定具体模型），`/think` 开关 thinking。
 
 thinking 控制：v4-flash 默认偷偷开 thinking（同一问题 39 token vs 1 token），deepcode 默认显式关闭；`/think` 开启后思考流可见（仅显示，不入上下文）。
 
