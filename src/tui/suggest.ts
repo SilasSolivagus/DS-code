@@ -1,0 +1,56 @@
+// src/tui/suggest.ts
+import fs from 'node:fs'
+import path from 'node:path'
+
+export interface Suggestion { value: string; hint: string }
+
+export const BUILTIN_COMMANDS: Suggestion[] = [
+  { value: '/model', hint: 'flash↔pro 切换（/model <名> 指定）' },
+  { value: '/think', hint: 'thinking 模式开关' },
+  { value: '/accept', hint: 'acceptEdits 开关' },
+  { value: '/cost', hint: '本会话花费明细' },
+  { value: '/context', hint: '上下文占比' },
+  { value: '/compact', hint: '手动压缩历史' },
+  { value: '/clear', hint: '清空对话' },
+  { value: '/resume', hint: '恢复历史会话' },
+  { value: '/permissions', hint: '权限规则管理' },
+  { value: '/init', hint: '生成 CLAUDE.md' },
+  { value: '/help', hint: '帮助' },
+  { value: '/exit', hint: '退出' },
+]
+
+/** 遍历 cwd 下文件（深度≤3，跳过 node_modules/.git，上限 2000 个）做 @ 补全候选源 */
+function listFiles(cwd: string, depth = 3): string[] {
+  const out: string[] = []
+  const walk = (dir: string, d: number) => {
+    if (d > depth || out.length > 2000) return
+    let entries: fs.Dirent[] = []
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
+    for (const e of entries) {
+      if (e.name === 'node_modules' || e.name.startsWith('.git')) continue
+      const p = path.join(dir, e.name)
+      if (e.isDirectory()) walk(p, d + 1)
+      else out.push(path.relative(cwd, p))
+    }
+  }
+  walk(cwd, 0)
+  return out
+}
+
+export function computeSuggestions(input: string, env: { cwd: string; customCommands: Map<string, string> }): Suggestion[] {
+  if (input.startsWith('/') && !input.includes(' ')) {
+    const all = [...BUILTIN_COMMANDS, ...[...env.customCommands.keys()].map(n => ({ value: `/${n}`, hint: '自定义命令' }))]
+    const filtered = all.filter(s => s.value.startsWith(input))
+    // bare "/" shows all; further prefix filtering caps at 8
+    return input === '/' ? filtered : filtered.slice(0, 8)
+  }
+  const at = input.match(/@([\w./-]*)$/)
+  if (at) {
+    const q = at[1].toLowerCase()
+    return listFiles(env.cwd)
+      .filter(f => path.basename(f).toLowerCase().includes(q))
+      .slice(0, 8)
+      .map(f => ({ value: `@${f}`, hint: '' }))
+  }
+  return []
+}
