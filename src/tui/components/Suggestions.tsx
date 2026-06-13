@@ -28,7 +28,7 @@ export function Suggestions(props: {
       return
     }
     if (key.tab || key.return) {
-      onPick(items[idx].value)
+      if (items[idx]) onPick(items[idx].value) // items 收缩瞬间按键的越界保护
       return
     }
   })
@@ -39,10 +39,7 @@ export function Suggestions(props: {
     <Box flexDirection="column" borderStyle="round" borderColor={T.accent}>
       {items.map((item, i) => (
         <Box key={item.value}>
-          <Text
-            backgroundColor={i === idx ? T.accent : undefined}
-            inverse={i === idx}
-          >
+          <Text backgroundColor={i === idx ? T.accent : undefined}>
             {item.value}
           </Text>
           {item.hint !== '' && (

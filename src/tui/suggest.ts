@@ -47,8 +47,12 @@ export function computeSuggestions(input: string, env: { cwd: string; customComm
   const at = input.match(/@([\w./-]*)$/)
   if (at) {
     const q = at[1].toLowerCase()
+    // 带目录的查询（含 /）按完整相对路径匹配，否则只按文件名模糊匹配
+    const hit = q.includes('/')
+      ? (f: string) => f.toLowerCase().includes(q)
+      : (f: string) => path.basename(f).toLowerCase().includes(q)
     return listFiles(env.cwd)
-      .filter(f => path.basename(f).toLowerCase().includes(q))
+      .filter(hit)
       .slice(0, 8)
       .map(f => ({ value: `@${f}`, hint: '' }))
   }
