@@ -38,13 +38,65 @@ describe('runBang', () => {
 })
 
 describe('expandAtRefs', () => {
-  it('@路径 展开为文件内容块，缺失文件标注读取失败', () => {
+  it('@路径 展开为文件内容块', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'at-'))
     writeFileSync(path.join(dir, 'x.ts'), 'export const x = 1')
-    const out = expandAtRefs('看看 @x.ts 怎么写的', dir)
-    expect(out).toContain('export const x = 1')
-    expect(out).toContain('<file path=')
-    expect(expandAtRefs('@不存在.ts', dir)).toContain('读取失败')
+    const { text, misses } = expandAtRefs('看看 @x.ts 怎么写的', dir)
+    expect(text).toContain('export const x = 1')
+    expect(text).toContain('<file path=')
+    expect(misses).toHaveLength(0)
+  })
+
+  it('缺失文件：原文不变，路径收入 misses', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'at-'))
+    const { text, misses } = expandAtRefs('@不存在.ts', dir)
+    expect(text).toBe('@不存在.ts')  // 原文保留
+    expect(misses).toContain('不存在.ts')
+  })
+
+  it('邮箱/git remote/@scoped 包名不被展开', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'at-'))
+    const cases = [
+      '邮箱 a@b.com 收到',
+      'git@github.com:u/r.git',
+      '装一下 @types/node',
+    ]
+    for (const c of cases) {
+      const { text, misses } = expandAtRefs(c, dir)
+      // 邮箱（a@b.com）：@ 前无空白，不匹配，原文不变，无 miss
+      // git remote（git@github.com）：@ 前无空白，不匹配，原文不变，无 miss
+      // @types/node：@ 在词首（行首/空白后），会尝试读取但不存在 → miss；原文不变
+      expect(text).not.toContain('读取失败')
+      expect(text).not.toContain('file path=')
+      // 对于 @types/node 之类会有 miss，但原文应保持
+      if (c.includes('@types')) {
+        expect(text).toContain('@types/node')
+      } else {
+        // 纯邮箱 / git remote — 不匹配，text 与输入完全相同
+        expect(text).toBe(c)
+        expect(misses).toHaveLength(0)
+      }
+    }
+  })
+
+  it('InputBox remount 时 mount-time nonce 视为已消费，旧 valueOverride 不注入', async () => {
+    // 模拟 remount：以 nonce:1 直接渲染 InputBox（就像 pendingAsk 消除后重新挂载），
+    // 期望 value 为空而非 "旧文本"
+    const { render } = await import('ink-testing-library')
+    const { InputBox } = await import('../src/tui/components/InputBox.js')
+    const r = render(
+      <InputBox
+        onSubmit={() => {}}
+        onInterrupt={() => {}}
+        history={[]}
+        busy={false}
+        valueOverride={{ text: '旧文本', nonce: 1 }}
+      />
+    )
+    await new Promise(res => setTimeout(res, 0))
+    // 输入框应显示 placeholder，而不是 "旧文本"
+    expect(r.lastFrame()).not.toContain('旧文本')
+    expect(r.lastFrame()).toContain('随便问点什么')
   })
 })
 

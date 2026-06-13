@@ -29,8 +29,8 @@ export function InputBox(props: {
   const valueRef = useRef(value)
   const pendingRef = useRef(pending)
   const histIdxRef = useRef(histIdx)
-  // 记录上次处理过的 nonce，只在 nonce 变化时注入
-  const lastNonceRef = useRef<number | undefined>(undefined)
+  // 记录上次处理过的 nonce，只在 nonce 变化时注入；挂载时以当前 nonce 初始化（视为已消费，防止 remount 后老值复活）
+  const lastNonceRef = useRef<number | undefined>(props.valueOverride?.nonce)
 
   // 统一变更入口：value 的 ref/state/onChange 三处必须同步，漏一处就 desync
   const setVal = (v: string) => {

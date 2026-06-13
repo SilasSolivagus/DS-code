@@ -2,7 +2,7 @@
 // 装配层：useChat + 全部组件 + 焦点路由。
 // InputBox value 注入：通过 valueOverride={{ text, nonce }} prop 实现（最小改动，保持 InputBox 内部受控逻辑不变）。
 // 补全菜单隐藏策略：onPick 后设置 justPickedValue，若 draft === justPickedValue 则不展示菜单；用户再输入时 draft 变化即恢复。
-import React, { useMemo, useState, useRef } from 'react'
+import React, { useMemo, useState, useRef, useEffect } from 'react'
 import { Box, Text, useApp, useInput } from 'ink'
 import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -50,6 +50,15 @@ export function App(props: {
   // InputBox value 注入：通过 nonce 强制 InputBox 接受新值
   const [valueOverride, setValueOverride] = useState<{ text: string; nonce: number } | undefined>(undefined)
 
+  // pendingAsk / resumeMode 激活时清除 draft 和 valueOverride，防止 InputBox 卸载后 remount 时老值复活
+  useEffect(() => {
+    if (state.pendingAsk || resumeMode) {
+      setDraft('')
+      setValueOverride(undefined)
+      justPickedRef.current = null
+    }
+  }, [!!state.pendingAsk, resumeMode])  // eslint-disable-line react-hooks/exhaustive-deps
+
   // Ctrl+C 两次退出（App 层统一管理，exitOnCtrlC: false 时才需要）
   useInput((input, key) => {
     if (key.ctrl && input === 'c') {
@@ -95,6 +104,7 @@ export function App(props: {
     if (text === '/exit') { exit(); return }
     if (text === '/resume') { setResumeMode(true); return }
     setDraft('')
+    setValueOverride(undefined)
     justPickedRef.current = null
     void core.send(text)
   }

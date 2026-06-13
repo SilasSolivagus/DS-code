@@ -34,16 +34,23 @@ export function runBang(cmd: string, cwd: string): { output: string; code: numbe
   }
 }
 
-/** @path 展开为 <file> 块（≤400 行/文件；缺失文件标注读取失败） */
-export function expandAtRefs(text: string, cwd: string): string {
-  // 匹配 @ 后的路径（含中文文件名）：直到遇到空格/换行/制表符为止
-  return text.replace(/@([^\s]+)/g, (m, p) => {
+/** @path 展开为 <file> 块（≤400 行/文件）。
+ *  - 仅匹配词首 @token（前面必须是行首或空白），避免误伤 email/git remote/@scoped 包名。
+ *  - 读取失败：原文保持不变，路径收集到 misses 数组供调用方决定是否提示。
+ */
+export function expandAtRefs(text: string, cwd: string): { text: string; misses: string[] } {
+  const misses: string[] = []
+  const result = text.replace(/(^|\s)@([^\s]+)/g, (m, sep, p) => {
     try {
       const lines = fs.readFileSync(path.resolve(cwd, p), 'utf8').split('\n')
       const body = lines.slice(0, 400).join('\n') + (lines.length > 400 ? '\n…（截断）' : '')
-      return `\n<file path="${p}">\n${body}\n</file>\n`
-    } catch { return `${m}（读取失败：文件不存在或不可读）` }
+      return `${sep}\n<file path="${p}">\n${body}\n</file>\n`
+    } catch {
+      misses.push(p)
+      return m  // 原文不动
+    }
   })
+  return { text: result, misses }
 }
 
 export type TranscriptItem =
@@ -476,7 +483,14 @@ export function createChatCore(opts: {
       userText = expandCommand(tpl, rest.join(' '))
     } else {
       // 非斜杠输入：展开 @文件引用再发送
-      userText = expandAtRefs(line, cwd)
+      const { text: expanded, misses } = expandAtRefs(line, cwd)
+      userText = expanded
+      // 仅对路径形态的 miss（含 / 或 .）推送提示，邮箱/域名静默跳过
+      for (const p of misses) {
+        if (p.includes('/') || p.includes('.')) {
+          notice('info', `（@路径未找到，按原文发送：@${p}）`)
+        }
+      }
     }
     await runTurn(line, userText)
   }
