@@ -18,10 +18,6 @@ import { SelectList } from './components/SelectList.js'
 import { Spinner } from './components/Spinner.js'
 import { StatusFooter } from './components/StatusFooter.js'
 
-// 输入框插入点到 ink 渲染后光标落点的行数：底边线(1)+状态页脚(4)+ink 末尾换行(1)=6。
-// （pyte 实测：❯ 在第 9 行，ink 把光标留在第 15 行。）布局若变需同步调整。
-const LINES_BELOW_CARET = 6
-
 // CJK/全角字符按 2 列宽计（终端等宽规则）；用于算输入框插入点的列号。
 function dispWidth(s: string): number {
   let w = 0
@@ -177,7 +173,10 @@ export function App(props: {
     return () => { out.write = orig; delete out.__origWrite }
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 每帧渲染后把硬件光标停到输入框插入点（用原始 write 绕过上面的解除逻辑）
+  // 每帧渲染后把硬件光标停到输入框插入点（用原始 write 绕过上面的解除逻辑）。
+  // 上移行数 = 底边线(1) + 页脚行数 + ink 末尾换行(1)；页脚 = 行1/行2/提示(3 固定) + 记忆行 + 工具行。
+  // 故 = 5 + 记忆行(0/1) + 工具行(0/1)。页脚行数随内容变 → 必须动态算，否则光标偏。
+  const linesBelowCaret = 5 + (memoryCount > 0 ? 1 : 0) + (toolCounts.length > 0 ? 1 : 0)
   useEffect(() => {
     if (!inputActive || !process.stdout.isTTY) return
     const out = process.stdout as NodeJS.WriteStream & { __origWrite?: typeof process.stdout.write }
@@ -185,8 +184,8 @@ export function App(props: {
     const col = 4 + dispWidth(draft)  // 列：1=左内边距, 2-3="❯ ", 4+=输入文本；插入点在文本之后
     const id = setTimeout(() => {
       try {
-        ;(orig as any)(`\x1b[?25h\x1b[${LINES_BELOW_CARET}A\x1b[${col}G`)
-        parkRef.current = { active: true, up: LINES_BELOW_CARET }
+        ;(orig as any)(`\x1b[?25h\x1b[${linesBelowCaret}A\x1b[${col}G`)
+        parkRef.current = { active: true, up: linesBelowCaret }
       } catch { /* 忽略写入失败 */ }
     }, 0)
     return () => clearTimeout(id)
