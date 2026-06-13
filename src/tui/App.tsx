@@ -18,9 +18,9 @@ import { SelectList } from './components/SelectList.js'
 import { Spinner } from './components/Spinner.js'
 import { StatusFooter } from './components/StatusFooter.js'
 
-// 输入框插入点到输出底部的行数：输入框底边线(1) + 状态页脚(4) = 5。
-// 布局若变（页脚行数变化等）需同步调整——IME 光标停泊依赖它。
-const LINES_BELOW_CARET = 5
+// 输入框插入点到 ink 渲染后光标落点的行数：底边线(1)+状态页脚(4)+ink 末尾换行(1)=6。
+// （pyte 实测：❯ 在第 9 行，ink 把光标留在第 15 行。）布局若变需同步调整。
+const LINES_BELOW_CARET = 6
 
 // CJK/全角字符按 2 列宽计（终端等宽规则）；用于算输入框插入点的列号。
 function dispWidth(s: string): number {
