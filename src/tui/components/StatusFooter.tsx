@@ -21,7 +21,7 @@ export function StatusFooter(props: {
   const bar = { fill: '▓'.repeat(filled), empty: '░'.repeat(10 - filled) }
 
   // 对照 CC 真实样式（图6）：`[模型 | 模式] | cwd git:(分支)` / `Context 条 N% · $花费`
-  // / `N CLAUDE.md`（独立行，仅有时显示）/ `✓ Bash ×8 | ✓ Read ×4`（独立行，| 分隔、× 前留空）/ `/ 看命令…`。
+  // / `N DEEPCODE.md`（独立行，仅有时显示）/ `✓ Bash ×8 | ✓ Read ×4`（独立行，| 分隔、× 前留空）/ `/ 看命令…`。
   // 注意：记忆行/工具行按需出现 → 行数可变，App 的 IME 光标偏移须同步动态计算（footerExtraRows）。
   return (
     <Box flexDirection="column">
@@ -43,7 +43,7 @@ export function StatusFooter(props: {
       </Text>
 
       {/* Row 3（仅 memoryCount>0）：记忆文件数 */}
-      {props.memoryCount > 0 && <Text dimColor>{`${props.memoryCount} CLAUDE.md`}</Text>}
+      {props.memoryCount > 0 && <Text dimColor>{`${props.memoryCount} DEEPCODE.md`}</Text>}
 
       {/* Row 4（仅有工具调用）：工具计数，| 分隔、✓ 绿、× 前留空 */}
       {props.toolCounts.length > 0 && (

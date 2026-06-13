@@ -1,6 +1,6 @@
 // DeepSeek 主题：鲸鱼蓝 accent 是全 UI 唯一强调色，其余克制（dim 为主）
 export const T = {
-  accent: '#4D6BFE',   // 鲸鱼蓝：边框、提示符、选中态、banner
+  accent: '#6E8BFF',   // 鲸鱼蓝（提亮版，深色终端更跳）：边框、提示符、选中态、banner
   reasoning: '#9B7EDE', // 思考流紫（逐步淘汰：CC 思考流用 dim 灰，Task 4 改造 Transcript 后移除）
   ok: '#4ADE80',
   err: '#F87171',

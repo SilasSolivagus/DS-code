@@ -20,10 +20,10 @@ export function expandCommand(template: string, args: string): string {
   return template.replaceAll('$ARGUMENTS', () => args)
 }
 
-export const INIT_PROMPT = `请分析本项目并生成 CLAUDE.md 项目记忆文件。步骤：
+export const INIT_PROMPT = `请分析本项目并生成 DEEPCODE.md 项目记忆文件。步骤：
 1. 用 Glob/Read 查证 package.json（或同类清单）、README、主要源码目录结构与测试目录
-2. 若已存在 CLAUDE.md 或 AGENTS.md，先读取，在其基础上补全而不是覆盖重写
-3. 用 Write 写入 CLAUDE.md，内容包含三节：构建/测试/运行命令（从清单文件查证，不要猜）、架构要点（主要模块及职责，带路径）、代码风格约定（从现有代码归纳）
+2. 若已存在 DEEPCODE.md、CLAUDE.md 或 AGENTS.md，先读取，在其基础上补全而不是覆盖重写
+3. 用 Write 写入 DEEPCODE.md，内容包含三节：构建/测试/运行命令（从清单文件查证，不要猜）、架构要点（主要模块及职责，带路径）、代码风格约定（从现有代码归纳）
 保持简洁：只写对后续编码任务有用的事实，不写营销性描述。`
 
 /** /context 简版：按字符数估算各部分占比（≈4 字符/token），外加上次请求的真实 usage */

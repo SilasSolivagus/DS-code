@@ -3,12 +3,12 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-/** 从 cwd 向上逐层找 CLAUDE.md/AGENTS.md（每层取一个，CLAUDE.md 优先），最后加全局 ~/.deepcode/DEEPCODE.md */
+/** 从 cwd 向上逐层找 DEEPCODE.md/CLAUDE.md/AGENTS.md（每层取一个，DEEPCODE.md 优先），最后加全局 ~/.deepcode/DEEPCODE.md */
 export function findMemoryFiles(cwd: string, home: string = os.homedir()): string[] {
   const found: string[] = []
   let dir = path.resolve(cwd)
   while (true) {
-    for (const name of ['CLAUDE.md', 'AGENTS.md']) {
+    for (const name of ['DEEPCODE.md', 'CLAUDE.md', 'AGENTS.md']) {
       const p = path.join(dir, name)
       if (fs.existsSync(p)) {
         found.push(p)

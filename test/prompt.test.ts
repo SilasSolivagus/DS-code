@@ -28,6 +28,15 @@ describe('findMemoryFiles', () => {
     expect(files.filter(f => f.startsWith(root)).length).toBe(1)
     expect(files[0].endsWith('CLAUDE.md')).toBe(true)
   })
+
+  it('同目录 DEEPCODE.md 优先于 CLAUDE.md（deepcode 原生记忆文件最高优先）', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'dc-'))
+    writeFileSync(path.join(root, 'DEEPCODE.md'), 'd')
+    writeFileSync(path.join(root, 'CLAUDE.md'), 'c')
+    const files = findMemoryFiles(root, mkdtempSync(path.join(tmpdir(), 'dc-home-')))
+    expect(files.filter(f => f.startsWith(root)).length).toBe(1)
+    expect(files[0].endsWith('DEEPCODE.md')).toBe(true)
+  })
 })
 
 describe('buildSystemPrompt', () => {

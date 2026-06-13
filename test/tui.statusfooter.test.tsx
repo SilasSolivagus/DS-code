@@ -16,7 +16,7 @@ const base = {
 }
 
 describe('StatusFooter', () => {
-  it('CC 格式：[模型 | 模式] | cwd git:(分支) / Context 条 / N CLAUDE.md / ✓ 工具 ×n / 快捷键', () => {
+  it('CC 格式：[模型 | 模式] | cwd git:(分支) / Context 条 / N DEEPCODE.md / ✓ 工具 ×n / 快捷键', () => {
     const f = render(<StatusFooter {...base} />).lastFrame()!
     expect(f).toContain('deepseek-v4-flash')
     expect(f).toContain('| default]')      // 方括号 + | 分隔的模式
@@ -25,7 +25,7 @@ describe('StatusFooter', () => {
     expect(f).toContain('Context')
     expect(f).toContain('28%')
     expect(f).toContain('$0.0042')
-    expect(f).toContain('2 CLAUDE.md')
+    expect(f).toContain('2 DEEPCODE.md')
     expect(f).toContain('Read ×4')         // × 前留空（CC 样式）
     expect(f).toContain('Bash ×2')
     expect(f).toContain('看命令')
@@ -39,16 +39,16 @@ describe('StatusFooter', () => {
     expect(f).not.toContain('git:(')
   })
 
-  it('memoryCount===0 时省略 CLAUDE.md 段', () => {
+  it('memoryCount===0 时省略 DEEPCODE.md 段', () => {
     const f = render(<StatusFooter {...base} memoryCount={0} />).lastFrame()!
-    expect(f).not.toContain('CLAUDE.md')
+    expect(f).not.toContain('DEEPCODE.md')
     expect(f).toContain('Read ×4')
   })
 
-  it('无工具调用且无记忆时只剩 模型行/上下文行/快捷键（无工具✓、无 CLAUDE.md）', () => {
+  it('无工具调用且无记忆时只剩 模型行/上下文行/快捷键（无工具✓、无 DEEPCODE.md）', () => {
     const f = render(<StatusFooter {...base} memoryCount={0} toolCounts={[]} />).lastFrame()!
     expect(f).not.toContain('✓')
-    expect(f).not.toContain('CLAUDE.md')
+    expect(f).not.toContain('DEEPCODE.md')
     expect(f).toContain('Context')
     expect(f).toContain('看命令')
   })
