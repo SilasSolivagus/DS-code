@@ -88,4 +88,24 @@ describe('QuestionDialog', () => {
     const f = render(<QuestionDialog questions={wp} onDone={() => {}} />).lastFrame()!
     expect(f).toContain('预览内容XYZ')
   })
+
+  it('多题：连续作答两题（同步突发）→ 两题答案各归各题', async () => {
+    const two: Question[] = [
+      { question: 'Q1?', header: 'H1', multiSelect: false,
+        options: [{ label: 'A1', description: '' }, { label: 'B1', description: '' }] },
+      { question: 'Q2?', header: 'H2', multiSelect: false,
+        options: [{ label: 'A2', description: '' }, { label: 'B2', description: '' }] },
+    ]
+    const onDone = vi.fn()
+    const { stdin } = render(<QuestionDialog questions={two} onDone={onDone} />)
+    await delay()
+    stdin.write('1'); stdin.write('\r')   // Q1: select A1 → note → commit  (synchronous burst)
+    stdin.write('1'); stdin.write('\r')   // Q2: select A2 → note → commit  (synchronous burst)
+    await delay()
+    expect(onDone).toHaveBeenCalledTimes(1)
+    const ans = onDone.mock.calls[0][0]
+    expect(ans).toHaveLength(2)
+    expect(ans[0]).toMatchObject({ question: 'Q1?', header: 'H1', selected: ['A1'] })
+    expect(ans[1]).toMatchObject({ question: 'Q2?', header: 'H2', selected: ['A2'] })
+  })
 })

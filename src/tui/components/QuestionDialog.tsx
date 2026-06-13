@@ -15,11 +15,13 @@ export function QuestionDialog(props: {
 }) {
   const { questions, onDone } = props
   const [qi, setQi] = useState(0)
+  const qiRef = useRef(0)  // sync ref for cross-question burst safety
   const [idx, setIdx] = useState(0)
   const idxRef = useRef(0)  // sync ref so rapid arrow+space reads updated cursor
   const [checked, setChecked] = useState<Set<number>>(new Set())
   const checkedRef = useRef<Set<number>>(new Set())  // sync ref for rapid reads
   const [answers, setAnswers] = useState<Answer[]>([])
+  const answersRef = useRef<Answer[]>([])  // sync ref for cross-question burst safety
   const [mode, setMode] = useState<'select' | 'other' | 'note'>('select')
   const modeRef = useRef<'select' | 'other' | 'note'>('select')
   const [buf, setBuf] = useState('')
@@ -38,16 +40,19 @@ export function QuestionDialog(props: {
   const updateBuf = (next: string) => { bufRef.current = next; setBuf(next) }
   const updateDraft = (next: Answer | null) => { draftRef.current = next; setDraft(next) }
 
-  // 选完一题 → 暂存草稿，进入备注机会
+  // 选完一题 → 暂存草稿，进入备注机会（用 ref 获取当前题，防同步突发时读到旧 state）
   const toNote = (selected: string[], freeText?: string) => {
-    const d: Answer = { header: q.header, question: q.question, selected, freeText }
+    const cq = questions[qiRef.current]
+    const d: Answer = { header: cq.header, question: cq.question, selected, freeText }
     updateDraft(d); updateMode('note'); updateBuf('')
   }
-  // 提交答案 → 下一题或结束
+  // 提交答案 → 下一题或结束（用 ref 读 answers/qi，防同步突发时读到旧 state）
   const commit = (ans: Answer) => {
-    const next = [...answers, ans]
-    if (qi + 1 >= questions.length) { onDone(next); return }
-    setAnswers(next); setQi(qi + 1)
+    const next = [...answersRef.current, ans]
+    answersRef.current = next
+    const nextQi = qiRef.current + 1
+    if (nextQi >= questions.length) { onDone(next); return }
+    setAnswers(next); qiRef.current = nextQi; setQi(nextQi)
     updateIdx(0); updateChecked(new Set()); updateMode('select'); updateBuf(''); updateDraft(null)
   }
 
@@ -69,10 +74,14 @@ export function QuestionDialog(props: {
       return
     }
 
-    // select
+    // select（用 ref 获取当前题，防同步突发时读到旧 state）
+    const cq = questions[qiRef.current]
+    const cOpts = [...cq.options, { label: OTHER, description: '' }]
+    const cOtherIdx = cq.options.length
+    const cIsOther = (i: number) => i === cOtherIdx
     if (key.upArrow) { const next = Math.max(0, idxRef.current - 1); updateIdx(next); return }
-    if (key.downArrow) { const next = Math.min(opts.length - 1, idxRef.current + 1); updateIdx(next); return }
-    if (q.multiSelect && input === ' ' && !isOther(idxRef.current)) {
+    if (key.downArrow) { const next = Math.min(cOpts.length - 1, idxRef.current + 1); updateIdx(next); return }
+    if (cq.multiSelect && input === ' ' && !cIsOther(idxRef.current)) {
       const cur = idxRef.current
       const n = new Set(checkedRef.current)
       n.has(cur) ? n.delete(cur) : n.add(cur)
@@ -80,13 +89,13 @@ export function QuestionDialog(props: {
     }
     if (key.return || /^[1-9]$/.test(input)) {
       const sel = /^[1-9]$/.test(input) ? Number(input) - 1 : idxRef.current
-      if (sel < 0 || sel >= opts.length) return
-      if (isOther(sel)) { updateMode('other'); updateBuf(''); return }
-      if (q.multiSelect && key.return) {
+      if (sel < 0 || sel >= cOpts.length) return
+      if (cIsOther(sel)) { updateMode('other'); updateBuf(''); return }
+      if (cq.multiSelect && key.return) {
         const picks = checkedRef.current.size ? [...checkedRef.current] : [sel]
-        toNote(picks.map(i => q.options[i].label)); return
+        toNote(picks.map(i => cq.options[i].label)); return
       }
-      toNote([opts[sel].label])
+      toNote([cOpts[sel].label])
     }
   })
 
