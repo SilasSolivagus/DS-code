@@ -1,5 +1,6 @@
 // src/tui/components/Spinner.tsx
-// CC 风格工作 spinner：忙碌时显示一行 `✻ 琢磨中… (12s · ↑ 1.2k tokens · esc 中断)`。
+// CC 风格工作 spinner：忙碌时显示一行 `✻ 琢磨中… (8m 21s · ↓ 1.2k tokens · esc 中断)`。
+// 对照 CC 真实样式（图6）：耗时超 60s 显示 `Nm Ms`；token 用 ↓（输出/收到，CC 同款）。
 // 符号每 120ms 轮换；动名词每次挂载固定；耗时由 turnStartAt 计算，每秒重渲染一次。
 import React, { useState, useEffect } from 'react'
 import { Text } from 'ink'
@@ -8,6 +9,11 @@ import { T, SPINNER_SYMBOLS, THINKING_VERBS } from '../theme.js'
 /** ≥1000 显示 1 位小数 + k（1234→1.2k），否则整数 */
 export function fmtTokens(n: number): string {
   return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n)
+}
+
+/** 耗时格式：≥60s 显示 `Nm Ms`（CC 同款），否则 `Ns` */
+export function fmtElapsed(s: number): string {
+  return s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`
 }
 
 interface SpinnerProps {
@@ -31,7 +37,7 @@ export function Spinner({ turnStartAt, turnOutTokens }: SpinnerProps) {
 
   return (
     <Text color={T.accent}>
-      {symbol} {verb}… ({elapsed}s · ↑ {fmtTokens(turnOutTokens)} tokens · esc 中断)
+      {symbol} {verb}… ({fmtElapsed(elapsed)} · ↓ {fmtTokens(turnOutTokens)} tokens · esc 中断)
     </Text>
   )
 }

@@ -287,7 +287,8 @@ describe('runLoop', () => {
     expect(end.preview).not.toMatch(/\x1b/)
     expect(end.preview).not.toMatch(/\r/)
     expect(end.preview).toContain('第一行')
-    expect(end.preview).not.toContain('第二行') // 仍只取第一行
+    expect(end.preview).toContain('第二行') // 多行预览（≤6 行）：两行都显示，但控制字符已剥
+    expect(end.previewExtra).toBe(0)        // 共 2 行，未超 6 行上限
   })
 
   it('tool_end 的 ms 不含权限等待时间', async () => {

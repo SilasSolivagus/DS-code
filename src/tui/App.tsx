@@ -193,9 +193,8 @@ export function App(props: {
 
   return (
     <Box flexDirection="column">
-      {/* 欢迎框只在对话为空（启动）时显示；发出第一条消息后即隐去，不再夹在历史与输入框之间（仿 CC 滚走） */}
-      {state.transcript.length === 0 && <Banner cwd={props.cwd} model={state.model} />}
-      <Transcript items={state.transcript} />
+      {/* 欢迎框交给 Transcript 作为 Static 首项：开机出现、随对话滚入历史留存，不消失也不反复重画（仿 CC） */}
+      <Transcript items={state.transcript} banner={<Banner cwd={props.cwd} model={state.model} />} />
       {state.pendingAsk
         ? <PermissionDialog ask={state.pendingAsk} onDecide={d => core.resolveAsk(d)} />
         : resumeMode

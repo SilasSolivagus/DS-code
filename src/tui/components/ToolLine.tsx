@@ -12,17 +12,24 @@ interface ToolLineProps {
   running: boolean
   ok?: boolean
   preview?: string
+  previewExtra?: number   // 预览之外的剩余行数（CC 的「… +N 行」）
   ms?: number   // 保留以兼容 Transcript 透传，当前不渲染
 }
 
-export function ToolLine({ name, desc, running, ok, preview }: ToolLineProps) {
+export function ToolLine({ name, desc, running, ok, preview, previewExtra }: ToolLineProps) {
+  // 多行预览（对照 CC）：首行 `  ⎿  内容`，续行缩进 5 列对齐内容；错误用红，否则 dim。
+  const lines = (preview ?? '').split('\n')
+  const isErr = ok === false
   return (
     <Box flexDirection="column">
       <Text color={T.accent}>⏺ {name}({formatToolArg(name, desc)})</Text>
-      {!running && (
-        ok === false
-          ? <Text color={T.err}>{'  ⎿  '}{preview}</Text>
-          : <Text dimColor>{'  ⎿  '}{preview}</Text>
+      {!running && lines.map((l, i) => (
+        <Text key={i} color={isErr ? T.err : undefined} dimColor={!isErr}>
+          {i === 0 ? '  ⎿  ' : '     '}{l}
+        </Text>
+      ))}
+      {!running && (previewExtra ?? 0) > 0 && (
+        <Text dimColor>{'     '}… +{previewExtra} 行</Text>
       )}
     </Box>
   )

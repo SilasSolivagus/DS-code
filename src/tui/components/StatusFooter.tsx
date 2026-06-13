@@ -21,7 +21,7 @@ export function StatusFooter(props: {
   const bar = { fill: '▓'.repeat(filled), empty: '░'.repeat(10 - filled) }
 
   // 对照 CC 真实样式（图6）：`[模型 | 模式] | cwd git:(分支)` / `Context 条 N% · $花费`
-  // / `N CLAUDE.md`（独立行，仅有时显示）/ `✓ Bash ×8 | ✓ Read ×4`（独立行，| 分隔、× 前留空）/ `? 查看快捷键`。
+  // / `N CLAUDE.md`（独立行，仅有时显示）/ `✓ Bash ×8 | ✓ Read ×4`（独立行，| 分隔、× 前留空）/ `/ 看命令…`。
   // 注意：记忆行/工具行按需出现 → 行数可变，App 的 IME 光标偏移须同步动态计算（footerExtraRows）。
   return (
     <Box flexDirection="column">
@@ -58,8 +58,9 @@ export function StatusFooter(props: {
         </Text>
       )}
 
-      {/* Row 5：快捷键提示 */}
-      <Text dimColor>? 查看快捷键</Text>
+      {/* Row 5：命令提示。CC 原文是 `? for shortcuts`（按 ? 弹快捷键面板），但 deepcode 的 ? 面板未做、
+          而 / 命令菜单现成可用，故提示实际可用的 / 入口（避免广告不存在的功能）。 */}
+      <Text dimColor>/ 看命令 · @ 引用文件 · ! 跑 shell</Text>
     </Box>
   )
 }

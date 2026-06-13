@@ -57,7 +57,7 @@ export type TranscriptItem =
   | { kind: 'user'; text: string }
   | { kind: 'assistant'; text: string; done: boolean }
   | { kind: 'reasoning'; text: string; done: boolean }
-  | { kind: 'tool'; id: string; name: string; desc: string; running: boolean; ok?: boolean; preview?: string; ms?: number }
+  | { kind: 'tool'; id: string; name: string; desc: string; running: boolean; ok?: boolean; preview?: string; previewExtra?: number; ms?: number }
   | { kind: 'usage'; in: number; hit: number; out: number; totalIn: number; totalOut: number; cost: number }
   | { kind: 'notice'; level: 'info' | 'warn' | 'error'; text: string }
   | { kind: 'bang'; cmd: string; output: string } // ! 直跑结果块（Task 9 填充）
@@ -95,7 +95,7 @@ export function transcriptReducer(state: TranscriptItem[], a: ReducerAction): Tr
   if (a.type === 'tool_end') {
     return state.map(it =>
       it.kind === 'tool' && it.id === a.id
-        ? { ...it, running: false, ok: a.ok, preview: a.preview, ms: a.ms }
+        ? { ...it, running: false, ok: a.ok, preview: a.preview, previewExtra: a.previewExtra, ms: a.ms }
         : it,
     )
   }

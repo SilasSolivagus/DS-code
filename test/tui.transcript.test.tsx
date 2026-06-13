@@ -37,6 +37,15 @@ describe('Transcript', () => {
     expect(f2).toContain('⎿  42 行')              // 结果行（两空格）
   })
 
+  it('多行预览：⎿ 首行 + 续行缩进，previewExtra>0 时追加「… +N 行」（对照 CC）', () => {
+    const done: TranscriptItem[] = [{ kind: 'tool', id: 't', name: 'Write', desc: '{"file_path":"a.ts"}', running: false, ok: true, preview: '写入 817 行\nline2\nline3', previewExtra: 963, ms: 12 }]
+    const f = render(<Transcript items={done} />).lastFrame()!
+    expect(f).toContain('⎿  写入 817 行')   // 首行带 ⎿
+    expect(f).toContain('line2')            // 续行
+    expect(f).toContain('line3')
+    expect(f).toContain('… +963 行')        // 剩余行数提示
+  })
+
   it('工具出错（ok:false）结果行渲染预览', () => {
     const done: TranscriptItem[] = [{ kind: 'tool', id: 't', name: 'Bash', desc: '{"command":"false"}', running: false, ok: false, preview: '命令失败', ms: 10 }]
     const f = render(<Transcript items={done} />).lastFrame()!
@@ -72,7 +81,7 @@ describe('Transcript', () => {
     let state: TranscriptItem[] = []
     state = transcriptReducer(state, { type: 'delta', delta: '前导', reasoning: false })
     state = transcriptReducer(state, { type: 'tool_start', id: 't1', name: 'Read', desc: '{}' })
-    state = transcriptReducer(state, { type: 'tool_end', id: 't1', ok: true, preview: 'UNIQUE-PREVIEW', ms: 50 })
+    state = transcriptReducer(state, { type: 'tool_end', id: 't1', ok: true, preview: 'UNIQUE-PREVIEW', previewExtra: 0, ms: 50 })
     state = transcriptReducer(state, { type: 'turn_end', usage })
 
     const { rerender, lastFrame } = render(<Transcript items={state} />)

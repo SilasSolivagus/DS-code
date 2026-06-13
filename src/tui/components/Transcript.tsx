@@ -87,6 +87,7 @@ function renderItem(item: TranscriptItem, index: number): React.ReactNode {
             running={item.running}
             ok={item.ok}
             preview={item.preview}
+            previewExtra={item.previewExtra}
             ms={item.ms}
           />
         </Box>
@@ -121,18 +122,22 @@ function renderItem(item: TranscriptItem, index: number): React.ReactNode {
   }
 }
 
-export function Transcript({ items }: { items: TranscriptItem[] }) {
+type StaticEntry = TranscriptItem | { __banner: true }
+
+export function Transcript({ items, banner }: { items: TranscriptItem[]; banner?: React.ReactNode }) {
   const doneItems = items.filter(isDone)
   const liveItems = items.filter(item => !isDone(item))
+  // 欢迎框作为 Static 第一项：开机渲染一次、随对话滚入历史（仿 CC）——既不在说话后消失，
+  // 也不在实时区反复重画。ink Static 只对新增尾部项输出，首项 banner 恒定不重渲。
+  const staticItems: StaticEntry[] = banner ? [{ __banner: true }, ...doneItems] : doneItems
 
   return (
     <Box flexDirection="column">
-      {/* Static 区：已完成项只渲染一次。传整个 doneItems 数组；ink 用内部索引去重，
-          每次 rerender 只输出相对上次新增的尾部项，保证 done 项迁入时不重复。*/}
-      <Static items={doneItems}>
+      {/* Static 区：banner + 已完成项只渲染一次。ink 用内部索引去重，每次 rerender 只输出相对上次新增的尾部项。*/}
+      <Static items={staticItems}>
         {(item, index) => (
           <Box key={index}>
-            {renderItem(item, index)}
+            {'__banner' in item ? banner : renderItem(item, index)}
           </Box>
         )}
       </Static>

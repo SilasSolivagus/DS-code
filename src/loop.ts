@@ -9,7 +9,7 @@ import { sanitize } from './text.js'
 export type LoopEvent =
   | { type: 'text'; delta: string; reasoning?: boolean }
   | { type: 'tool_start'; id: string; name: string; desc: string }
-  | { type: 'tool_end'; id: string; ok: boolean; preview: string; ms: number }
+  | { type: 'tool_end'; id: string; ok: boolean; preview: string; previewExtra: number; ms: number }
   | { type: 'turn_end'; usage: ChatResult['usage'] }
 
 export interface LoopDeps {
@@ -36,10 +36,17 @@ function sealMessages(messages: any[], note: string): void {
   }
 }
 
-function previewOf(content: string): string {
-  // 先 split 再 sanitize：sanitize 会剥掉 \n，整体清洗会把所有行并成一行
-  const first = sanitize(content.split('\n')[0])
-  return first.length > 80 ? first.slice(0, 80) + '…' : first
+/** 工具结果预览（对照 CC：⎿ 下显示前几行内容 + 「… +N 行」）：取前 MAXLINES 行，
+ *  各行先剥控制字符再按 200 字截断（先 split 再 sanitize——sanitize 剥 \n，整体清洗会并成一行）。
+ *  返回展示文本（多行 \n 连接）与剩余行数 extra。*/
+function previewOf(content: string): { text: string; extra: number } {
+  const MAXLINES = 6
+  const lines = content.replace(/\n+$/, '').split('\n')  // 去尾部空行，避免虚增行数
+  const shown = lines.slice(0, MAXLINES).map(l => {
+    const s = sanitize(l)
+    return s.length > 200 ? s.slice(0, 200) + '…' : s
+  })
+  return { text: shown.join('\n'), extra: Math.max(0, lines.length - MAXLINES) }
 }
 
 /** ms 只计 tool.call 的实际执行时间，不含权限等待等前置环节；前置环节出错时 ms 为 0 */
@@ -145,7 +152,8 @@ export async function* runLoop(
     }
     for (const c of ro) {
       const o = outcomes.get(c.id)!
-      yield { type: 'tool_end', id: c.id, ok: o.ok, preview: previewOf(o.content), ms: o.ms }
+      const pv = previewOf(o.content)
+      yield { type: 'tool_end', id: c.id, ok: o.ok, preview: pv.text, previewExtra: pv.extra, ms: o.ms }
     }
 
     for (const c of rw) {
@@ -153,7 +161,8 @@ export async function* runLoop(
       if (deps.ctx.signal.aborted) outcomes.set(c.id, { ok: false, content: '已被用户中断，未执行', ms: 0 })
       else outcomes.set(c.id, await execCall(c, deps))
       const o = outcomes.get(c.id)!
-      yield { type: 'tool_end', id: c.id, ok: o.ok, preview: previewOf(o.content), ms: o.ms }
+      const pv = previewOf(o.content)
+      yield { type: 'tool_end', id: c.id, ok: o.ok, preview: pv.text, previewExtra: pv.extra, ms: o.ms }
     }
 
     // 工具结果必须按原始 tool_calls 顺序回灌

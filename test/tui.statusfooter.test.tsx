@@ -28,7 +28,7 @@ describe('StatusFooter', () => {
     expect(f).toContain('2 CLAUDE.md')
     expect(f).toContain('Read ×4')         // × 前留空（CC 样式）
     expect(f).toContain('Bash ×2')
-    expect(f).toContain('? 查看快捷键')
+    expect(f).toContain('看命令')
     // 上下文条同时有 filled 与 empty 字符
     expect(f).toContain('▓')
     expect(f).toContain('░')
@@ -50,6 +50,6 @@ describe('StatusFooter', () => {
     expect(f).not.toContain('✓')
     expect(f).not.toContain('CLAUDE.md')
     expect(f).toContain('Context')
-    expect(f).toContain('? 查看快捷键')
+    expect(f).toContain('看命令')
   })
 })
