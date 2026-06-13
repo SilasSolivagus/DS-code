@@ -95,7 +95,11 @@ export function InputBox(props: {
       return
     }
     if (key.ctrl || key.meta || key.tab) return      // tab 留给菜单
-    if (input) setVal(valueRef.current + input)
+    if (input) {
+      // 粘贴可能夹带控制字符（尤其 \r）：会覆写/串行致光标与文本错位。剥 C0/C1 控制符，保留 \n。
+      const clean = input.replace(/[\x00-\x09\x0B-\x1F\x7F]/g, '')
+      if (clean) setVal(valueRef.current + clean)
+    }
   })
 
   return (

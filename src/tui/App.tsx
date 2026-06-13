@@ -9,6 +9,7 @@ import { Box, Text, useApp, useInput } from 'ink'
 import { createChatCore, useChat } from './useChat.js'
 import { findMemoryFiles } from '../prompt.js'
 import { computeSuggestions } from './suggest.js'
+import { parkCol } from './caret.js'
 import { Banner } from './components/Banner.js'
 import { Transcript } from './components/Transcript.js'
 import { InputBox } from './components/InputBox.js'
@@ -182,7 +183,7 @@ export function App(props: {
     if (!inputActive || !process.stdout.isTTY) return
     const out = process.stdout as NodeJS.WriteStream & { __origWrite?: typeof process.stdout.write }
     const orig = out.__origWrite ?? out.write.bind(out)
-    const col = 4 + dispWidth(draft)  // 列：1=左内边距, 2-3="❯ ", 4+=输入文本；插入点在文本之后
+    const col = parkCol(draft, process.stdout.columns ?? 80, dispWidth)  // 折行/含换行时落到末行真实列，防超宽被钳
     const id = setTimeout(() => {
       try {
         ;(orig as any)(`\x1b[?25h\x1b[${linesBelowCaret}A\x1b[${col}G`)
