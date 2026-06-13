@@ -14,6 +14,7 @@ import { Transcript } from './components/Transcript.js'
 import { InputBox } from './components/InputBox.js'
 import { Suggestions } from './components/Suggestions.js'
 import { PermissionDialog } from './components/PermissionDialog.js'
+import { QuestionDialog } from './components/QuestionDialog.js'
 import { SelectList } from './components/SelectList.js'
 import { Spinner } from './components/Spinner.js'
 import { StatusFooter } from './components/StatusFooter.js'
@@ -59,12 +60,12 @@ export function App(props: {
 
   // pendingAsk / resumeMode 激活时清除 draft 和 valueOverride，防止 InputBox 卸载后 remount 时老值复活
   useEffect(() => {
-    if (state.pendingAsk || resumeMode) {
+    if (state.pendingAsk || state.pendingQuestion || resumeMode) {
       setDraft('')
       setValueOverride(undefined)
       justPickedRef.current = null
     }
-  }, [!!state.pendingAsk, resumeMode])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [!!state.pendingAsk, !!state.pendingQuestion, resumeMode])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ctrl+C 两次退出（App 层统一管理，exitOnCtrlC: false 时才需要）
   useInput((input, key) => {
@@ -154,7 +155,7 @@ export function App(props: {
   // 协作解法：包装 stdout.write——ink 每次写帧前，若光标处于停泊态，先把它移回底部（下移
   // 同样行数），让 eraseLines 从正确位置开始；写完帧后再把光标停回插入点。两者不再对抗。
   const parkRef = useRef<{ active: boolean; up: number }>({ active: false, up: 0 })
-  const inputActive = !state.pendingAsk && !resumeMode && !state.busy
+  const inputActive = !state.pendingAsk && !state.pendingQuestion && !resumeMode && !state.busy
 
   // 安装一次：包装 process.stdout.write，写帧前自动解除停泊（移回底部）
   useEffect(() => {
@@ -195,7 +196,9 @@ export function App(props: {
     <Box flexDirection="column">
       {/* 欢迎框交给 Transcript 作为 Static 首项：开机出现、随对话滚入历史留存，不消失也不反复重画（仿 CC） */}
       <Transcript items={state.transcript} banner={<Banner cwd={props.cwd} model={state.model} />} />
-      {state.pendingAsk
+      {state.pendingQuestion
+        ? <QuestionDialog questions={state.pendingQuestion.questions} onDone={a => core.resolveQuestion(a)} />
+        : state.pendingAsk
         ? <PermissionDialog ask={state.pendingAsk} onDecide={d => core.resolveAsk(d)} />
         : resumeMode
           ? <SelectList

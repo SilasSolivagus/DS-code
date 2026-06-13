@@ -1,5 +1,6 @@
 // test/headless.test.ts
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { readFileSync } from 'node:fs'
 
 const script: Array<{ deltas?: any[]; result: any }> = []
 vi.mock('../src/api.js', () => ({
@@ -98,5 +99,10 @@ describe('runHeadless', () => {
       m => m.role === 'tool' && typeof m.content === 'string' && m.content.includes('<system-reminder>') && m.content.includes('修 bug'),
     )
     expect(reminderMsg).toBeDefined()
+  })
+
+  it('headless 工具表不注册 AskUserQuestion（无人可答）', () => {
+    const src = readFileSync(new URL('../src/headless.ts', import.meta.url), 'utf8')
+    expect(src.includes('makeAskUserQuestionTool')).toBe(false)
   })
 })
