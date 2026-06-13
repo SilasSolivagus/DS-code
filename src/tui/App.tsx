@@ -150,16 +150,44 @@ export function App(props: {
     return order.map(name => ({ name, n: counts.get(name)! }))
   }, [state.transcript])
 
-  // IME 光标停泊（仅真 TTY）：原版 ink 全程藏光标、把它留在输出末尾，导致中文输入法的组字
-  // 预编辑出现在最底部而非输入框内（字"跳"出框外）。这里每帧渲染后把硬件光标移回输入框插入点，
-  // 让组字内联显示。setTimeout(0) 让写入落在 ink 的帧写入（微任务）之后，否则会被 ink 覆盖。
-  // 仅在输入框激活（非权限弹窗/恢复/生成中）且为真 TTY 时停泊；非 TTY（测试/管道）跳过。
+  // —— IME 光标停泊（仅真 TTY）——
+  // 病因：原版 ink 全程藏光标、把它留在输出末尾，中文输入法在硬件光标处画组字预编辑，
+  // 于是字"跳"到最底部而非输入框内。直接发转义码把光标移进框会和 ink 的重绘冲突：
+  // log-update 用 `eraseLines(上一帧行数)+新内容` 重绘，**假设光标停在上一帧底部**往上擦；
+  // 光标被我移到框中间后，下一帧就从错误行开始擦 → 页脚重画错乱。
+  // 协作解法：包装 stdout.write——ink 每次写帧前，若光标处于停泊态，先把它移回底部（下移
+  // 同样行数），让 eraseLines 从正确位置开始；写完帧后再把光标停回插入点。两者不再对抗。
+  const parkRef = useRef<{ active: boolean; up: number }>({ active: false, up: 0 })
   const inputActive = !state.pendingAsk && !resumeMode && !state.busy
+
+  // 安装一次：包装 process.stdout.write，写帧前自动解除停泊（移回底部）
+  useEffect(() => {
+    if (!process.stdout.isTTY) return
+    const out = process.stdout as NodeJS.WriteStream & { __origWrite?: typeof process.stdout.write }
+    const orig = out.write.bind(out)
+    out.__origWrite = orig
+    out.write = ((chunk: any, ...rest: any[]) => {
+      const p = parkRef.current
+      if (p.active) {
+        p.active = false
+        orig(`\x1b[${p.up}B`)  // 下移 up 行回到 ink 期望的底部；列无所谓，eraseLines 会重置
+      }
+      return (orig as any)(chunk, ...rest)
+    }) as typeof out.write
+    return () => { out.write = orig; delete out.__origWrite }
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 每帧渲染后把硬件光标停到输入框插入点（用原始 write 绕过上面的解除逻辑）
   useEffect(() => {
     if (!inputActive || !process.stdout.isTTY) return
+    const out = process.stdout as NodeJS.WriteStream & { __origWrite?: typeof process.stdout.write }
+    const orig = out.__origWrite ?? out.write.bind(out)
     const col = 4 + dispWidth(draft)  // 列：1=左内边距, 2-3="❯ ", 4+=输入文本；插入点在文本之后
     const id = setTimeout(() => {
-      try { process.stdout.write(`\x1b[?25h\x1b[${LINES_BELOW_CARET}A\x1b[${col}G`) } catch { /* 忽略写入失败 */ }
+      try {
+        ;(orig as any)(`\x1b[?25h\x1b[${LINES_BELOW_CARET}A\x1b[${col}G`)
+        parkRef.current = { active: true, up: LINES_BELOW_CARET }
+      } catch { /* 忽略写入失败 */ }
     }, 0)
     return () => clearTimeout(id)
   })
