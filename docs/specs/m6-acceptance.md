@@ -45,7 +45,7 @@ dist/loop.js            dist/tools/read.js         dist/tui/components/StatusFoo
 dist/permissions.js     dist/tools/todowrite.js    dist/tui/components/Suggestions.js
 dist/pricing.js         dist/tools/types.js        dist/tui/components/ToolLine.js
 dist/prompt.js          dist/tools/webfetch.js     dist/tui/components/Transcript.js
-dist/repl.js            dist/tools/write.js        dist/tui/diffPreview.js
+                        dist/tools/write.js        dist/tui/diffPreview.js
 dist/session.js                                    dist/tui/index.js
 dist/text.js                                       dist/tui/markdown.js
 dist/todo.js                                       dist/tui/setup.js
@@ -57,7 +57,7 @@ README.md
 package.json
 ```
 
-总文件数：46，打包大小 54.9 kB（解压 156.6 kB）。
+总文件数：45（干净 build 后；删 repl.ts 前的旧 dist 会多一个 dist/repl.js），打包大小 ~54 kB。
 
 ---
 
