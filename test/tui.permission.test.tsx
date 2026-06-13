@@ -93,13 +93,41 @@ describe('PermissionDialog', () => {
     r.stdin.write('A')
     expect(onDecide).toHaveBeenCalledWith('always')
   })
-  it('初始选中"允许"：渲染含 ❯ 允许，直接 Enter = yes', async () => {
+  it('初始选中"允许"：渲染含 ❯ 1. 允许，直接 Enter = yes', async () => {
     const onDecide = vi.fn()
     const r = render(<PermissionDialog ask={{ ...base, resolve: onDecide }} onDecide={onDecide} />)
     await delay()
-    expect(r.lastFrame()).toContain('❯ 允许')
+    expect(r.lastFrame()).toContain('❯ 1. 允许')
     r.stdin.write('\r')
     expect(onDecide).toHaveBeenCalledWith('yes')
+  })
+  it('编号菜单与问题行渲染：1. 允许 / 2. 总是允许 / 3. 拒绝 / 要执行这个操作吗？', async () => {
+    const r = render(<PermissionDialog ask={{ ...base, resolve: () => {} }} onDecide={() => {}} />)
+    await delay()
+    const frame = r.lastFrame()!
+    expect(frame).toContain('1. 允许')
+    expect(frame).toContain('2. 总是允许')
+    expect(frame).toContain('3. 拒绝')
+    expect(frame).toContain('要执行这个操作吗？')
+  })
+  it('数字键直接决策：1=yes / 2=always / 3=no', async () => {
+    const d1 = vi.fn()
+    const r1 = render(<PermissionDialog ask={{ ...base, resolve: d1 }} onDecide={d1} />)
+    await delay()
+    r1.stdin.write('1')
+    expect(d1).toHaveBeenCalledWith('yes')
+
+    const d2 = vi.fn()
+    const r2 = render(<PermissionDialog ask={{ ...base, resolve: d2 }} onDecide={d2} />)
+    await delay()
+    r2.stdin.write('2')
+    expect(d2).toHaveBeenCalledWith('always')
+
+    const d3 = vi.fn()
+    const r3 = render(<PermissionDialog ask={{ ...base, resolve: d3 }} onDecide={d3} />)
+    await delay()
+    r3.stdin.write('3')
+    expect(d3).toHaveBeenCalledWith('no')
   })
   it('↓ + Enter = always', async () => {
     const onDecide = vi.fn()
@@ -137,11 +165,11 @@ describe('PermissionDialog', () => {
     await delay()
     r.stdin.write('\x1b[B')
     await delay()
-    expect(r.lastFrame()).toContain('❯ 总是允许')
+    expect(r.lastFrame()).toContain('❯ 2. 总是允许')
     const ask2 = { ...base, desc: '{"file_path":"/tmp/y","old_string":"c","new_string":"d"}', resolve: onDecide }
     r.rerender(<PermissionDialog ask={ask2} onDecide={onDecide} />)
     await delay()
-    expect(r.lastFrame()).toContain('❯ 允许')
-    expect(r.lastFrame()).not.toContain('❯ 总是允许')
+    expect(r.lastFrame()).toContain('❯ 1. 允许')
+    expect(r.lastFrame()).not.toContain('❯ 2. 总是允许')
   })
 })

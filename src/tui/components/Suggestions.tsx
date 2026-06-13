@@ -38,6 +38,7 @@ export function Suggestions(props: {
   return (
     <Box flexDirection="column" borderStyle="round" borderColor={T.accent}>
       {items.map((item, i) => (
+        // 选中项：accent 背景高亮（对齐 CC）；命令描述/提示统一 dim。
         <Box key={item.value}>
           <Text backgroundColor={i === idx ? T.accent : undefined}>
             {item.value}
