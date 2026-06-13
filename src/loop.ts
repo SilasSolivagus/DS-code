@@ -4,6 +4,7 @@ import { chatStream, type ChatResult, type ToolCall } from './api.js'
 import type { Tool, ToolContext } from './tools/types.js'
 import { toApiTools } from './tools/index.js'
 import { checkPermission, type PermissionContext } from './permissions.js'
+import { sanitize } from './text.js'
 
 export type LoopEvent =
   | { type: 'text'; delta: string; reasoning?: boolean }
@@ -36,7 +37,8 @@ function sealMessages(messages: any[], note: string): void {
 }
 
 function previewOf(content: string): string {
-  const first = content.split('\n')[0]
+  // 先 split 再 sanitize：sanitize 会剥掉 \n，整体清洗会把所有行并成一行
+  const first = sanitize(content.split('\n')[0])
   return first.length > 80 ? first.slice(0, 80) + '…' : first
 }
 

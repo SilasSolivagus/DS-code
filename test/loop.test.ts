@@ -265,6 +265,31 @@ describe('runLoop', () => {
     expect(end.ms).toBeGreaterThanOrEqual(0)
   })
 
+  it('tool_end 的 preview 不含 ESC/CR 控制字符（全屏程序输出不污染画面）', async () => {
+    const { z } = await import('zod')
+    const fullscreen: any = {
+      name: 'Bash', isReadOnly: true,
+      inputSchema: z.object({}),
+      // 模拟贪吃蛇等全屏程序的输出：备用屏切换 + 颜色 + CR
+      call: async () => '\x1b[?1049h\x1b[31m蛇头\r\x1b[0m第一行\n第二行',
+    }
+    script.push(
+      {
+        result: {
+          content: '', toolCalls: [{ id: 's1', name: 'Bash', args: '{}' }],
+          usage, finishReason: 'tool_calls',
+        },
+      },
+      { result: { content: 'ok', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    const { events } = await drain(runLoop([{ role: 'user', content: 'hi' }], makeDeps([fullscreen])))
+    const end = events.find(e => e.type === 'tool_end')
+    expect(end.preview).not.toMatch(/\x1b/)
+    expect(end.preview).not.toMatch(/\r/)
+    expect(end.preview).toContain('第一行')
+    expect(end.preview).not.toContain('第二行') // 仍只取第一行
+  })
+
   it('tool_end 的 ms 不含权限等待时间', async () => {
     const { z } = await import('zod')
     const slow: any = {

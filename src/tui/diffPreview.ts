@@ -3,16 +3,12 @@
 // 任何解析失败降级为 desc 原文。预览上限 40 行（超出截断并标注）。
 import fs from 'node:fs'
 import { diffLines, type Change } from 'diff'
+import { sanitize } from '../text.js'
 
 export interface PreviewLine { sign: '+' | '-' | ' '; text: string }
 export interface Preview { title: string; lines: PreviewLine[]; truncated: boolean }
 
 const MAX = 40
-
-// 安全过滤：剥除模型生成参数中的控制字符，防止恶意 ESC 序列在终端渲染时覆盖已显示内容
-// （例：arg 中嵌入 \x1b[2K\r 可在"批准 ls"后视觉上显示成"批准 rm -rf"的幻象）。
-// 保留 \t（\x09）；LF 在此前已被 split 处理；CR（\x0d）和 ESC（\x1b）会被剥除。
-const sanitize = (s: string) => s.replace(/[\x00-\x08\x0a-\x1f\x7f]/g, '')
 
 function toLines(diff: Change[]): PreviewLine[] {
   // 调用方在 toLines 之后立即过滤掉 sign===' ' 的行，
