@@ -14,7 +14,7 @@ deepcode
 ## 安装
 
 ```bash
-npm i -g ds-code
+npm i -g @silassolivagus/deepcode
 ```
 
 安装后命令为 `deepcode`。需要 Node ≥ 18。
@@ -64,7 +64,7 @@ export ANTHROPIC_API_KEY=${DEEPSEEK_API_KEY}
 
 | | CC + DeepSeek 兼容接口 | deepcode（本项目） |
 |---|---|---|
-| 上手成本 | 两行环境变量 | `npm i -g ds-code` |
+| 上手成本 | 两行环境变量 | `npm i -g @silassolivagus/deepcode` |
 | 功能完整度 | CC 全家桶 | M1–M6 核心功能，逐里程碑补齐 |
 | 系统提示词/工具描述 | 为 Claude 调教的，DeepSeek 吃这套的效果不可控 | 为 DeepSeek 撰写，可逐字调整 |
 | 兼容接口的限制 | 不支持图像/文档内容、忽略 `cache_control`/`top_k`/MCP 部分字段 | 直连原生 OpenAI 兼容接口，无转译层 |
@@ -101,7 +101,7 @@ src/
 - [x] **M3 不丢活**：会话 JSONL 持久化、`--continue`/`/resume`、`/cost`（`v0.3.0-m3`）
 - [x] **M4 跑长活**：上下文压缩 compact（手动 `/compact` + 阈值自动触发）、TodoWrite + system-reminder 走神检测、只读 Agent 子代理（并发 ×4）、`/init` `/context` `/permissions` 与自定义命令（`$ARGUMENTS` 模板）、headless `-p "<任务>" [--json]` 单发模式（`v0.4.0-m4`）
 - [x] **M5 CC UI 1:1 复刻**：ink TUI、补全菜单、思考折叠块、缓存命中率/tok-s 状态行（`v0.5.0-m5`）
-- [x] **M6 公开发布**（本版）：`npm i -g ds-code` 可安装、首跑 TUI 向导写 key、WebFetch 工具（`v0.6.0-m6`）
+- [x] **M6 公开发布**（本版）：`npm i -g @silassolivagus/deepcode` 可安装、首跑 TUI 向导写 key、WebFetch 工具（`v0.6.0-m6`）
 - [ ] **M7**：`/rewind`、可写 subagent + git worktree
 
 ## 开发
