@@ -1,15 +1,54 @@
 # deepcode
 
-基于 DeepSeek API 的终端编码 agent —— 一个微缩版 Claude Code 架构的自有 harness。
+给 DeepSeek API 写的 CC 风格终端编码助手（微缩版 Claude Code）。
 
 ```
-cd 你的项目 && DEEPSEEK_API_KEY=sk-... deepcode
+deepcode
 › versions 路由的权限是怎么校验的？
 ⏺ Grep({"pattern": "versions", "glob": "*route*"})   ← 模型自主并行调用工具
 ⏺ Read({"file_path": ".../check-role.ts"})
 权限校验走统一的 checkRole(minRole)，基于 JWT + users 表角色字段……
 [入 3366（缓存命中 2816）出 602]                      ← KV 缓存命中，长会话近乎只付输出 token
 ```
+
+## 安装
+
+```bash
+npm i -g ds-code
+```
+
+安装后命令为 `deepcode`。需要 Node ≥ 18。
+
+## 配置 API key
+
+三选一（优先级 env > settings）：
+- 首次运行 `deepcode`，按向导粘贴 key（写入 `~/.deepcode/settings.json`，权限 600）
+- 或 `export DEEPSEEK_API_KEY=sk-...`
+- 或手写 `~/.deepcode/settings.json` 的 `apiKey` 字段
+
+> 若你的网络需代理访问 DeepSeek，设置 `https_proxy`（如 `http://127.0.0.1:8118`），deepcode 会自动经它请求。
+
+## 用法
+
+```bash
+deepcode                    # 交互式 TUI
+deepcode -p "<任务>"         # 一次性 headless 输出
+deepcode -p "<任务>" --json  # headless + JSON（text/status/turns/usage/costUSD）
+echo "<任务>" | deepcode     # 管道喂入走 headless
+```
+
+交互中：
+- `@文件` 引用文件、`!命令` 直跑 shell
+- 斜杠命令：`/model`（flash↔pro）、`/think`、`/accept`、`/cost`、`/context`、`/compact`、`/clear`、`/resume`、`/permissions`、`/init`（生成 DEEPCODE.md）、`/help`、`/exit`
+- 工具：Read / Glob / Grep / Bash / Edit / Write / TodoWrite / Agent（只读子代理）/ WebFetch
+
+`/` 浮出补全菜单，Esc 中断当前轮，Ctrl+C×2 退出。自定义命令放 `~/.deepcode/commands/*.md` 或 `<项目>/.deepcode/commands/*.md`（`$ARGUMENTS` 占位）。权限规则持久化在 `~/.deepcode/settings.json`。
+
+## 模型
+
+默认 `deepseek-v4-flash`，`/model pro` 切 `deepseek-v4`，`/think` 开关 thinking。
+
+thinking 控制：v4-flash 默认偷偷开 thinking（同一问题 39 token vs 1 token），deepcode 默认显式关闭；`/think` 开启后思考流可见（仅显示，不入上下文）。
 
 ## 为什么不直接用 Claude Code 接 DeepSeek？
 
@@ -25,41 +64,14 @@ export ANTHROPIC_API_KEY=${DEEPSEEK_API_KEY}
 
 | | CC + DeepSeek 兼容接口 | deepcode（本项目） |
 |---|---|---|
-| 上手成本 | 两行环境变量 | clone + npm i |
-| 功能完整度 | CC 全家桶 | M1 核心六件套，逐里程碑补齐 |
+| 上手成本 | 两行环境变量 | `npm i -g ds-code` |
+| 功能完整度 | CC 全家桶 | M1–M6 核心功能，逐里程碑补齐 |
 | 系统提示词/工具描述 | 为 Claude 调教的，DeepSeek 吃这套的效果不可控 | 为 DeepSeek 撰写，可逐字调整 |
 | 兼容接口的限制 | 不支持图像/文档内容、忽略 `cache_control`/`top_k`/MCP 部分字段 | 直连原生 OpenAI 兼容接口，无转译层 |
-| thinking 成本控制 | 由 CC 的请求行为决定 | 显式 `thinking:{type:"disabled"}` 默认关（实测省 ~39 倍输出 token，见下） |
+| thinking 成本控制 | 由 CC 的请求行为决定 | 显式 `thinking:{type:"disabled"}` 默认关（实测省 ~39 倍输出 token） |
 | 可改性 | 不可改 | 每一行都是你的 |
 
 两条路线不互斥：日常重活可以用 CC 接 DeepSeek，deepcode 的价值是**自主可控 + 理解 harness 的每一层**。
-
-## M1 已实现（tag `v0.1.0-m1`）
-
-- **核心 agent loop**：流式响应 → 工具分发（只读并发 ×5 / 写串行）→ 结果回灌循环，maxTurns 熔断，中断后自动补齐消息序列（不会留下让 API 报 400 的 tool 结尾）
-- **四个工具**：Read（行号 + offset/limit + fileState 记录）、Glob、Grep（系统 rg 优先，JS 降级）、Bash（持久化 cwd、30k 输出截中间、真实退出码透传）
-- **权限门**：只读自动放行；写操作弹窗 y/n/always，always 持久化为 CC 风格规则（`Bash(npm test:*)` 前缀匹配，带词边界）；`--yolo` 全放行
-- **KV 缓存纪律**：system prompt 会话内绝对静态、messages 只追加——DeepSeek 前缀缓存命中价约为未命中的 1/10，实测会话内命中逐轮递增
-- **thinking 控制**：v4-flash 默认偷偷开 thinking（同一问题 39 token vs 1 token），deepcode 默认显式关闭；`/think` 开启后思考流可见（仅显示，不入上下文）
-- **环境适配**：自动识别 `https_proxy` 等代理变量（undici ProxyAgent；Node fetch 默认不读代理）
-- **项目记忆**：自动向上收集 `CLAUDE.md`/`AGENTS.md` + 全局 `~/.deepcode/DEEPCODE.md` 注入系统提示词
-- Esc 中断当前轮、66 个单测
-
-## 使用
-
-```bash
-npm install
-export DEEPSEEK_API_KEY=sk-...
-npm start            # 在当前目录启动 ink TUI（鲸鱼蓝主题、补全菜单、思考折叠块、缓存命中率/tok-s 状态行）
-npm start -- --plain # 旧版 readline REPL（逃生舱：无 ink 依赖、便于管道/调试）
-npm start -- --yolo  # 跳过所有权限确认（自担风险）
-npm start -- -p "修一下 README 里的错别字" --json   # headless 单发：跑完输出结果退出（--json 给脚本消费）
-echo "总结这个仓库" | npm start                    # 非 TTY 管道：读 stdin 全文当 prompt 走 headless
-```
-
-TUI/REPL 内命令：`/model` `/think` `/accept` `/cost` `/context` `/compact` `/clear` `/resume` `/permissions` `/init` `/help` `/exit`；`/` 浮出补全菜单、`@` 引用文件、`!` 直跑 shell，Esc 中断当前轮，Ctrl+C×2 退出。自定义命令放 `~/.deepcode/commands/*.md` 或 `<项目>/.deepcode/commands/*.md`（`$ARGUMENTS` 占位）。
-
-权限规则持久化在 `~/.deepcode/settings.json`。
 
 ## 架构
 
@@ -84,18 +96,18 @@ src/
 
 ## Roadmap
 
-- [x] **M1 能对话**：流式 REPL + 只读探查 + Bash + 权限门（`v0.1.0-m1`）
+- [x] **M1 能对话**：流式 TUI + 只读探查 + Bash + 权限门（`v0.1.0-m1`）
 - [x] **M2 能干活**：Edit/Write + 强制 read-before-edit + acceptEdits 模式（`v0.2.0-m2`）
 - [x] **M3 不丢活**：会话 JSONL 持久化、`--continue`/`/resume`、`/cost`（`v0.3.0-m3`）
 - [x] **M4 跑长活**：上下文压缩 compact（手动 `/compact` + 阈值自动触发）、TodoWrite + system-reminder 走神检测、只读 Agent 子代理（并发 ×4）、`/init` `/context` `/permissions` 与自定义命令（`$ARGUMENTS` 模板）、headless `-p "<任务>" [--json]` 单发模式（`v0.4.0-m4`）
-- [ ] **M4+ 视觉 sidecar（可选）**：DeepSeek API 不收图，但可以加 `ImageRead` 工具——挂任意 OpenAI 兼容的视觉模型（GLM-4V/Qwen-VL/Gemini），主模型带着具体问题问图（"这张报错截图的 stack trace 第一行是什么"），把回答作为工具结果回灌。有损但够用，截图排错类场景即可解锁
-
-里程碑规格与实施计划在 [docs/specs/](docs/specs/) 与 [docs/plans/](docs/plans/)，M1 验收报告见 [docs/specs/m1-acceptance.md](docs/specs/m1-acceptance.md)。
+- [x] **M5 CC UI 1:1 复刻**：ink TUI、补全菜单、思考折叠块、缓存命中率/tok-s 状态行（`v0.5.0-m5`）
+- [x] **M6 公开发布**（本版）：`npm i -g ds-code` 可安装、首跑 TUI 向导写 key、WebFetch 工具（`v0.6.0-m6`）
+- [ ] **M7**：`/rewind`、可写 subagent + git worktree
 
 ## 开发
 
 ```bash
-npm test           # vitest，66 用例
+npm test           # vitest
 npm run typecheck  # tsc --noEmit
 DEEPSEEK_API_KEY=sk-... npx tsx scripts/smoke-api.ts "你好"  # 真机冒烟
 ```
