@@ -14,6 +14,7 @@ import { allTools } from '../tools/index.js'
 import { todoWriteTool } from '../tools/todowrite.js'
 import { makeAgentTool } from '../tools/agent.js'
 import { makeWebFetchTool } from '../tools/webfetch.js'
+import { makeAskUserQuestionTool, type Question, type Answer } from '../tools/askUserQuestion.js'
 import { buildSystemPrompt } from '../prompt.js'
 import { loadSettings, saveSettings } from '../config.js'
 import { isDangerous, type Decision, type PermissionMode } from '../permissions.js'
@@ -128,6 +129,7 @@ export function transcriptReducer(state: TranscriptItem[], a: ReducerAction): Tr
 }
 
 export interface PendingAsk { toolName: string; desc: string; dangerous: boolean; resolve: (d: Decision) => void }
+export interface PendingQuestion { questions: Question[]; resolve: (a: Answer[] | null) => void }
 
 export interface ChatState {
   transcript: TranscriptItem[]
@@ -136,6 +138,7 @@ export interface ChatState {
   thinking: boolean
   permMode: PermissionMode
   pendingAsk: PendingAsk | null
+  pendingQuestion: PendingQuestion | null
   usageLog: UsageRecord[]
   lastTokPerSec: number | null
   turnStartAt: number | null // 当前轮开始时间戳（spinner 计算耗时秒数；空闲为 null）
@@ -150,6 +153,7 @@ export interface ChatCore {
   send(line: string): Promise<void> // 斜杠命令本地处理；其余走 runLoop（含边界 reminders、落盘、自动 compact）
   interrupt(): void // Esc
   resolveAsk(d: Decision): void // 权限弹窗回答
+  resolveQuestion(answers: Answer[] | null): void // AskUserQuestion 弹窗回答
   resumeList(): { file: string; preview: string }[]
   resume(file: string): void
   customCommands: Map<string, string>
@@ -194,6 +198,7 @@ export function createChatCore(opts: {
   let transcript: TranscriptItem[] = []
   let busy = false
   let pendingAsk: PendingAsk | null = null
+  let pendingQuestion: PendingQuestion | null = null
   let lastTokPerSec: number | null = null
   let turnStartAt: number | null = null
   let turnOutTokens = 0
@@ -210,7 +215,7 @@ export function createChatCore(opts: {
   // 所有状态变更走 setState：换新快照对象 → onState 回调 + 订阅者通知
   const listeners = new Set<() => void>()
   const snap = (): ChatState => ({
-    transcript, busy, model, thinking, permMode, pendingAsk, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, sessionCost, cacheHitRate, contextPct,
+    transcript, busy, model, thinking, permMode, pendingAsk, pendingQuestion, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, sessionCost, cacheHitRate, contextPct,
   })
   let state = snap()
   const setState = (): void => {
@@ -263,6 +268,13 @@ export function createChatCore(opts: {
     session.appendMessage(messages[0]) // 持久化 system 消息
   }
 
+  // AskUserQuestion 桥：挂起 Promise + pendingQuestion 状态，UI 用 resolveQuestion 回答
+  const questionAsk = (questions: Question[]): Promise<Answer[] | null> =>
+    new Promise<Answer[] | null>(res => {
+      pendingQuestion = { questions, resolve: res }
+      setState()
+    })
+
   const tools = [
     ...allTools,
     todoWriteTool,
@@ -274,6 +286,7 @@ export function createChatCore(opts: {
       client: opts.client,
       onUsage: (u, m) => { usageLog.push({ usage: u, model: m }); session.appendUsage(u, m) },
     }),
+    makeAskUserQuestionTool({ ask: questionAsk }),
   ]
 
   /** compact：总结→重建消息→落盘 compact 记录与新前缀。失败不破坏现场（messages 仅在成功后替换）。 */
@@ -534,6 +547,7 @@ export function createChatCore(opts: {
       // 若权限弹窗挂起（pendingAsk），checkPermission 内的 ask Promise 永不 resolve，
       // generator 永不返回，busy 永远 true——必须先拒绝掉再 abort，否则死锁。
       if (pendingAsk) { const p = pendingAsk; pendingAsk = null; setState(); p.resolve('no') }
+      if (pendingQuestion) { const p = pendingQuestion; pendingQuestion = null; setState(); p.resolve(null) }
       abort.abort()
     },
     resolveAsk: (d: Decision) => {
@@ -542,6 +556,13 @@ export function createChatCore(opts: {
       pendingAsk = null
       setState()
       p.resolve(d)
+    },
+    resolveQuestion: (answers: Answer[] | null) => {
+      if (!pendingQuestion) return
+      const p = pendingQuestion
+      pendingQuestion = null
+      setState()
+      p.resolve(answers)
     },
     resumeList: () => listSessions(cwd, sessionDir).slice(0, 10).map(s => ({ file: s.file, preview: s.preview })),
     resume: (file: string) => {
