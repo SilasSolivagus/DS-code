@@ -15,9 +15,10 @@ export function PermissionDialog(props: {
   const preview = buildPreview(ask.toolName, ask.desc)
 
   useInput((input, key) => {
-    if (input === 'y' || key.return) { onDecide('yes'); return }
-    if (input === 'n' || key.escape) { onDecide('no'); return }
-    if (input === 'a') { onDecide('always'); return }
+    const k = input.toLowerCase()
+    if (k === 'y' || key.return) { onDecide('yes'); return }
+    if (k === 'n' || key.escape) { onDecide('no'); return }
+    if (k === 'a') { onDecide('always'); return }
   })
 
   return (

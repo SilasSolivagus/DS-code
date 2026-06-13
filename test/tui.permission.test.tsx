@@ -34,6 +34,34 @@ describe('buildPreview', () => {
     expect(p.lines.length).toBeGreaterThan(0)
     expect(buildPreview('Edit', '不是json').lines.length).toBeGreaterThan(0)
   })
+
+  it('Bash 命令含 ESC/CR：输出行中不含控制字符', () => {
+    // 注入向量：\x1b[31m 可改变终端颜色；\r 可覆盖已渲染的行首内容，
+    // 令用户看到的批准命令与实际执行命令不一致。
+    const malicious = 'ls\x1b[31m\r'
+    const p = buildPreview('Bash', JSON.stringify({ command: malicious }))
+    for (const line of p.lines) {
+      expect(line.text).not.toMatch(/\x1b/)
+      expect(line.text).not.toMatch(/\r/)
+    }
+  })
+
+  it('Edit new_string 含 $& 字面量：+ 行原样显示 pre-$&-post', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'dp-'))
+    const f = path.join(dir, 'b.ts')
+    writeFileSync(f, 'hello world\n')
+    const p = buildPreview('Edit', JSON.stringify({ file_path: f, old_string: 'hello world', new_string: 'pre-$&-post' }))
+    expect(p.lines.some(l => l.sign === '+' && l.text.includes('pre-$&-post'))).toBe(true)
+  })
+
+  it('Edit old_string 不在文件中：产出含"无差异"提示行', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'dp-'))
+    const f = path.join(dir, 'c.ts')
+    writeFileSync(f, 'const x = 1\n')
+    const p = buildPreview('Edit', JSON.stringify({ file_path: f, old_string: 'not_found', new_string: 'whatever' }))
+    expect(p.lines.length).toBeGreaterThan(0)
+    expect(p.lines.some(l => l.text.includes('无差异'))).toBe(true)
+  })
 })
 
 const delay = (ms = 0) => new Promise(res => setTimeout(res, ms))
@@ -50,5 +78,12 @@ describe('PermissionDialog', () => {
   it('高危显示红色警告', () => {
     const r = render(<PermissionDialog ask={{ ...base, toolName: 'Bash', desc: '{"command":"sudo rm -rf /"}', dangerous: true, resolve: () => {} }} onDecide={() => {}} />)
     expect(r.lastFrame()).toContain('高危')
+  })
+  it('大写 A 也触发 always 决策（大小写不敏感）', async () => {
+    const onDecide = vi.fn()
+    const r = render(<PermissionDialog ask={{ ...base, resolve: onDecide }} onDecide={onDecide} />)
+    await delay()
+    r.stdin.write('A')
+    expect(onDecide).toHaveBeenCalledWith('always')
   })
 })
