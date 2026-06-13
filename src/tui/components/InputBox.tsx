@@ -2,10 +2,11 @@
 // CC 手感输入框：圆角蓝边框、placeholder、历史↑↓、行尾 \ 续行、Esc 双语义、busy 态提示。
 // 不用 ink-text-input：自管 value/cursor，否则历史与续行语义插不进去。
 // 偏差说明：计划原版在 Enter 时无条件调 onSubmit；此处加 busy guard——busy 时 Enter 不提交
-// （value 仍然可以累积；提交需等 busy=false）。Task 9 的 App 如需队列可在上层实现。
-// 实现细节：inputHandler 通过 useRef 稳定引用，避免 useInput 的 useEffect 因闭包过期在
-// 连续按键（↑↑↓）时读到旧状态。
-import React, { useState, useRef, useCallback } from 'react'
+// （value 仍然可以累积）。注意：guard 会吞掉 busy 期间的 Enter，上层收不到 onSubmit——
+// 若要做 CC 式输入排队，需放开此 guard 或加 prop，不能只在上层实现。
+// 实现细节：状态变更统一走 setVal helper（同步 ref+state+onChange），useInput handler
+// 读 ref 而非闭包，避免连续按键（↑↑↓）时读到旧状态。
+import React, { useState, useRef } from 'react'
 import { Box, Text, useInput } from 'ink'
 import { T } from '../theme.js'
 
@@ -27,23 +28,22 @@ export function InputBox(props: {
   const pendingRef = useRef(pending)
   const histIdxRef = useRef(histIdx)
 
-  const set = useCallback((v: string) => {
+  // 统一变更入口：value 的 ref/state/onChange 三处必须同步，漏一处就 desync
+  const setVal = (v: string) => {
     valueRef.current = v
     setValue(v)
     props.onChange?.(v)
-  }, [props.onChange]) // eslint-disable-line
+  }
 
   useInput((input, key) => {
     if (key.escape) {
       if (props.busy) props.onInterrupt()
       else {
-        valueRef.current = ''
         pendingRef.current = ''
         histIdxRef.current = -1
-        setValue('')
         setPending('')
         setHistIdx(-1)
-        props.onChange?.('')
+        setVal('')
       }
       return
     }
@@ -54,20 +54,16 @@ export function InputBox(props: {
         const next = pendingRef.current + valueRef.current.slice(0, -1) + '\n'
         pendingRef.current = next
         setPending(next)
-        valueRef.current = ''
-        setValue('')
-        props.onChange?.('')
+        setVal('')
         return
       }
       const full = pendingRef.current + valueRef.current
       if (!full.trim()) return
       pendingRef.current = ''
-      valueRef.current = ''
       histIdxRef.current = -1
       setPending('')
-      setValue('')
       setHistIdx(-1)
-      props.onChange?.('')
+      setVal('')
       props.onSubmit(full)
       return
     }
@@ -79,26 +75,15 @@ export function InputBox(props: {
       const next = key.upArrow ? Math.min(cur + 1, h.length - 1) : Math.max(cur - 1, -1)
       histIdxRef.current = next
       setHistIdx(next)
-      const v = next === -1 ? '' : h[h.length - 1 - next]
-      valueRef.current = v
-      setValue(v)
-      props.onChange?.(v)
+      setVal(next === -1 ? '' : h[h.length - 1 - next])
       return
     }
     if (key.backspace || key.delete) {
-      const v = valueRef.current.slice(0, -1)
-      valueRef.current = v
-      setValue(v)
-      props.onChange?.(v)
+      setVal(valueRef.current.slice(0, -1))
       return
     }
     if (key.ctrl || key.meta || key.tab) return      // tab 留给菜单
-    if (input) {
-      const v = valueRef.current + input
-      valueRef.current = v
-      setValue(v)
-      props.onChange?.(v)
-    }
+    if (input) setVal(valueRef.current + input)
   })
 
   return (
