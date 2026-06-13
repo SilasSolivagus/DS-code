@@ -6,7 +6,7 @@
 // 若要做 CC 式输入排队，需放开此 guard 或加 prop，不能只在上层实现。
 // 实现细节：状态变更统一走 setVal helper（同步 ref+state+onChange），useInput handler
 // 读 ref 而非闭包，避免连续按键（↑↑↓）时读到旧状态。
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { Box, Text, useInput } from 'ink'
 import { T } from '../theme.js'
 
@@ -18,6 +18,8 @@ export function InputBox(props: {
   suggestionsActive?: boolean
   history: string[]
   busy: boolean
+  /** App 层注入值（补全 pick 后替换整个 draft）。nonce 变化时才实际替换，防止 re-render 重置 */
+  valueOverride?: { text: string; nonce: number }
 }) {
   const [value, setValue] = useState('')
   const [pending, setPending] = useState('')        // \ 续行累积
@@ -27,6 +29,8 @@ export function InputBox(props: {
   const valueRef = useRef(value)
   const pendingRef = useRef(pending)
   const histIdxRef = useRef(histIdx)
+  // 记录上次处理过的 nonce，只在 nonce 变化时注入
+  const lastNonceRef = useRef<number | undefined>(undefined)
 
   // 统一变更入口：value 的 ref/state/onChange 三处必须同步，漏一处就 desync
   const setVal = (v: string) => {
@@ -34,6 +38,14 @@ export function InputBox(props: {
     setValue(v)
     props.onChange?.(v)
   }
+
+  // valueOverride 注入：nonce 变化时替换内部 value（补全 pick 触发）
+  useEffect(() => {
+    if (props.valueOverride && props.valueOverride.nonce !== lastNonceRef.current) {
+      lastNonceRef.current = props.valueOverride.nonce
+      setVal(props.valueOverride.text)
+    }
+  }, [props.valueOverride?.nonce])  // eslint-disable-line react-hooks/exhaustive-deps
 
   useInput((input, key) => {
     if (key.escape) {

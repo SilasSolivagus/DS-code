@@ -6,6 +6,8 @@
 //  3. useChat：薄 React 包装（useSyncExternalStore 订阅 core）
 import { useSyncExternalStore } from 'react'
 import fs from 'node:fs'
+import path from 'node:path'
+import { execSync } from 'node:child_process'
 import type OpenAI from 'openai'
 import { runLoop, type LoopDeps, type LoopEvent } from '../loop.js'
 import { allTools } from '../tools/index.js'
@@ -20,6 +22,29 @@ import { costUSD } from '../pricing.js'
 import { summarize, rebuildMessages } from '../compact.js'
 import { TodoStore } from '../todo.js'
 import { loadCustomCommands, expandCommand, INIT_PROMPT, formatContext } from '../commands.js'
+
+/** ! 直跑：同步执行，30s 超时，stdout+stderr 合并，超 20k 截断 */
+export function runBang(cmd: string, cwd: string): { output: string; code: number } {
+  try {
+    const out = execSync(cmd, { cwd, timeout: 30_000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+    return { output: out.slice(0, 20_000), code: 0 }
+  } catch (e: any) {
+    const out = `${e.stdout ?? ''}${e.stderr ?? ''}` || String(e.message)
+    return { output: out.slice(0, 20_000), code: e.status ?? 1 }
+  }
+}
+
+/** @path 展开为 <file> 块（≤400 行/文件；缺失文件标注读取失败） */
+export function expandAtRefs(text: string, cwd: string): string {
+  // 匹配 @ 后的路径（含中文文件名）：直到遇到空格/换行/制表符为止
+  return text.replace(/@([^\s]+)/g, (m, p) => {
+    try {
+      const lines = fs.readFileSync(path.resolve(cwd, p), 'utf8').split('\n')
+      const body = lines.slice(0, 400).join('\n') + (lines.length > 400 ? '\n…（截断）' : '')
+      return `\n<file path="${p}">\n${body}\n</file>\n`
+    } catch { return `${m}（读取失败：文件不存在或不可读）` }
+  })
+}
 
 export type TranscriptItem =
   | { kind: 'user'; text: string }
@@ -356,6 +381,21 @@ export function createChatCore(opts: {
   const send = async (line: string): Promise<void> => {
     line = line.trim()
     if (!line || busy) return
+    // ! 直跑：执行 shell 命令，结果作为 bang transcript 块，同时以 XML 格式入上下文（不触发模型回复）
+    if (line.startsWith('!')) {
+      const cmd = line.slice(1).trim()
+      const { output, code } = runBang(cmd, cwd)
+      dispatch({ type: 'push', item: { kind: 'bang', cmd, output } })
+      // 进入消息上下文（模型下次提问时可引用）
+      const bangMsg = {
+        role: 'user' as const,
+        content: `<bash-input>${cmd}</bash-input>\n<bash-output>\n${output}\n</bash-output>`,
+      }
+      messages.push(bangMsg)
+      session.appendMessage(bangMsg)
+      if (code !== 0) notice('warn', `命令退出码 ${code}`)
+      return
+    }
     if (line === '/help') {
       notice('info', HELP_TEXT)
       return
@@ -434,6 +474,9 @@ export function createChatCore(opts: {
       const tpl = customCommands.get(name)
       if (!tpl) { notice('warn', `未知命令 /${name}，/help 查看可用命令`); return }
       userText = expandCommand(tpl, rest.join(' '))
+    } else {
+      // 非斜杠输入：展开 @文件引用再发送
+      userText = expandAtRefs(line, cwd)
     }
     await runTurn(line, userText)
   }
