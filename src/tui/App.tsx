@@ -21,6 +21,10 @@ import { Spinner } from './components/Spinner.js'
 import { StatusFooter } from './components/StatusFooter.js'
 
 // CJK/全角字符按 2 列宽计（终端等宽规则）；用于算输入框插入点的列号。
+// 逃生开关：设 DEEPCODE_NO_CURSOR_PARK=1 完全禁用 IME 光标停泊（退回原版 ink 行为）。
+// 用于排查 Ghostty 等终端下的滚动/重绘问题——停泊每帧改写硬件光标，是最可能干扰滚动的非标准动作。
+const CURSOR_PARK_OFF = process.env.DEEPCODE_NO_CURSOR_PARK === '1'
+
 function dispWidth(s: string): number {
   let w = 0
   for (const ch of s) {
@@ -159,8 +163,9 @@ export function App(props: {
   const inputActive = !state.pendingAsk && !state.pendingQuestion && !resumeMode && !state.busy
 
   // 安装一次：包装 process.stdout.write，写帧前自动解除停泊（移回底部）
+  // 诊断/逃生：DEEPCODE_NO_CURSOR_PARK=1 关掉整套光标停泊（退回原版 ink）——用于排查滚动/重绘问题。
   useEffect(() => {
-    if (!process.stdout.isTTY) return
+    if (!process.stdout.isTTY || CURSOR_PARK_OFF) return
     const out = process.stdout as NodeJS.WriteStream & { __origWrite?: typeof process.stdout.write }
     const orig = out.write.bind(out)
     out.__origWrite = orig
@@ -180,7 +185,7 @@ export function App(props: {
   // 故 = 5 + 记忆行(0/1) + 工具行(0/1)。页脚行数随内容变 → 必须动态算，否则光标偏。
   const linesBelowCaret = 5 + (memoryCount > 0 ? 1 : 0) + (toolCounts.length > 0 ? 1 : 0)
   useEffect(() => {
-    if (!inputActive || !process.stdout.isTTY) return
+    if (!inputActive || !process.stdout.isTTY || CURSOR_PARK_OFF) return
     const out = process.stdout as NodeJS.WriteStream & { __origWrite?: typeof process.stdout.write }
     const orig = out.__origWrite ?? out.write.bind(out)
     const col = parkCol(draft, process.stdout.columns ?? 80, dispWidth)  // 折行/含换行时落到末行真实列，防超宽被钳
