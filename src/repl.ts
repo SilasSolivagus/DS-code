@@ -1,4 +1,5 @@
 // src/repl.ts
+// 【已冻结】M5 起交互层由 src/tui/ 接管，本文件仅作 --plain 逃生舱保留，不再演进。M6 评估删除。
 import readline from 'node:readline'
 import fs from 'node:fs'
 import type OpenAI from 'openai'
