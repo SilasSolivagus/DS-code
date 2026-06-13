@@ -50,12 +50,14 @@ export ANTHROPIC_API_KEY=${DEEPSEEK_API_KEY}
 ```bash
 npm install
 export DEEPSEEK_API_KEY=sk-...
-npm start            # 在当前目录启动 REPL
+npm start            # 在当前目录启动 ink TUI（鲸鱼蓝主题、补全菜单、思考折叠块、缓存命中率/tok-s 状态行）
+npm start -- --plain # 旧版 readline REPL（逃生舱：无 ink 依赖、便于管道/调试）
 npm start -- --yolo  # 跳过所有权限确认（自担风险）
 npm start -- -p "修一下 README 里的错别字" --json   # headless 单发：跑完输出结果退出（--json 给脚本消费）
+echo "总结这个仓库" | npm start                    # 非 TTY 管道：读 stdin 全文当 prompt 走 headless
 ```
 
-REPL 内命令：`/model` `/think` `/accept` `/cost` `/context` `/compact` `/clear` `/resume` `/permissions` `/init` `/help` `/exit`，Esc 中断当前轮，Ctrl+C×2 退出。自定义命令放 `~/.deepcode/commands/*.md` 或 `<项目>/.deepcode/commands/*.md`（`$ARGUMENTS` 占位）。
+TUI/REPL 内命令：`/model` `/think` `/accept` `/cost` `/context` `/compact` `/clear` `/resume` `/permissions` `/init` `/help` `/exit`；`/` 浮出补全菜单、`@` 引用文件、`!` 直跑 shell，Esc 中断当前轮，Ctrl+C×2 退出。自定义命令放 `~/.deepcode/commands/*.md` 或 `<项目>/.deepcode/commands/*.md`（`$ARGUMENTS` 占位）。
 
 权限规则持久化在 `~/.deepcode/settings.json`。
 
