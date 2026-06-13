@@ -18,6 +18,24 @@ import { SelectList } from './components/SelectList.js'
 import { Spinner } from './components/Spinner.js'
 import { StatusFooter } from './components/StatusFooter.js'
 
+// 输入框插入点到输出底部的行数：输入框底边线(1) + 状态页脚(4) = 5。
+// 布局若变（页脚行数变化等）需同步调整——IME 光标停泊依赖它。
+const LINES_BELOW_CARET = 5
+
+// CJK/全角字符按 2 列宽计（终端等宽规则）；用于算输入框插入点的列号。
+function dispWidth(s: string): number {
+  let w = 0
+  for (const ch of s) {
+    const c = ch.codePointAt(0) ?? 0
+    if ((c >= 0x1100 && c <= 0x115F) || (c >= 0x2E80 && c <= 0xA4CF) ||
+        (c >= 0xAC00 && c <= 0xD7A3) || (c >= 0xF900 && c <= 0xFAFF) ||
+        (c >= 0xFE30 && c <= 0xFE4F) || (c >= 0xFF00 && c <= 0xFF60) ||
+        (c >= 0xFFE0 && c <= 0xFFE6) || (c >= 0x20000 && c <= 0x3FFFD)) w += 2
+    else w += 1
+  }
+  return w
+}
+
 export function App(props: {
   client: any
   yolo: boolean
@@ -131,6 +149,20 @@ export function App(props: {
     }
     return order.map(name => ({ name, n: counts.get(name)! }))
   }, [state.transcript])
+
+  // IME 光标停泊（仅真 TTY）：原版 ink 全程藏光标、把它留在输出末尾，导致中文输入法的组字
+  // 预编辑出现在最底部而非输入框内（字"跳"出框外）。这里每帧渲染后把硬件光标移回输入框插入点，
+  // 让组字内联显示。setTimeout(0) 让写入落在 ink 的帧写入（微任务）之后，否则会被 ink 覆盖。
+  // 仅在输入框激活（非权限弹窗/恢复/生成中）且为真 TTY 时停泊；非 TTY（测试/管道）跳过。
+  const inputActive = !state.pendingAsk && !resumeMode && !state.busy
+  useEffect(() => {
+    if (!inputActive || !process.stdout.isTTY) return
+    const col = 4 + dispWidth(draft)  // 列：1=左内边距, 2-3="❯ ", 4+=输入文本；插入点在文本之后
+    const id = setTimeout(() => {
+      try { process.stdout.write(`\x1b[?25h\x1b[${LINES_BELOW_CARET}A\x1b[${col}G`) } catch { /* 忽略写入失败 */ }
+    }, 0)
+    return () => clearTimeout(id)
+  })
 
   return (
     <Box flexDirection="column">
