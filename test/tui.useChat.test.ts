@@ -99,6 +99,11 @@ describe('createChatCore.runTurn', () => {
     expect(core.state.cacheHitRate()).toBeCloseTo(40 / 50)
   })
 
+  it('新建会话 contextPct() 为 0', () => {
+    const core = createChatCore({ client: {} as any, yolo: true, cwd: '/tmp', sessionDir, onState: () => {} })
+    expect(core.state.contextPct()).toBe(0)
+  })
+
   it('斜杠命令 /cost /clear 走本地语义不发请求', async () => {
     const core = createChatCore({ client: {} as any, yolo: true, cwd: '/tmp', sessionDir, onState: () => {} })
     await core.send('/cost')

@@ -3,8 +3,11 @@
 // InputBox value 注入：通过 valueOverride={{ text, nonce }} prop 实现（最小改动，保持 InputBox 内部受控逻辑不变）。
 // 补全菜单隐藏策略：onPick 后设置 justPickedValue，若 draft === justPickedValue 则不展示菜单；用户再输入时 draft 变化即恢复。
 import React, { useMemo, useState, useRef, useEffect } from 'react'
+import path from 'node:path'
+import { execSync } from 'node:child_process'
 import { Box, Text, useApp, useInput } from 'ink'
 import { createChatCore, useChat } from './useChat.js'
+import { findMemoryFiles } from '../prompt.js'
 import { computeSuggestions } from './suggest.js'
 import { Banner } from './components/Banner.js'
 import { Transcript } from './components/Transcript.js'
@@ -13,6 +16,7 @@ import { Suggestions } from './components/Suggestions.js'
 import { PermissionDialog } from './components/PermissionDialog.js'
 import { SelectList } from './components/SelectList.js'
 import { Spinner } from './components/Spinner.js'
+import { StatusFooter } from './components/StatusFooter.js'
 
 export function App(props: {
   client: any
@@ -104,6 +108,30 @@ export function App(props: {
 
   const suggestionsActive = suggestions.length > 0
 
+  // —— 状态页脚数据 —— 启动时算一次的静态项（git 分支、记忆文件数、目录名）
+  const cwdBase = useMemo(() => path.basename(props.cwd), [])  // eslint-disable-line react-hooks/exhaustive-deps
+  const branch = useMemo(() => {
+    try {
+      return execSync('git branch --show-current', { cwd: props.cwd, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() || null
+    } catch { return null }
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+  const memoryCount = useMemo(() => findMemoryFiles(props.cwd).length, [])  // eslint-disable-line react-hooks/exhaustive-deps
+  // 模式标签：权限模式 + thinking 后缀
+  const modeLabel = (state.permMode === 'acceptEdits' ? 'accept' : state.permMode === 'yolo' ? 'yolo' : 'default')
+    + (state.thinking ? '·think' : '')
+  // 工具调用计数：按首次出现顺序分组（transcript 中 kind==='tool' 的条目）
+  const toolCounts = useMemo(() => {
+    const order: string[] = []
+    const counts = new Map<string, number>()
+    for (const it of state.transcript) {
+      if (it.kind === 'tool') {
+        if (!counts.has(it.name)) order.push(it.name)
+        counts.set(it.name, (counts.get(it.name) ?? 0) + 1)
+      }
+    }
+    return order.map(name => ({ name, n: counts.get(name)! }))
+  }, [state.transcript])
+
   return (
     <Box flexDirection="column">
       <Banner cwd={props.cwd} model={state.model} />
@@ -132,6 +160,16 @@ export function App(props: {
               />
             </>
       }
+      <StatusFooter
+        model={state.model}
+        mode={modeLabel}
+        cwdBase={cwdBase}
+        branch={branch}
+        memoryCount={memoryCount}
+        contextPct={state.contextPct()}
+        cost={state.sessionCost()}
+        toolCounts={toolCounts}
+      />
     </Box>
   )
 }

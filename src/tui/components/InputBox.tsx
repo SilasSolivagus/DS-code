@@ -107,7 +107,6 @@ export function InputBox(props: {
           ? <Text dimColor>{props.busy ? '生成中… esc 中断' : '随便问点什么…'}</Text>
           : <Text>{value}<Text inverse> </Text></Text>}
       </Box>
-      <Text dimColor>? 查看快捷键</Text>
     </Box>
   )
 }
