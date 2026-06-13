@@ -224,7 +224,7 @@ export function createChatCore(opts: {
   const notice = (level: 'info' | 'warn' | 'error', text: string): void =>
     dispatch({ type: 'push', item: { kind: 'notice', level, text } })
 
-  /** 恢复会话到内存：消息、模型设置、fileState（mtime 校验）、usage，并续写该文件。返回恢复的 user 轮数。（对齐 repl.ts 48-72） */
+  /** 恢复会话到内存：消息、模型设置、fileState（mtime 校验）、usage，并续写该文件。返回恢复的 user 轮数。（恢复会话逻辑） */
   const restoreSession = (file: string): number => {
     const loaded = loadSession(file)
     messages.length = 0
