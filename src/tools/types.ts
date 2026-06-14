@@ -10,6 +10,8 @@ export interface ToolContext {
   fileState: Map<string, number>
   /** 任务清单（REPL/headless 注入；子代理不注入） */
   todos?: TodoStore
+  /** /rewind before-image 钩子：Edit/Write 写盘前调，捕获文件原内容。子代理/headless 不注入（无快照）。 */
+  recordBeforeImage?: (absPath: string) => void
 }
 
 export interface Tool<S extends z.ZodTypeAny = z.ZodTypeAny> {

@@ -17,11 +17,12 @@ export interface UsageRecord {
 
 export interface SessionHandle {
   file: string
-  appendMessage(m: any): void
+  appendMessage(m: any, turn?: number): void
   appendUsage(usage: UsageRecord['usage'], model: string): void
   appendFileState(entries: [string, number][]): void
   appendMeta(meta: SessionMeta): void
   appendCompact(): void
+  appendRewind(toTurnId: number): void
 }
 
 export interface LoadedSession {
@@ -29,6 +30,8 @@ export interface LoadedSession {
   messages: any[]
   usages: UsageRecord[]
   fileState: [string, number][]
+  messageTurnIds: (number | undefined)[]
+  maxTurnId: number
 }
 
 export interface SessionInfo {
@@ -51,11 +54,12 @@ function makeHandle(file: string): SessionHandle {
   }
   return {
     file,
-    appendMessage: m => append({ t: 'msg', m }),
+    appendMessage: (m, turn) => append(turn === undefined ? { t: 'msg', m } : { t: 'msg', m, turn }),
     appendUsage: (usage, model) => append({ t: 'usage', usage, model }),
     appendFileState: entries => append({ t: 'fs', entries }),
     appendMeta: meta => append({ t: 'meta', ...meta }),
     appendCompact: () => append({ t: 'compact' }),
+    appendRewind: toTurnId => append({ t: 'rewind', toTurnId }),
   }
 }
 
@@ -78,7 +82,9 @@ export function loadSession(file: string): LoadedSession {
   const lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean)
   let meta: SessionMeta = { cwd: '', model: 'deepseek-v4-flash', thinking: false, permMode: 'default' }
   let sawMeta = false // cwd 是会话身份，只取首条 meta；其余字段后写覆盖
-  const messages: any[] = []
+  let messages: any[] = []
+  let messageTurnIds: (number | undefined)[] = []
+  let maxTurnId = 0
   const usages: UsageRecord[] = []
   let fileState: [string, number][] = []
   for (const line of lines) {
@@ -93,28 +99,38 @@ export function loadSession(file: string): LoadedSession {
       }
       sawMeta = true
     }
-    else if (r.t === 'msg') messages.push(r.m)
+    else if (r.t === 'msg') {
+      messages.push(r.m)
+      messageTurnIds.push(typeof r.turn === 'number' ? r.turn : undefined)
+      if (typeof r.turn === 'number' && r.turn > maxTurnId) maxTurnId = r.turn
+    }
     else if (r.t === 'usage') usages.push({ usage: r.usage, model: r.model })
     else if (r.t === 'fs') fileState = r.entries // 最后一条覆盖，得到最新快照
-    else if (r.t === 'compact') messages.length = 0 // 压缩重置：只清消息，usage/fs 不受影响
+    else if (r.t === 'compact') { messages = []; messageTurnIds = [] } // 压缩重置：只清消息，usage/fs 不受影响
+    else if (r.t === 'rewind') {
+      const cut = messageTurnIds.findIndex(t => t === r.toTurnId)
+      if (cut >= 0) { messages = messages.slice(0, cut); messageTurnIds = messageTurnIds.slice(0, cut) }
+    }
   }
-  return { meta, messages: sanitizeDanglingToolCalls(messages), usages, fileState }
+  const sani = sanitizeDanglingToolCalls(messages, messageTurnIds)
+  return { meta, messages: sani.messages, usages, fileState, messageTurnIds: sani.turnIds, maxTurnId }
 }
 
-/** 崩溃/截断可能留下没有 tool 结果的 assistant tool_calls，恢复后会被 API 拒收；补合成结果保持可恢复。 */
-function sanitizeDanglingToolCalls(messages: any[]): any[] {
+/** 崩溃/截断可能留下没有 tool 结果的 assistant tool_calls，恢复后会被 API 拒收；补合成结果保持可恢复。同步维护 turnIds 对齐。 */
+function sanitizeDanglingToolCalls(messages: any[], turnIds: (number | undefined)[]): { messages: any[]; turnIds: (number | undefined)[] } {
   const answered = new Set<string>()
   for (const m of messages) if (m?.role === 'tool' && m.tool_call_id) answered.add(m.tool_call_id)
   const out: any[] = []
-  for (const m of messages) {
-    out.push(m)
+  const outTurns: (number | undefined)[] = []
+  messages.forEach((m, i) => {
+    out.push(m); outTurns.push(turnIds[i])
     if (m?.role === 'assistant' && Array.isArray(m.tool_calls)) {
       for (const tc of m.tool_calls) {
-        if (tc?.id && !answered.has(tc.id)) out.push({ role: 'tool', tool_call_id: tc.id, content: '（中断，无结果）' })
+        if (tc?.id && !answered.has(tc.id)) { out.push({ role: 'tool', tool_call_id: tc.id, content: '（中断，无结果）' }); outTurns.push(undefined) }
       }
     }
-  }
-  return out
+  })
+  return { messages: out, turnIds: outTurns }
 }
 
 /** 列出某 cwd 下的会话，新到旧，附首条 user 消息预览。损坏文件跳过。 */

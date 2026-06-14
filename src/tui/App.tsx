@@ -57,20 +57,22 @@ export function App(props: {
   const state = useChat(core)
   const [draft, setDraft] = useState('')
   const [resumeMode, setResumeMode] = useState(false)
+  const [rewindStep, setRewindStep] = useState<'point' | 'mode' | null>(null)
+  const [rewindTurn, setRewindTurn] = useState<number | null>(null)
   const [lastSigint, setLastSigint] = useState(0)
   // 补全菜单隐藏：onPick 后记录刚选中的值，若 draft 恰好等于该值则不显示菜单
   const justPickedRef = useRef<string | null>(null)
   // InputBox value 注入：通过 nonce 强制 InputBox 接受新值
   const [valueOverride, setValueOverride] = useState<{ text: string; nonce: number } | undefined>(undefined)
 
-  // pendingAsk / resumeMode 激活时清除 draft 和 valueOverride，防止 InputBox 卸载后 remount 时老值复活
+  // pendingAsk / resumeMode / rewindStep 激活时清除 draft 和 valueOverride，防止 InputBox 卸载后 remount 时老值复活
   useEffect(() => {
-    if (state.pendingAsk || state.pendingQuestion || resumeMode) {
+    if (state.pendingAsk || state.pendingQuestion || resumeMode || rewindStep) {
       setDraft('')
       setValueOverride(undefined)
       justPickedRef.current = null
     }
-  }, [!!state.pendingAsk, !!state.pendingQuestion, resumeMode])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [!!state.pendingAsk, !!state.pendingQuestion, resumeMode, rewindStep])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ctrl+C 两次退出（App 层统一管理，exitOnCtrlC: false 时才需要）
   useInput((input, key) => {
@@ -116,6 +118,7 @@ export function App(props: {
   const submit = (text: string) => {
     if (text === '/exit') { exit(); return }
     if (text === '/resume') { setResumeMode(true); return }
+    if (text === '/rewind') { setRewindStep('point'); return }
     setDraft('')
     setValueOverride(undefined)
     justPickedRef.current = null
@@ -160,7 +163,7 @@ export function App(props: {
   // 协作解法：包装 stdout.write——ink 每次写帧前，若光标处于停泊态，先把它移回底部（下移
   // 同样行数），让 eraseLines 从正确位置开始；写完帧后再把光标停回插入点。两者不再对抗。
   const parkRef = useRef<{ active: boolean; up: number }>({ active: false, up: 0 })
-  const inputActive = !state.pendingAsk && !state.pendingQuestion && !resumeMode && !state.busy
+  const inputActive = !state.pendingAsk && !state.pendingQuestion && !resumeMode && !rewindStep && !state.busy
 
   // 安装一次：包装 process.stdout.write，写帧前自动解除停泊（移回底部）
   // 诊断/逃生：DEEPCODE_NO_CURSOR_PARK=1 关掉整套光标停泊（退回原版 ink）——用于排查滚动/重绘问题。
@@ -211,6 +214,28 @@ export function App(props: {
               items={core.resumeList().map(s => s.preview)}
               onPick={i => { core.resume(core.resumeList()[i].file); setResumeMode(false) }}
               onCancel={() => setResumeMode(false)}
+            />
+          : rewindStep === 'point'
+          ? (() => {
+              const pts = core.rewindList()
+              if (pts.length === 0) {
+                return <SelectList items={['暂无可回退的轮次（按 Esc 返回）']} onPick={() => setRewindStep(null)} onCancel={() => setRewindStep(null)} />
+              }
+              return <SelectList
+                items={pts.map(p => `第 ${p.turnId} 轮：${p.preview}${p.fileCount ? `（${p.fileCount} 文件改动）` : ''}`)}
+                onPick={i => { setRewindTurn(pts[i].turnId); setRewindStep('mode') }}
+                onCancel={() => setRewindStep(null)}
+              />
+            })()
+          : rewindStep === 'mode'
+          ? <SelectList
+              items={['仅对话（截断历史，文件不动）', '仅代码（还原文件，对话不动）', '两者']}
+              onPick={i => {
+                const mode = (['conversation', 'code', 'both'] as const)[i]
+                if (rewindTurn !== null) core.rewind(rewindTurn, mode)
+                setRewindStep(null); setRewindTurn(null)
+              }}
+              onCancel={() => { setRewindStep(null); setRewindTurn(null) }}
             />
           : <>
               {state.busy && <Spinner turnStartAt={state.turnStartAt} turnOutTokens={state.turnOutTokens} />}
