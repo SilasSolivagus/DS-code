@@ -22,14 +22,13 @@ const schema = z.object({
 
 export type Question = z.infer<typeof questionSchema>
 export type QOption = z.infer<typeof optionSchema>
-export type Answer = { header: string; question: string; selected: string[]; note?: string; freeText?: string }
+export type Answer = { header: string; question: string; selected: string[]; freeText?: string }
 
 /** 把用户答案编码为模型可读的 JSON（键=question 文本） */
 function formatAnswers(answers: Answer[]): string {
-  const obj: Record<string, { selected: string[]; note?: string; other?: string }> = {}
+  const obj: Record<string, { selected: string[]; other?: string }> = {}
   for (const a of answers) {
     obj[a.question] = { selected: a.selected }
-    if (a.note) obj[a.question].note = a.note
     if (a.freeText) obj[a.question].other = a.freeText
   }
   return JSON.stringify(obj)
