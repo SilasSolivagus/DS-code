@@ -24,6 +24,8 @@ import { costUSD } from '../pricing.js'
 import { summarize, rebuildMessages } from '../compact.js'
 import { TodoStore } from '../todo.js'
 import { loadCustomCommands, expandCommand, INIT_PROMPT, formatContext } from '../commands.js'
+import os from 'node:os'
+import { createCheckpointer, type Checkpointer } from '../checkpoint.js'
 
 /** ! 直跑：同步执行，30s 超时，stdout+stderr 合并，超 20k 截断 */
 export function runBang(cmd: string, cwd: string): { output: string; code: number } {
@@ -159,6 +161,8 @@ export interface ChatCore {
   customCommands: Map<string, string>
   /** React useSyncExternalStore 订阅口（onState 仍保留给非 React 消费者） */
   subscribe(listener: () => void): () => void
+  rewindList(): { turnId: number; preview: string; fileCount: number }[]
+  rewind(toTurnId: number, mode: 'conversation' | 'code' | 'both'): void
 }
 
 const HELP_TEXT =
@@ -179,12 +183,20 @@ export function createChatCore(opts: {
   let thinking = false
   let permMode: PermissionMode = opts.yolo ? 'yolo' : 'default'
   const todos = new TodoStore()
+  let nextTurnId = 1
+  let currentTurnId = 0
+  const turnOf = new WeakMap<object, number>()  // user 消息对象 → turnId（跨 compact 存活：rebuildMessages 用 slice 保留引用）
+  let checkpointer!: Checkpointer
+  const checkpointStoreFor = (sessionFile: string) =>
+    path.join(os.homedir(), '.deepcode', 'checkpoints', path.basename(sessionFile).replace(/\.jsonl$/, ''))
+
   const ctx: ToolContext = {
     cwd: () => cwd,
     setCwd: d => { cwd = d },
     get signal() { return abort.signal },
     fileState: new Map(),
     todos,
+    recordBeforeImage: (absPath: string) => { if (currentTurnId > 0) checkpointer.capture(absPath, currentTurnId) },
   }
   const messages: any[] = [{ role: 'system', content: buildSystemPrompt(cwd) }]
   const usageLog: UsageRecord[] = []
@@ -254,6 +266,9 @@ export function createChatCore(opts: {
       messages.unshift({ role: 'system', content: buildSystemPrompt(cwd) })
       session.appendMessage(messages[0])
     }
+    nextTurnId = loaded.maxTurnId + 1
+    loaded.messages.forEach((m, i) => { if (loaded.messageTurnIds[i] !== undefined) turnOf.set(m, loaded.messageTurnIds[i]!) })
+    checkpointer = createCheckpointer(checkpointStoreFor(file))
     return loaded.messages.filter(m => m.role === 'user').length
   }
 
@@ -266,6 +281,7 @@ export function createChatCore(opts: {
   } else {
     session = newSession({ cwd, model, thinking, permMode }, sessionDir)
     session.appendMessage(messages[0]) // 持久化 system 消息
+    checkpointer = createCheckpointer(checkpointStoreFor(session.file))
   }
 
   // AskUserQuestion 桥：挂起 Promise + pendingQuestion 状态，UI 用 resolveQuestion 回答
@@ -338,12 +354,15 @@ export function createChatCore(opts: {
       }
     }
     dispatch({ type: 'push', item: { kind: 'user', text: displayLine } })
+    const turnId = nextTurnId++
+    currentTurnId = turnId
     const userMsg = {
       role: 'user',
       content: boundary.length ? `${userText}\n\n<system-reminder>\n${boundary.join('\n')}\n</system-reminder>` : userText,
     }
+    turnOf.set(userMsg, turnId)
     messages.push(userMsg)
-    session.appendMessage(userMsg) // user 输入即时落盘
+    session.appendMessage(userMsg, turnId) // user 输入即时落盘
     const lenBefore = messages.length
     abort = new AbortController()
     try {
@@ -494,6 +513,8 @@ export function createChatCore(opts: {
       lastPromptTokens = 0
       session = newSession({ cwd, model, thinking, permMode }, sessionDir)
       session.appendMessage(messages[0])
+      checkpointer = createCheckpointer(checkpointStoreFor(session.file))
+      nextTurnId = 1; currentTurnId = 0
       dispatch({ type: 'clear' })
       notice('info', '对话已清空，已开新会话文件（本会话花费累计保留）')
       return
@@ -575,6 +596,46 @@ export function createChatCore(opts: {
     subscribe: (listener: () => void) => {
       listeners.add(listener)
       return () => { listeners.delete(listener) }
+    },
+    rewindList: () => {
+      const out: { turnId: number; preview: string; fileCount: number }[] = []
+      for (const m of messages) {
+        if (m.role !== 'user') continue
+        const t = turnOf.get(m)
+        if (t === undefined) continue
+        const raw = typeof m.content === 'string' ? m.content.split('\n<system-reminder>')[0] : ''
+        out.push({ turnId: t, preview: raw.slice(0, 60), fileCount: checkpointer.fileCountAt(t) })
+      }
+      return out.reverse()
+    },
+    rewind: (toTurnId, mode) => {
+      if (busy) return
+      // 先做对话截断（会 slice transcript），再发各通知——否则 both 模式下代码还原通知会被一并切掉
+      if (mode === 'conversation' || mode === 'both') {
+        const mi = messages.findIndex(m => turnOf.get(m) === toTurnId)
+        if (mi >= 0) {
+          messages.length = mi
+          const liveTurnIds = messages.filter(m => m.role === 'user' && turnOf.has(m)).map(m => turnOf.get(m)!)
+          const pos = liveTurnIds.length
+          let seen = 0, cut = transcript.length
+          for (let i = 0; i < transcript.length; i++) {
+            if (transcript[i].kind === 'user') { if (seen === pos) { cut = i; break } seen++ }
+          }
+          transcript = transcript.slice(0, cut)
+          session.appendRewind(toTurnId)
+          setState()
+          notice('info', `[rewind] 对话已回退到第 ${toTurnId} 轮之前`)
+        } else {
+          // turnId 不在当前内存（多半已被 compact 压走）——不谎报成功
+          notice('warn', `[rewind] 第 ${toTurnId} 轮已不在当前上下文（可能已被 compact），无法回退对话`)
+        }
+      }
+      if (mode === 'code' || mode === 'both') {
+        const r = checkpointer.restoreFiles(toTurnId)
+        for (const p of [...r.restored, ...r.deleted]) ctx.fileState.delete(p)
+        const parts = [`还原 ${r.restored.length} 文件`, r.deleted.length ? `删除 ${r.deleted.length} 新建` : '', r.failed.length ? `失败 ${r.failed.length}` : ''].filter(Boolean)
+        notice('info', `[rewind] 代码：${parts.join('、')}`)
+      }
     },
   }
 }
