@@ -603,7 +603,7 @@ export function createChatCore(opts: {
         if (m.role !== 'user') continue
         const t = turnOf.get(m)
         if (t === undefined) continue
-        const raw = typeof m.content === 'string' ? m.content.split('\n<system-reminder>')[0] : ''
+        const raw = typeof m.content === 'string' ? m.content.split('\n\n<system-reminder>')[0].replace(/\n/g, ' ') : ''
         out.push({ turnId: t, preview: raw.slice(0, 60), fileCount: checkpointer.fileCountAt(t) })
       }
       return out.reverse()
