@@ -101,8 +101,11 @@ src/
 - [x] **M3 不丢活**：会话 JSONL 持久化、`--continue`/`/resume`、`/cost`（`v0.3.0-m3`）
 - [x] **M4 跑长活**：上下文压缩 compact（手动 `/compact` + 阈值自动触发）、TodoWrite + system-reminder 走神检测、只读 Agent 子代理（并发 ×4）、`/init` `/context` `/permissions` 与自定义命令（`$ARGUMENTS` 模板）、headless `-p "<任务>" [--json]` 单发模式（`v0.4.0-m4`）
 - [x] **M5 CC UI 1:1 复刻**：ink TUI、补全菜单、思考折叠块、缓存命中率/tok-s 状态行（`v0.5.0-m5`）
-- [x] **M6 公开发布**（本版）：`npm i -g @silassolivagus/deepcode` 可安装、首跑 TUI 向导写 key、WebFetch 工具（`v0.6.0-m6`）
-- [ ] **M7**：`/rewind`、可写 subagent + git worktree
+- [x] **M6 公开发布**：`npm i -g @silassolivagus/deepcode` 可安装、首跑 TUI 向导写 key、WebFetch 工具（`v0.6.0-m6`）
+- [x] **M7① 问用户**（本版）：AskUserQuestion 工具 —— 模型在歧义/需选择时弹结构化多选题（对齐 CC：tab 导航条、`←→` 回上一题重选、多选确认按钮、提交复核页），headless 不注册（`v0.7.0-m7`）
+- [x] **M8 P1 全屏可滚**（本版）：alt-screen 全屏接管 + 键盘滚动 `PageUp`/`PageDown`/`Ctrl+G` + auto-follow，修终端原生回滚失效；`--inline`/`DEEPCODE_INLINE=1`/settings `inline:true` 退回内联（`v0.7.0-m7`）
+- [ ] **M7 续**：`/rewind`、可写 subagent + git worktree
+- [ ] **M8 续**：P2 鼠标/触控板滚轮 → P3 应用内选中复制
 
 ## 开发
 
