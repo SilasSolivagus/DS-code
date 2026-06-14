@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 // src/index.ts
 import { createClient } from './api.js'
-import { hasApiKey } from './config.js'
+import { hasApiKey, loadSettings } from './config.js'
 
 const argv = process.argv
 const yolo = argv.includes('--yolo')
 const continueSession = argv.includes('--continue') || argv.includes('-c')
+const inlineFlag = argv.includes('--inline') || process.env.DEEPCODE_INLINE === '1'
 const pIdx = argv.indexOf('-p')
 
 try {
@@ -40,7 +41,7 @@ try {
     }
     const client = createClient()
     const { startTui } = await import('./tui/index.js')
-    await startTui({ client, yolo, continueSession })
+    await startTui({ client, yolo, continueSession, inline: inlineFlag || loadSettings().inline === true })
     process.exit(0) // ink 卸载后 stdin raw 监听可能残留；显式退出兜底
   }
 } catch (e: any) {
