@@ -15,6 +15,8 @@ export interface Settings {
   baseURL?: string
   /** DeepSeek API key（首跑向导写入；env DEEPSEEK_API_KEY 优先级更高） */
   apiKey?: string
+  /** 启动用内联模式（退回非全屏 TUI；env DEEPCODE_INLINE=1 / CLI --inline 优先） */
+  inline?: boolean
 }
 
 const DIR = path.join(os.homedir(), '.deepcode')
@@ -34,6 +36,7 @@ export function loadSettings(): Settings {
     model: raw?.model,
     baseURL: raw?.baseURL,
     apiKey: raw?.apiKey,
+    inline: raw?.inline,
   }
 }
 
