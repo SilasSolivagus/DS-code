@@ -23,6 +23,7 @@ export const writeTool: Tool<typeof schema> = {
       const stateErr = checkFileState(p, ctx)
       if (stateErr) return stateErr
     }
+    ctx.recordBeforeImage?.(p)
     fs.mkdirSync(path.dirname(p), { recursive: true })
     fs.writeFileSync(p, input.content)
     ctx.fileState.set(p, fs.statSync(p).mtimeMs)

@@ -55,6 +55,7 @@ export const editTool: Tool<typeof schema> = {
       const idx = content.indexOf(input.old_string)
       updated = content.slice(0, idx) + input.new_string + content.slice(idx + input.old_string.length)
     }
+    ctx.recordBeforeImage?.(p)
     fs.writeFileSync(p, updated)
     ctx.fileState.set(p, fs.statSync(p).mtimeMs)
     return `已编辑 ${p}（替换 ${input.replace_all ? count : 1} 处）。`
