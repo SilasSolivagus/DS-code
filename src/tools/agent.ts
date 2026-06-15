@@ -1,4 +1,6 @@
 // src/tools/agent.ts
+import fs from 'node:fs'
+import path from 'node:path'
 import { z } from 'zod'
 import type OpenAI from 'openai'
 import type { Tool, ToolContext } from './types.js'
@@ -9,6 +11,8 @@ import { makeWebFetchTool } from './webfetch.js'
 import { SUB_MODEL } from './constants.js'
 import { isDangerous, type Decision } from '../permissions.js'
 import { BUILTIN_AGENTS, GLOBAL_SUBAGENT_DENY, resolveAgentTools, buildAgentDescription } from './agentTypes.js'
+import { generateTaskId, registerTask, updateTask, getTask, enqueueNotification } from '../tasks.js'
+import { taskOutputPath } from '../config.js'
 
 /** 子代理无审批 UI：安全命令自动放行、危险命令拒绝（yolo + isDangerous 钳制）。desc = 工具 needsPermission 文本（Bash 即命令原文）。 */
 export function subagentPermissionDecision(desc: string): Decision {
@@ -19,6 +23,7 @@ const schema = z.object({
   description: z.string().describe('任务的一句话描述（显示给用户）'),
   prompt: z.string().describe('给子代理的完整任务指令。子代理看不到当前对话，指令必须自包含（含路径、要找什么、期望输出）'),
   subagent_type: z.string().optional().describe('专才子代理类型；省略=general-purpose'),
+  run_in_background: z.boolean().optional().describe('设为 true 在后台运行子代理；完成时通知你'),
 })
 
 // 子代理并发上限 4（spec §4）。Agent 是只读工具会进 loop 的并发批（上限 5），用信号量再压一层。
@@ -55,8 +60,8 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
       const subModel =
         !def.model || def.model === 'inherit' ? deps.getModel() : def.model === 'flash' ? SUB_MODEL : def.model
 
-      await acquire()
-      try {
+      // 跑一遍子代理子循环，返回最后一条 assistant 文本（前后台共用）。
+      const runSub = async (signal: AbortSignal): Promise<string | undefined> => {
         const messages: any[] = [
           { role: 'system', content: def.getSystemPrompt() },
           { role: 'user', content: input.prompt },
@@ -64,7 +69,7 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
         const subCtx: ToolContext = {
           cwd: ctx.cwd,
           setCwd: () => { /* 子代理只读，不许漂移主 cwd */ },
-          get signal() { return ctx.signal }, // 主 loop Esc 一并中断子代理
+          get signal() { return signal }, // 前台=主 loop signal；后台=任务 AbortController（供 TaskStop）
           fileState: new Map(), // 独立 fileState，不污染主会话 read-before-edit 状态
         }
         const gen = runLoop(messages, {
@@ -82,7 +87,42 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
           if (step.value.type === 'turn_end') deps.onUsage(step.value.usage, subModel)
         }
         const final = [...messages].reverse().find(m => m.role === 'assistant' && typeof m.content === 'string' && m.content)
-        return final?.content ?? '（子代理无输出）'
+        return final?.content
+      }
+
+      // 后台路径：脱钩跑、立即返句柄；信号量在脱钩 async 的 finally 释放（不能在 call 返回前 release）。
+      if (input.run_in_background === true) {
+        const id = generateTaskId('local_agent')
+        const ac = new AbortController()
+        const outputFile = taskOutputPath(id)
+        fs.mkdirSync(path.dirname(outputFile), { recursive: true })
+        registerTask({
+          id, type: 'local_agent', status: 'running',
+          description: input.description, prompt: input.prompt,
+          abortController: ac, outputFile, outputOffset: 0, notified: false,
+          startTime: Date.now(),
+        })
+        await acquire()
+        void (async () => {
+          try {
+            const final = await runSub(ac.signal)
+            fs.writeFileSync(outputFile, final ?? '')
+            updateTask(id, { status: 'completed', endTime: Date.now(), result: final ?? '（无输出）' })
+          } catch {
+            updateTask(id, { status: ac.signal.aborted ? 'killed' : 'failed', endTime: Date.now() })
+          } finally {
+            enqueueNotification(getTask(id)!)
+            release()
+          }
+        })()
+        return `后台子代理已启动 id=${id}（类型 ${type}）。完成时会通知你。`
+      }
+
+      // 前台路径（默认）：维持现有 acquire/try-finally-release。
+      await acquire()
+      try {
+        const final = await runSub(ctx.signal)
+        return final ?? '（子代理无输出）'
       } finally {
         release()
       }
