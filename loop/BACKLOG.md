@@ -44,7 +44,7 @@
 
 | id | 标题 | 规模 | 价值 | 状态 | 依赖 | 备注 |
 |---|---|---|---|---|---|---|
-| **L-040** | **子代理类型化**（subagent_type + 内建注册表 + per-type system prompt/工具集/模型） | M | 高 | needs-human | 无（先做） | 一个 `subagent_type` 参数 + 类型注册表（explore/reviewer 只读，预留 implementer）。**G2/G6/G7/G8 全部的挂载点**，可全做成只读类型不触安全边界。**架构基座，建议 loop 先出 spec 待你拍板** |
+| **L-040** | **子代理类型化**（subagent_type + 内建注册表 + per-type system prompt/工具集/模型） | M | 高 | **next（spec-first）** | 无（先做） | 一个 `subagent_type` 参数 + 类型注册表（explore/reviewer 只读，预留 implementer）。**G2/G6/G7/G8 全部的挂载点**，可全做成只读类型不触安全边界。**【用户 2026-06-15 钦定：清队列后 loop 下一个做这个；架构基座→loop 先出 spec+plan 草案，等用户 brainstorm 拍板再实现，不自动实现】** |
 | **L-041** | **后台任务 + 完成通知**（run_in_background 统一任务表 + 落盘流 + 通知注入 + TaskGet/List/Stop） | L | 高 | needs-human | G1 | 把 agent.ts/bash 从同步阻塞改可后台。**"顺序委派→并行编排"的分水岭**。吃掉并扩展 L-006（不止 bash，含 agent） |
 | **L-042** | Hooks 生命周期（Pre/PostToolUse/SubagentStop/…） | M | 中 | needs-human | 无 | `execCall` 前后插可插拔 dispatch 点。本身偏策略层，但**是 L-044 结构化输出的底座** |
 | **L-043** | 子代理 steering / 续聊（SendMessage 式注入 + 可恢复） | L | 中-高 | needs-human | L-041 | 当前子代理是一次性纯函数、不可寻址；主 loop 也 busy 拒输入（仅 Esc 全中断）。建在后台任务句柄上 |
