@@ -1,7 +1,10 @@
 // src/tools/bash.ts
 import { z } from 'zod'
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
+import fs from 'node:fs'
 import type { Tool } from './types.js'
+import { TASKS_DIR, taskOutputPath } from '../config.js'
+import { registerTask, updateTask, getTask, enqueueNotification, generateTaskId } from '../tasks.js'
 
 const MAX_OUTPUT = 30_000
 const MARKER = '__DEEPCODE_END__'
@@ -9,6 +12,7 @@ const MARKER = '__DEEPCODE_END__'
 const schema = z.object({
   command: z.string().describe('要执行的 bash 命令'),
   timeout: z.number().int().max(600_000).optional().describe('超时毫秒数，默认 120000'),
+  run_in_background: z.boolean().optional().describe('设为 true 在后台运行；用 TaskOutput 读输出'),
 })
 
 export function truncateMiddle(s: string, max = MAX_OUTPUT): string {
@@ -25,6 +29,34 @@ export const bashTool: Tool<typeof schema> = {
   isReadOnly: false,
   needsPermission: input => input.command,
   call(input, ctx) {
+    if (input.run_in_background === true) {
+      const id = generateTaskId('local_bash')
+      const outputFile = taskOutputPath(id)
+      fs.mkdirSync(TASKS_DIR, { recursive: true })
+      const ws = fs.createWriteStream(outputFile)
+      const child = spawn('/bin/bash', ['-c', input.command], { cwd: ctx.cwd() })
+      // 两路都写同一文件：用 end:false，避免先结束的流提前关闭 ws 截断另一路；exit 时统一 ws.end()
+      child.stdout.pipe(ws, { end: false })
+      child.stderr.pipe(ws, { end: false })
+      registerTask({
+        id,
+        type: 'local_bash',
+        status: 'running',
+        description: input.command,
+        command: input.command,
+        child,
+        outputFile,
+        outputOffset: 0,
+        notified: false,
+        startTime: Date.now(),
+      })
+      child.once('exit', code => {
+        ws.end()
+        updateTask(id, { status: code === 0 ? 'completed' : 'failed', endTime: Date.now() })
+        enqueueNotification(getTask(id)!)
+      })
+      return Promise.resolve(`后台任务已启动 id=${id}，输出写入 ${outputFile}。用 TaskList/TaskOutput/TaskStop 管理。`)
+    }
     return new Promise(resolve => {
       // 捕获用户命令的退出码与结束时的 $PWD，与命令自身输出隔离
       const wrapped = `${input.command}\n__dc_ec=$?\nprintf '\\n${MARKER}%s|%s' "$PWD" "$__dc_ec"`
