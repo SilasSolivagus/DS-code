@@ -71,6 +71,7 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
           setCwd: () => { /* 子代理只读，不许漂移主 cwd */ },
           get signal() { return signal }, // 前台=主 loop signal；后台=任务 AbortController（供 TaskStop）
           fileState: new Map(), // 独立 fileState，不污染主会话 read-before-edit 状态
+          isSubagent: true, // 子代理纯执行：禁止起后台任务（防污染主会话通知队列）
         }
         const gen = runLoop(messages, {
           client: deps.client,
@@ -102,12 +103,18 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
           abortController: ac, outputFile, outputOffset: 0, notified: false,
           startTime: Date.now(),
         })
-        await acquire()
         void (async () => {
+          await acquire() // 在脱钩 async 内等许可：句柄立即返回、不阻塞主 loop 只读批
           try {
             const final = await runSub(ac.signal)
-            fs.writeFileSync(outputFile, final ?? '')
-            updateTask(id, { status: 'completed', endTime: Date.now(), result: final ?? '（无输出）' })
+            // runLoop 在 abort 时是 return 'aborted'（不抛错），runSub 仍正常返回——
+            // 必须显式查 ac.signal.aborted，否则被 TaskStop 中断的子代理会被误标 completed。
+            if (ac.signal.aborted) {
+              updateTask(id, { status: 'killed', endTime: Date.now() })
+            } else {
+              fs.writeFileSync(outputFile, final ?? '')
+              updateTask(id, { status: 'completed', endTime: Date.now(), result: final ?? '（无输出）' })
+            }
           } catch {
             updateTask(id, { status: ac.signal.aborted ? 'killed' : 'failed', endTime: Date.now() })
           } finally {

@@ -29,7 +29,8 @@ export const bashTool: Tool<typeof schema> = {
   isReadOnly: false,
   needsPermission: input => input.command,
   call(input, ctx) {
-    if (input.run_in_background === true) {
+    // 子代理保持纯执行：忽略 run_in_background，降级为前台同步执行（防污染主会话通知队列）。
+    if (input.run_in_background === true && !ctx.isSubagent) {
       const id = generateTaskId('local_bash')
       const outputFile = taskOutputPath(id)
       fs.mkdirSync(TASKS_DIR, { recursive: true })

@@ -12,6 +12,8 @@ export interface ToolContext {
   todos?: TodoStore
   /** /rewind before-image 钩子：Edit/Write 写盘前调，捕获文件原内容。子代理/headless 不注入（无快照）。 */
   recordBeforeImage?: (absPath: string) => void
+  /** 子代理上下文标记：子代理保持纯执行，禁止起后台任务（防污染主会话通知队列）。 */
+  isSubagent?: boolean
 }
 
 export interface Tool<S extends z.ZodTypeAny = z.ZodTypeAny> {

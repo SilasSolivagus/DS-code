@@ -140,4 +140,12 @@ describe('Bash run_in_background', () => {
     expect(spawnMock).not.toHaveBeenCalled()
     expect(listTasks().length).toBe(0)
   })
+
+  it('子代理降级：isSubagent + run_in_background → 不 spawn、不注册任务，走前台 execFile', async () => {
+    const subCtx = { ...makeCtx('/tmp'), isSubagent: true }
+    const out = await bashTool.call({ command: 'echo hi', run_in_background: true }, subCtx)
+    expect(out).toContain('hi')
+    expect(spawnMock).not.toHaveBeenCalled()
+    expect(listTasks().length).toBe(0)
+  })
 })
