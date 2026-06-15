@@ -10,6 +10,7 @@ export const BUILTIN_COMMANDS: Suggestion[] = [
   { value: '/accept', hint: 'acceptEdits 开关' },
   { value: '/cost', hint: '本会话花费明细' },
   { value: '/context', hint: '上下文占比' },
+  { value: '/copy', hint: '复制上条回复到剪贴板' },
   { value: '/compact', hint: '手动压缩历史' },
   { value: '/clear', hint: '清空对话' },
   { value: '/resume', hint: '恢复历史会话' },
