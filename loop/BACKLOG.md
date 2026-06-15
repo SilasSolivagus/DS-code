@@ -39,7 +39,7 @@
 
 | id | 标题 | 规模 | 价值 | 状态 | 依赖 | 备注 |
 |---|---|---|---|---|---|---|
-| **L-040** | **子代理类型化**（subagent_type + 内建注册表 + per-type system prompt/工具集/模型） | M | 高 | **spec-done（待 plan）** | 无 | **设计 spec 已成**：`docs/specs/2026-06-15-deepcode-subagent-typing-design.md`（交互 brainstorm + CC 源码对齐；3 只读内建类型 general-purpose/Explore/Plan、deny 赢 allow 工具解析、Bash 走 yolo+钳制[用户选 B]、全局 deny [Edit,Write,Agent] 守住可写=L-020 边界）。**下一步：用户审 spec → writing-plans 出实现计划 → 标 plan-ready → 实现**。G2/G6/G7/G8 的挂载点 |
+| ~~L-040~~ | **子代理类型化** ✅ **已合 main** | M | 高 | **merged** | — | 见下「已合并」。L-041/L-020/L-044/L-045 的挂载点已就位 |
 | **L-041** | **后台任务 + 完成通知**（run_in_background 统一任务表 + 落盘流 + 通知注入 + TaskGet/List/Stop） | L | 高 | needs-human | G1 | 把 agent.ts/bash 从同步阻塞改可后台。**"顺序委派→并行编排"的分水岭**。吃掉并扩展 L-006（不止 bash，含 agent） |
 | **L-042** | Hooks 生命周期（Pre/PostToolUse/SubagentStop/…） | M | 中 | needs-human | 无 | `execCall` 前后插可插拔 dispatch 点。本身偏策略层，但**是 L-044 结构化输出的底座** |
 | **L-043** | 子代理 steering / 续聊（SendMessage 式注入 + 可恢复） | L | 中-高 | needs-human | L-041 | 当前子代理是一次性纯函数、不可寻址；主 loop 也 busy 拒输入（仅 Esc 全中断）。建在后台任务句柄上 |
@@ -64,3 +64,4 @@
   - L-003 `/stats` 本会话统计（merge `5de2826`）
   - L-004 `/memory` 查看生效的记忆文件（merge `4f3d784`）
   - L-005 `/keybindings` 查看快捷键（merge `54257a9`）
+- **2026-06-15 L-040 子代理类型化**（编排地基，交互 brainstorm + CC 源码对齐，三重门：实现+独立审+opus 终审）：`subagent_type` 路由 + `AgentDefinition` + 纯函数 `resolveAgentTools`（deny 赢 allow）+ 3 内建只读类型（general-purpose/Explore/Plan）+ Bash yolo 钳制 + 全局 deny [Edit,Write,Agent] 守可写边界。333 测试全绿。spec `docs/specs/2026-06-15-deepcode-subagent-typing-design.md`。**L-041/L-020/L-044/L-045 的挂载点就位**：全局 deny 移除 Edit/Write 即解锁可写子代理。
