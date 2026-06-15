@@ -5,6 +5,7 @@ import { allTools } from './tools/index.js'
 import { todoWriteTool } from './tools/todowrite.js'
 import { makeAgentTool } from './tools/agent.js'
 import { makeWebFetchTool } from './tools/webfetch.js'
+import { taskListTool, taskOutputTool, taskStopTool } from './tools/taskTools.js'
 import { buildSystemPrompt } from './prompt.js'
 import { loadSettings } from './config.js'
 import { TodoStore } from './todo.js'
@@ -47,7 +48,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
   ]
   const gen = runLoop(messages, {
     client: opts.client,
-    tools: [...allTools, todoWriteTool, makeAgentTool({ client: opts.client, onUsage: (u, _model) => addUsage(u), getModel: () => model }), makeWebFetchTool({ client: opts.client, onUsage: (u, _model) => addUsage(u) })],
+    tools: [...allTools, todoWriteTool, makeAgentTool({ client: opts.client, onUsage: (u, _model) => addUsage(u), getModel: () => model }), makeWebFetchTool({ client: opts.client, onUsage: (u, _model) => addUsage(u) }), taskListTool, taskOutputTool, taskStopTool],
     model,
     thinking: false,
     ctx,
@@ -62,6 +63,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
       const note = todos.staleReminder()
       return note ? [note] : []
     },
+    injectTaskNotifications: true, // 运行中完成的后台任务在终止点注入续跑（单发模式无空闲订阅）
   })
   let step
   while (!(step = await gen.next()).done) {
