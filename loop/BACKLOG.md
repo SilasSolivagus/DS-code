@@ -36,6 +36,25 @@
 |---|---|---|---|---|---|---|
 | L-030 | WebSearch | cc-src | M | P3 | needs-human | 需第三方搜索 API（Tavily/Serp）+ 另配 key；不可纯复刻，等你定供应商 |
 
+## 编排层差距（2026-06-15 发现轮，实读 CC 源码对照）
+
+**总评：** deepcode 编排内核停在"主 agent 同步派一个一次性、只读、无名、纯文本回传的搜子"。缺的那层本质是 **agent 的"对象化"**——CC 把每个被委派单元变成有类型/有 id/有生命周期/可寻址/可隔离/可后台/结果有契约的一等对象。先补 G1 类型化 + G6 后台任务句柄两块地基，其余编排能力才有挂载点。
+**已纠正：** 回合内并行只读工具执行 deepcode **已有**（`loop.ts:142` CONCURRENCY=5 只读批 Promise.all），非缺口。
+**依赖链：** G1 → {G2=L-020, G6}；G6 → {G3, G8}；G4 → G7 → G8。
+
+| id | 标题 | 规模 | 价值 | 状态 | 依赖 | 备注 |
+|---|---|---|---|---|---|---|
+| **L-040** | **子代理类型化**（subagent_type + 内建注册表 + per-type system prompt/工具集/模型） | M | 高 | needs-human | 无（先做） | 一个 `subagent_type` 参数 + 类型注册表（explore/reviewer 只读，预留 implementer）。**G2/G6/G7/G8 全部的挂载点**，可全做成只读类型不触安全边界。**架构基座，建议 loop 先出 spec 待你拍板** |
+| **L-041** | **后台任务 + 完成通知**（run_in_background 统一任务表 + 落盘流 + 通知注入 + TaskGet/List/Stop） | L | 高 | needs-human | G1 | 把 agent.ts/bash 从同步阻塞改可后台。**"顺序委派→并行编排"的分水岭**。吃掉并扩展 L-006（不止 bash，含 agent） |
+| **L-042** | Hooks 生命周期（Pre/PostToolUse/SubagentStop/…） | M | 中 | needs-human | 无 | `execCall` 前后插可插拔 dispatch 点。本身偏策略层，但**是 L-044 结构化输出的底座** |
+| **L-043** | 子代理 steering / 续聊（SendMessage 式注入 + 可恢复） | L | 中-高 | needs-human | L-041 | 当前子代理是一次性纯函数、不可寻址；主 loop 也 busy 拒输入（仅 Esc 全中断）。建在后台任务句柄上 |
+| **L-044** | 结构化输出强约束（子代理结果按 schema 校验回传） | M | 中 | needs-human | L-042 | CC 用 Stop hook + SyntheticOutputTool 强制子代理产出符合 schema 的 JSON。让父代理拿机器可解析结果而非自由文本。服务于 fan-out 聚合 |
+| **L-045** | 多 agent 工作流原语（team/fan-out/pipeline + 任务依赖图） | L | 中（长期高） | needs-human | G1+L-041+L-043 | 编排终态，强依赖前述地基，**最后做** |
+| **L-046** | 子代理错误恢复 / 重试编排 | S-M | 中 | needs-human | L-041 | 当前靠模型层兜底基本够；属增量打磨，优先级低 |
+
+> 交叉引用：**G2 = L-020**（可写 subagent+worktree，依赖 L-040 类型化）；**G5 = L-007**（plan mode，相对独立可并行）；**G6 ⊇ L-006**（后台 bash 是 L-041 的子集）。
+> **接下来最该做的 3 件**（分析师荐）：① L-040 子代理类型化（M，无依赖，解锁最多）② L-041 后台任务句柄（L，地基）③ L-007/G5 Plan mode 单用户版（M，已有权限模式+AskUserQuestion 两块拼图，可并行）。
+
 ## 已发现但低优先（等需求）
 
 - skills（自定义命令已覆盖 ~80%）、hooks（权限规则已覆盖大半）、`/vim` 输入模式、`/export` 之外的 `/agents`。发现轮按需补充。
