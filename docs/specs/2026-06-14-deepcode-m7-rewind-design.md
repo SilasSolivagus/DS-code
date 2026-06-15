@@ -27,7 +27,7 @@
 ### 还原点与轮号（稳定 turnId）
 
 - **还原点 = user 轮次**，锚点 `turnId` = **本会话内 user 消息的单调序号**（1-based，从不回退）。
-- **关键：turnId 跨 compact / resume 稳定**。compact 会清空内存 `messages`，但 turnId 是计数器、不随之重置；落盘时 `turnId` = 会话文件里 user `msg` 记录的累计序号（数记录，不数内存数组），故 `loadSession` 可在重放时为每条 user 消息**重算出同一 turnId**（compact 清空内存数组不影响记录计数）。
+- **关键：turnId 跨 compact / resume 稳定**。compact 会清空内存 `messages`，但 turnId 是单调计数器、不随之重置。**turnId 直接持久化在 user 消息记录里**：`{t:'msg', m, turn:T}`（仅 user 消息带 `turn`，assistant/tool 仍 `{t:'msg', m}`）。`loadSession` 直接读 `r.turn` 还原每条 user 消息的 turnId（**无需重算**），并返回 `maxTurnId`；运行时 `nextTurnId = maxTurnId + 1`。Checkpointer 也以 turnId 为键。
 - `useChat` 每次 `send(line)`（非斜杠命令的真实提问）把 `userTurn` +1 得到新 turnId，并告诉 Checkpointer 作为"当前轮"。Checkpointer 的 before-image **也以 turnId 为键** → 与还原点列表、截断标记三者锚点一致。
 - **compact 与 rewind 的交互**：compact 后内存只剩摘要+其后消息，故 `rewindList()` 只列得出 **compact 边界之后**的 user 轮（更早的消息已不在内存）——即**不能 rewind 到 compact 之前**（可接受局限，文档说明）。但 turnId 仍单调，故 checkpoints / 截断标记不会因 compact 错位。
 
