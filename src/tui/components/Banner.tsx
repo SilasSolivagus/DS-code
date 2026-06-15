@@ -68,8 +68,8 @@ export function Banner(p: { cwd: string; model: string }) {
     { text: '/model 切模型 · /think 开思考', dim: true },
     { text: '' },
     { text: '更新', color: T.accent, bold: true },
-    { text: '· 全新 CC 风格双列欢迎页', dim: true },
-    { text: '· 工作动画 + 工具行重做', dim: true },
+    { text: '· /rewind 回退对话与文件', dim: true },
+    { text: '· 全屏可滚 + 触控板滚轮', dim: true },
   ]
 
   const LEFT_W = Math.max(...left.map(s => dispWidth(s.text)))
