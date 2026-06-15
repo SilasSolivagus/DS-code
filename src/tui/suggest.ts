@@ -12,6 +12,7 @@ export const BUILTIN_COMMANDS: Suggestion[] = [
   { value: '/context', hint: '上下文占比' },
   { value: '/stats', hint: '本会话统计' },
   { value: '/copy', hint: '复制上条回复到剪贴板' },
+  { value: '/memory', hint: '查看生效的记忆文件' },
   { value: '/compact', hint: '手动压缩历史' },
   { value: '/clear', hint: '清空对话' },
   { value: '/resume', hint: '恢复历史会话' },

@@ -15,7 +15,8 @@ import { todoWriteTool } from '../tools/todowrite.js'
 import { makeAgentTool } from '../tools/agent.js'
 import { makeWebFetchTool } from '../tools/webfetch.js'
 import { makeAskUserQuestionTool, type Question, type Answer } from '../tools/askUserQuestion.js'
-import { buildSystemPrompt } from '../prompt.js'
+import { buildSystemPrompt, findMemoryFiles } from '../prompt.js'
+import { formatMemory } from '../memory.js'
 import { loadSettings, saveSettings } from '../config.js'
 import { isDangerous, type Decision, type PermissionMode } from '../permissions.js'
 import type { ToolContext } from '../tools/types.js'
@@ -169,7 +170,7 @@ export interface ChatCore {
 }
 
 const HELP_TEXT =
-  '/model  flash↔pro 切换\n/think  thinking 模式开关\n/accept acceptEdits 模式开关（Edit/Write 免确认，Bash 仍确认）\n/cost   本会话花费明细\n/context 上下文占比与上次 usage\n/stats  本会话统计（轮数/工具/token/缓存/花费）\n/copy   复制上条回复到剪贴板\n/compact 手动压缩对话历史\n/clear  清空对话（开新会话文件，花费累计保留）\n/resume 列出并恢复本目录历史会话\n/rewind 回退到某轮之前（仅对话/仅代码/两者）\n/export 导出对话到 markdown 文件\n/permissions 查看/删除已保存权限规则（/permissions rm <编号>）\n/init   分析项目生成 DEEPCODE.md\n/exit   退出\n自定义命令：~/.deepcode/commands/*.md 或 <项目>/.deepcode/commands/*.md（$ARGUMENTS 占位）'
+  '/model  flash↔pro 切换\n/think  thinking 模式开关\n/accept acceptEdits 模式开关（Edit/Write 免确认，Bash 仍确认）\n/cost   本会话花费明细\n/context 上下文占比与上次 usage\n/stats  本会话统计（轮数/工具/token/缓存/花费）\n/copy   复制上条回复到剪贴板\n/memory 查看当前生效的记忆文件\n/compact 手动压缩对话历史\n/clear  清空对话（开新会话文件，花费累计保留）\n/resume 列出并恢复本目录历史会话\n/rewind 回退到某轮之前（仅对话/仅代码/两者）\n/export 导出对话到 markdown 文件\n/permissions 查看/删除已保存权限规则（/permissions rm <编号>）\n/init   分析项目生成 DEEPCODE.md\n/exit   退出\n自定义命令：~/.deepcode/commands/*.md 或 <项目>/.deepcode/commands/*.md（$ARGUMENTS 占位）'
 
 export function createChatCore(opts: {
   client: OpenAI
@@ -553,6 +554,10 @@ export function createChatCore(opts: {
     }
     if (line === '/stats') {
       notice('info', formatStats(sessionStats(messages, usageLog), sessionCost(), cacheHitRate()))
+      return
+    }
+    if (line === '/memory') {
+      notice('info', formatMemory(findMemoryFiles(cwd), os.homedir()))
       return
     }
     if (line === '/permissions' || line.startsWith('/permissions ')) {
