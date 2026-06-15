@@ -8,18 +8,17 @@ const items: TranscriptItem[] = Array.from({ length: 10 }, (_, i) =>
   ({ kind: 'user', text: `行${i}` } as any))
 
 describe('ScrollView', () => {
-  it('挂载不崩；上报 viewportH/totalH（measure 回调被调用）', async () => {
-    const onMeasure = vi.fn()
-    render(<ScrollView items={items} scrollOffset={0} onMeasure={onMeasure} />)
+  it('挂载不崩；上报内容高 totalH（measure 回调被调用）', async () => {
+    const onMeasureTotal = vi.fn()
+    render(<ScrollView items={items} scrollOffset={0} height={20} onMeasureTotal={onMeasureTotal} />)
     await new Promise(r => setTimeout(r, 30))
-    expect(onMeasure).toHaveBeenCalled()
-    const [vh, th] = onMeasure.mock.calls[onMeasure.mock.calls.length - 1]
-    expect(typeof vh).toBe('number')
+    expect(onMeasureTotal).toHaveBeenCalled()
+    const th = onMeasureTotal.mock.calls[onMeasureTotal.mock.calls.length - 1][0]
     expect(typeof th).toBe('number')
   })
 
   it('offset=0 时顶部项可见', () => {
-    const f = render(<ScrollView items={items} scrollOffset={0} onMeasure={() => {}} />).lastFrame()!
+    const f = render(<ScrollView items={items} scrollOffset={0} height={20} onMeasureTotal={() => {}} />).lastFrame()!
     expect(f).toContain('行0')
   })
 })

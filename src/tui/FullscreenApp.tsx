@@ -2,10 +2,10 @@
 // 全屏可滚变体（M8 P1）：alt-screen 全屏 + 键盘滚动（PageUp/PageDown/Ctrl+G）+ auto-follow。
 // 复用 App 的全部接线，仅把转录渲染换成 ScrollView，并加滚动状态 + alt-screen 生命周期 +
 // 绝对定位 IME 光标停泊。useChat 会话核心零改动。内联模式仍走 App。
-import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react'
+import React, { useMemo, useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react'
 import path from 'node:path'
 import { execSync } from 'node:child_process'
-import { Box, Text, useApp, useInput, useStdout } from 'ink'
+import { Box, Text, measureElement, useApp, useInput, useStdout, type DOMElement } from 'ink'
 import { createChatCore, useChat } from './useChat.js'
 import { findMemoryFiles } from '../prompt.js'
 import { computeSuggestions } from './suggest.js'
@@ -19,8 +19,8 @@ import { QuestionDialog } from './components/QuestionDialog.js'
 import { SelectList } from './components/SelectList.js'
 import { Spinner } from './components/Spinner.js'
 import { StatusFooter } from './components/StatusFooter.js'
-import { enterAltScreen, installCleanup } from './altscreen.js'
-import { page, applyFollow, nextStuck, scrollInfo } from './scroll.js'
+import { clamp, page, applyFollow, nextStuck, scrollInfo } from './scroll.js'
+import { onWheel } from './wheel.js'
 
 const CURSOR_PARK_OFF = process.env.DEEPCODE_NO_CURSOR_PARK === '1'
 
@@ -62,26 +62,24 @@ export function FullscreenApp(props: {
   const [valueOverride, setValueOverride] = useState<{ text: string; nonce: number } | undefined>(undefined)
 
   // —— 滚动状态 ——
+  // ScrollView 高 = min(内容高 totalH, 可用高 availableH=rows-bottomH)：内容矮则输入框紧跟其下，
+  // 内容超屏才钉满可用高并裁剪滚动。viewportRef=availableH（翻页/跟随用），frameHRef=实际渲染总高（un-park 用）。
   const [scrollOffset, setScrollOffset] = useState(0)
   const scrollRef = useRef(0)
   const stuckRef = useRef(true)
   const [, setTick] = useState(0)
   const viewportRef = useRef(10)
   const totalRef = useRef(0)
+  const [totalH, setTotalH] = useState(0)
+  const [bottomH, setBottomH] = useState(8)
+  const bottomRef = useRef<DOMElement | null>(null)
+  const frameHRef = useRef(24)
   const [info, setInfo] = useState(() => scrollInfo(0, 10, 0))
   const setOffset = (n: number) => { scrollRef.current = n; setScrollOffset(n) }
-  const recomputeInfo = () => setInfo(scrollInfo(scrollRef.current, viewportRef.current, totalRef.current))
 
-  const onMeasure = useCallback((vh: number, th: number) => {
-    let changed = false
-    if (vh !== viewportRef.current) { viewportRef.current = vh; changed = true }
-    if (th !== totalRef.current) { totalRef.current = th; changed = true }
-    if (changed) {
-      const ms = Math.max(0, totalRef.current - viewportRef.current)
-      const next = applyFollow(scrollRef.current, ms, stuckRef.current)
-      if (next !== scrollRef.current) setOffset(next)
-      recomputeInfo()
-    }
+  // ScrollView 量内层内容高 → 上报（父据此算 height/maxScroll）
+  const onMeasureTotal = useCallback((th: number) => {
+    if (th !== totalRef.current) { totalRef.current = th; setTotalH(th) }
   }, [])
 
   useEffect(() => {
@@ -92,9 +90,10 @@ export function FullscreenApp(props: {
 
   useInput((input, key) => {
     const ms = Math.max(0, totalRef.current - viewportRef.current)
-    if (key.pageUp) { stuckRef.current = false; setOffset(page(scrollRef.current, 'up', viewportRef.current, ms)); recomputeInfo(); setTick(x => x + 1); return }
-    if (key.pageDown) { const n = page(scrollRef.current, 'down', viewportRef.current, ms); stuckRef.current = nextStuck(n, ms); setOffset(n); recomputeInfo(); setTick(x => x + 1); return }
-    if (key.ctrl && input === 'g') { stuckRef.current = true; setOffset(ms); recomputeInfo(); setTick(x => x + 1); return }
+    // 改 offset/stuck 后靠 setTick 触发重渲，info/跟随由下方 reconcile effect 统一重算
+    if (key.pageUp) { stuckRef.current = false; setOffset(page(scrollRef.current, 'up', viewportRef.current, ms)); setTick(x => x + 1); return }
+    if (key.pageDown) { const n = page(scrollRef.current, 'down', viewportRef.current, ms); stuckRef.current = nextStuck(n, ms); setOffset(n); setTick(x => x + 1); return }
+    if (key.ctrl && input === 'g') { stuckRef.current = true; setOffset(ms); setTick(x => x + 1); return }
     if (key.ctrl && input === 'c') {
       const now = Date.now()
       if (now - lastSigint < 2000) exit()
@@ -102,12 +101,17 @@ export function FullscreenApp(props: {
     }
   })
 
-  useEffect(() => {
-    if (!stdout?.isTTY) return
-    const leave = enterAltScreen(s => { stdout.write(s) })
-    const dispose = installCleanup(leave)
-    return () => { dispose(); leave() }
-  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+  // 鼠标/触控板滚轮（P2）：上滚 = stuck=false + 上移；下滚 = 下移 + 到底重新跟随。每 notch 3 行。
+  useEffect(() => onWheel(dir => {
+    const ms = Math.max(0, totalRef.current - viewportRef.current)
+    if (dir === 'up') { stuckRef.current = false; setOffset(clamp(scrollRef.current - 3, ms)) }
+    else { const n = clamp(scrollRef.current + 3, ms); stuckRef.current = nextStuck(n, ms); setOffset(n) }
+    setTick(x => x + 1)
+  }), [])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // alt-screen 生命周期由 startTui 在 render() 之前同步进入/退出——必须在 ink 首帧之前，
+  // 否则 ink 先画到主屏、effect 再切 alt-screen 清屏归位，会与 ink log-update 的"光标在上帧底部"
+  // 假设冲突导致整屏错位（banner 被顶出视口）。这里不再于 effect 内进 alt-screen。
 
   const handleDraftChange = (v: string) => {
     setDraft(v)
@@ -163,8 +167,39 @@ export function FullscreenApp(props: {
   }, [state.transcript])
 
   const inputActive = !state.pendingAsk && !state.pendingQuestion && !resumeMode && !state.busy
+
+  // —— 全屏几何（每帧算）——
+  const rows = stdout?.rows ?? 24
+  const availableH = Math.max(1, rows - bottomH)
+  viewportRef.current = availableH
+  // 内容矮 → 只占内容高（输入框紧跟）；内容超屏 → 钉满可用高裁剪。
+  // totalH 未知(0)时先给满高：否则 0 高容器把内层也量成 0 → totalH 永卡 0 的死锁（banner 不显示）。
+  const scrollH = totalH > 0 ? Math.min(totalH, availableH) : availableH
+  const frameH = Math.min(scrollH + bottomH, rows) // 实际渲染总高（un-park 用：ink 把光标留在此底部）
+  frameHRef.current = frameH
+  const aboveInput = suggestionsActive ? suggestions.length : 0
+  // 输入框光标行（1-based 从顶算）：ScrollView(scrollH) + 提示行(1) + 上方 suggestions + 输入框上边线(1) + 光标内容行(1)。±1 由 pty 微调
+  const caretRow = Math.max(1, scrollH + 1 + aboveInput + 2)
+
   const parkRef = useRef<{ active: boolean }>({ active: false })
 
+  // 量底部区域高（提示行+输入框/弹窗+页脚）→ 算可用高 → 应用 auto-follow + 位置提示。每帧跑，稳定后幂等不再 setState。
+  useLayoutEffect(() => {
+    try {
+      const h = bottomRef.current ? measureElement(bottomRef.current).height : 0
+      if (h > 0 && h !== bottomH) setBottomH(h)
+    } catch { /* ignore */ }
+    const avail = Math.max(1, (stdout?.rows ?? 24) - bottomH)
+    viewportRef.current = avail
+    const ms = Math.max(0, totalRef.current - avail)
+    const next = applyFollow(scrollRef.current, ms, stuckRef.current)
+    if (next !== scrollRef.current) setOffset(next)
+    const ni = scrollInfo(next, avail, totalRef.current)
+    setInfo(prev => (prev.moreAbove === ni.moreAbove && prev.moreBelow === ni.moreBelow
+      && prev.top === ni.top && prev.bottom === ni.bottom && prev.total === ni.total) ? prev : ni)
+  })
+
+  // IME 光标停泊：写帧前把光标移回内容底部（frameH，ink log-update 假设光标在上帧底部），停泊用绝对 CUP 到 caretRow。
   useEffect(() => {
     if (!stdout?.isTTY || CURSOR_PARK_OFF) return
     const out = stdout as NodeJS.WriteStream & { __origWrite?: typeof stdout.write }
@@ -173,21 +208,17 @@ export function FullscreenApp(props: {
     out.write = ((chunk: any, ...rest: any[]) => {
       if (parkRef.current.active) {
         parkRef.current.active = false
-        const rows = stdout.rows ?? 24
-        orig(`\x1b[${rows};1H`)
+        orig(`\x1b[${frameHRef.current};1H`)  // 移回实际渲染底部，让 ink eraseLines 从正确处起
       }
       return (orig as any)(chunk, ...rest)
     }) as typeof out.write
     return () => { out.write = orig; delete out.__origWrite }
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  const linesBelowCaret = 4 + (memoryCount > 0 ? 1 : 0) + (toolCounts.length > 0 ? 1 : 0)
   useEffect(() => {
     if (!inputActive || !stdout?.isTTY || CURSOR_PARK_OFF) return
     const out = stdout as NodeJS.WriteStream & { __origWrite?: typeof stdout.write }
     const orig = out.__origWrite ?? out.write.bind(out)
-    const rows = stdout.rows ?? 24
-    const caretRow = Math.max(1, rows - linesBelowCaret)
     const col = parkCol(draft, stdout.columns ?? 80, dispWidth)
     const id = setTimeout(() => {
       try {
@@ -198,55 +229,56 @@ export function FullscreenApp(props: {
     return () => clearTimeout(id)
   })
 
-  const rows = stdout?.rows ?? 24
-
   return (
     <Box flexDirection="column" height={rows}>
       <ScrollView
         items={state.transcript}
         scrollOffset={scrollOffset}
-        onMeasure={onMeasure}
+        height={scrollH}
+        onMeasureTotal={onMeasureTotal}
         banner={<Banner cwd={props.cwd} model={state.model} />}
       />
-      <Text dimColor>
-        {(info.moreAbove || info.moreBelow)
-          ? `${info.moreAbove ? '▲ 上有更多' : '▲ 已到顶'} · ${info.moreBelow ? '▼ 下有更多' : '▼ 已到底'} · 行 ${info.top}–${info.bottom}/${info.total}${stuckRef.current ? ' · 跟随' : ''}`
-          : ' '}
-      </Text>
-      {state.pendingQuestion
-        ? <QuestionDialog questions={state.pendingQuestion.questions} onDone={a => core.resolveQuestion(a)} />
-        : state.pendingAsk
-        ? <PermissionDialog ask={state.pendingAsk} onDecide={d => core.resolveAsk(d)} />
-        : resumeMode
-          ? <SelectList
-              items={core.resumeList().map(s => s.preview)}
-              onPick={i => { core.resume(core.resumeList()[i].file); setResumeMode(false) }}
-              onCancel={() => setResumeMode(false)}
-            />
-          : <>
-              {state.busy && <Spinner turnStartAt={state.turnStartAt} turnOutTokens={state.turnOutTokens} />}
-              {suggestionsActive && <Suggestions items={suggestions} onPick={handlePick} />}
-              <InputBox
-                onSubmit={submit}
-                onInterrupt={() => core.interrupt()}
-                onChange={handleDraftChange}
-                suggestionsActive={suggestionsActive}
-                history={historyItems}
-                busy={state.busy}
-                valueOverride={valueOverride}
+      <Box ref={bottomRef} flexDirection="column" flexShrink={0}>
+        <Text dimColor>
+          {(info.moreAbove || info.moreBelow)
+            ? `${info.moreAbove ? '▲ 上有更多' : '▲ 已到顶'} · ${info.moreBelow ? '▼ 下有更多' : '▼ 已到底'} · 行 ${info.top}–${info.bottom}/${info.total}${stuckRef.current ? ' · 跟随' : ''}`
+            : ' '}
+        </Text>
+        {state.pendingQuestion
+          ? <QuestionDialog questions={state.pendingQuestion.questions} onDone={a => core.resolveQuestion(a)} />
+          : state.pendingAsk
+          ? <PermissionDialog ask={state.pendingAsk} onDecide={d => core.resolveAsk(d)} />
+          : resumeMode
+            ? <SelectList
+                items={core.resumeList().map(s => s.preview)}
+                onPick={i => { core.resume(core.resumeList()[i].file); setResumeMode(false) }}
+                onCancel={() => setResumeMode(false)}
               />
-            </>
-      }
-      <StatusFooter
-        model={state.model}
-        mode={modeLabel}
-        cwdBase={cwdBase}
-        branch={branch}
-        memoryCount={memoryCount}
-        contextPct={state.contextPct()}
-        cost={state.sessionCost()}
-        toolCounts={toolCounts}
-      />
+            : <>
+                {state.busy && <Spinner turnStartAt={state.turnStartAt} turnOutTokens={state.turnOutTokens} />}
+                {suggestionsActive && <Suggestions items={suggestions} onPick={handlePick} />}
+                <InputBox
+                  onSubmit={submit}
+                  onInterrupt={() => core.interrupt()}
+                  onChange={handleDraftChange}
+                  suggestionsActive={suggestionsActive}
+                  history={historyItems}
+                  busy={state.busy}
+                  valueOverride={valueOverride}
+                />
+              </>
+        }
+        <StatusFooter
+          model={state.model}
+          mode={modeLabel}
+          cwdBase={cwdBase}
+          branch={branch}
+          memoryCount={memoryCount}
+          contextPct={state.contextPct()}
+          cost={state.sessionCost()}
+          toolCounts={toolCounts}
+        />
+      </Box>
     </Box>
   )
 }
