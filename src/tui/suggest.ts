@@ -13,6 +13,7 @@ export const BUILTIN_COMMANDS: Suggestion[] = [
   { value: '/compact', hint: '手动压缩历史' },
   { value: '/clear', hint: '清空对话' },
   { value: '/resume', hint: '恢复历史会话' },
+  { value: '/export', hint: '导出对话到 markdown' },
   { value: '/permissions', hint: '权限规则管理' },
   { value: '/init', hint: '生成 DEEPCODE.md' },
   { value: '/help', hint: '帮助' },
