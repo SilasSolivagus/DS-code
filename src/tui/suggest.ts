@@ -15,6 +15,7 @@ export const BUILTIN_COMMANDS: Suggestion[] = [
   { value: '/resume', hint: '恢复历史会话' },
   { value: '/permissions', hint: '权限规则管理' },
   { value: '/init', hint: '生成 DEEPCODE.md' },
+  { value: '/keybindings', hint: '查看快捷键' },
   { value: '/help', hint: '帮助' },
   { value: '/exit', hint: '退出' },
 ]
