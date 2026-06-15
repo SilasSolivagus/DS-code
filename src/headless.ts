@@ -47,7 +47,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
   ]
   const gen = runLoop(messages, {
     client: opts.client,
-    tools: [...allTools, todoWriteTool, makeAgentTool({ client: opts.client, onUsage: (u, _model) => addUsage(u) }), makeWebFetchTool({ client: opts.client, onUsage: (u, _model) => addUsage(u) })],
+    tools: [...allTools, todoWriteTool, makeAgentTool({ client: opts.client, onUsage: (u, _model) => addUsage(u), getModel: () => model }), makeWebFetchTool({ client: opts.client, onUsage: (u, _model) => addUsage(u) })],
     model,
     thinking: false,
     ctx,
