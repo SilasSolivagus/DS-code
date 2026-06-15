@@ -14,7 +14,7 @@
 
 | id | 标题 | 来源 | 规模 | 优先级 | 状态 | 分支 | 备注 |
 |---|---|---|---|---|---|---|---|
-| L-001 | `/export` 导出对话到 markdown 文件 | cc-src | S | P1 | doing | auto/slash-export | 纯函数 `exportTranscript(messages)→md` + /export 命令写文件打印路径；逻辑可全测，TUI 面极小 |
+| L-001 | `/export` 导出对话到 markdown 文件 | cc-src | S | P1 | await-review:smoke | auto/slash-export | 纯函数 `exportTranscript(messages,meta)→md` + /export[path] 接线；8 单测，285 全绿；双审过。碰 `src/tui/`（命令菜单+notice），待真机冒烟 |
 | L-002 | `/copy` 复制上条回复到剪贴板 | cc-src | S | P1 | todo | — | pbcopy 已在；复制最近一条 assistant 文本 |
 | L-003 | `/stats` 会话统计（轮数/工具调用/tok/缓存命中） | cc-src | S | P2 | todo | — | 数据 useChat 已有，组装展示 |
 | L-004 | `/memory` 打开/编辑记忆文件（DEEPCODE.md） | cc-src | S | P2 | todo | — | 定位项目+全局 DEEPCODE.md，$EDITOR 打开 |
