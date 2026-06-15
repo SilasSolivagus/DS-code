@@ -1,6 +1,9 @@
 // src/tasks.ts
 import crypto from 'node:crypto'
+import fs from 'node:fs'
+import path from 'node:path'
 import type { ChildProcess } from 'node:child_process'
+import { TASKS_DIR } from './config.js'
 
 export type TaskType = 'local_bash' | 'local_agent'
 export type TaskStatus = 'running' | 'completed' | 'failed' | 'killed'
@@ -137,4 +140,46 @@ export function formatNotification(n: TaskNotification): string {
 export function formatTaskList(tasks: BackgroundTask[]): string {
   if (tasks.length === 0) return '（无后台任务）'
   return tasks.map(t => `${t.id} [${t.status}] ${t.description}`).join('\n')
+}
+
+// ── 退出清理 / 旧日志清理 ───────────────────────────────────────────────
+
+/** 同步 kill 所有 running 后台任务：bash SIGKILL、agent abort。 */
+function killRunningTasks(): void {
+  for (const t of listTasks()) {
+    if (t.status !== 'running') continue
+    try {
+      if (t.type === 'local_bash') t.child?.kill('SIGKILL')
+      else t.abortController?.abort()
+    } catch { /* 尽力而为 */ }
+  }
+}
+
+let cleanupInstalled = false
+
+/** 进程退出/信号时 kill 所有 running 后台任务。幂等：重复调只装一次。
+ *  追加监听（process.on）不抢占既有 altscreen 等清理 handler；exit 钩子里只做同步 kill。 */
+export function installTaskCleanup(): void {
+  if (cleanupInstalled) return
+  cleanupInstalled = true
+  process.once('exit', killRunningTasks)
+  process.once('SIGINT', killRunningTasks)
+  process.once('SIGTERM', killRunningTasks)
+}
+
+/** 扫 TASKS_DIR 下 *.log，删除 mtime 超龄者。目录不存在 → no-op。now 可注入便于测。 */
+export function cleanupOldTaskLogs(maxAgeMs = 7 * 24 * 3600 * 1000, now = Date.now()): void {
+  let entries: string[]
+  try {
+    entries = fs.readdirSync(TASKS_DIR)
+  } catch {
+    return // 目录不存在 → no-op
+  }
+  for (const name of entries) {
+    if (!name.endsWith('.log')) continue
+    const file = path.join(TASKS_DIR, name)
+    try {
+      if (fs.statSync(file).mtimeMs < now - maxAgeMs) fs.unlinkSync(file)
+    } catch { /* 跳过读不到/删不掉的 */ }
+  }
 }

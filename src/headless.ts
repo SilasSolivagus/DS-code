@@ -6,6 +6,7 @@ import { todoWriteTool } from './tools/todowrite.js'
 import { makeAgentTool } from './tools/agent.js'
 import { makeWebFetchTool } from './tools/webfetch.js'
 import { taskListTool, taskOutputTool, taskStopTool } from './tools/taskTools.js'
+import { installTaskCleanup } from './tasks.js'
 import { buildSystemPrompt } from './prompt.js'
 import { loadSettings } from './config.js'
 import { TodoStore } from './todo.js'
@@ -23,6 +24,7 @@ export interface HeadlessResult {
 
 /** 单 prompt 跑完整个 loop。工具事件打到 stderr（stdout 留给最终结果，方便脚本消费）。 */
 export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: boolean }): Promise<HeadlessResult> {
+  installTaskCleanup() // 退出时 kill 仍 running 的后台任务
   const settings = loadSettings()
   const model = 'deepseek-v4-flash'
   let cwd = process.cwd()

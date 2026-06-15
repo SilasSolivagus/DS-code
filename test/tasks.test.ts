@@ -1,5 +1,8 @@
 // test/tasks.test.ts
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import {
   registerTask,
   getTask,
@@ -13,6 +16,8 @@ import {
   onNotification,
   formatNotification,
   formatTaskList,
+  installTaskCleanup,
+  cleanupOldTaskLogs,
   type BackgroundTask,
   type TaskNotification,
 } from '../src/tasks.js'
@@ -188,5 +193,91 @@ describe('formatTaskList', () => {
 
   it('空列表 → 文案', () => {
     expect(formatTaskList([])).toBe('（无后台任务）')
+  })
+})
+
+describe('installTaskCleanup', () => {
+  // installTaskCleanup 模块级幂等（首次调用后内部 flag 永久为 true）。
+  // 在本测试文件首次 install 之前记录基线，install 后断言每信号只多一个监听；二次调用不再增。
+  const EVENTS = ['exit', 'SIGINT', 'SIGTERM'] as const
+
+  it('幂等：注册后每信号 +1 监听，重复调不再增', () => {
+    const before = new Map(EVENTS.map(e => [e, process.listenerCount(e)]))
+    installTaskCleanup()
+    for (const e of EVENTS) expect(process.listenerCount(e)).toBe(before.get(e)! + 1)
+
+    installTaskCleanup() // 二次：幂等，不再加
+    for (const e of EVENTS) expect(process.listenerCount(e)).toBe(before.get(e)! + 1)
+  })
+
+  it('触发 SIGINT 钩子 → running bash kill、running agent abort，非 running 不动', () => {
+    installTaskCleanup() // 已装；取已注册的 handler 手动触发
+    const handler = process.listeners('SIGINT').at(-1) as (sig: NodeJS.Signals) => void
+
+    const bashKill = vi.fn()
+    const agentAbort = vi.fn()
+    const doneBashKill = vi.fn()
+    registerTask(mkTask({ id: 'brun', type: 'local_bash', status: 'running', child: { kill: bashKill } as any }))
+    registerTask(mkTask({ id: 'arun', type: 'local_agent', status: 'running', abortController: { abort: agentAbort } as any }))
+    registerTask(mkTask({ id: 'bdone', type: 'local_bash', status: 'completed', child: { kill: doneBashKill } as any }))
+
+    handler('SIGINT')
+
+    expect(bashKill).toHaveBeenCalledWith('SIGKILL')
+    expect(agentAbort).toHaveBeenCalledTimes(1)
+    expect(doneBashKill).not.toHaveBeenCalled()
+  })
+})
+
+describe('cleanupOldTaskLogs', () => {
+  // 用真实 TASKS_DIR（~/.deepcode/tasks），唯一前缀避免误删他人文件，结束清理自身产物。
+  const dir = path.join(os.homedir(), '.deepcode', 'tasks')
+  const prefix = `cleanuptest-${process.pid}-`
+  const mk = (name: string) => path.join(dir, prefix + name + '.log')
+
+  afterEach(() => {
+    try {
+      for (const f of fs.readdirSync(dir)) {
+        if (f.startsWith(prefix)) try { fs.unlinkSync(path.join(dir, f)) } catch { /* ignore */ }
+      }
+    } catch { /* dir 不存在 */ }
+  })
+
+  it('超龄删除、未超龄保留', () => {
+    fs.mkdirSync(dir, { recursive: true })
+    const now = 1_000_000_000_000
+    const maxAge = 7 * 24 * 3600 * 1000
+    const old = mk('old')
+    const fresh = mk('fresh')
+    fs.writeFileSync(old, 'x')
+    fs.writeFileSync(fresh, 'x')
+    // old：mtime 远早于 now-maxAge；fresh：mtime = now
+    fs.utimesSync(old, new Date(now - maxAge - 1000), new Date(now - maxAge - 1000))
+    fs.utimesSync(fresh, new Date(now), new Date(now))
+
+    cleanupOldTaskLogs(maxAge, now)
+
+    expect(fs.existsSync(old)).toBe(false)
+    expect(fs.existsSync(fresh)).toBe(true)
+  })
+
+  it('非 .log 文件不删', () => {
+    fs.mkdirSync(dir, { recursive: true })
+    const now = 1_000_000_000_000
+    const maxAge = 7 * 24 * 3600 * 1000
+    const txt = path.join(dir, prefix + 'keep.txt')
+    fs.writeFileSync(txt, 'x')
+    fs.utimesSync(txt, new Date(now - maxAge - 1000), new Date(now - maxAge - 1000))
+
+    cleanupOldTaskLogs(maxAge, now)
+
+    expect(fs.existsSync(txt)).toBe(true)
+    try { fs.unlinkSync(txt) } catch { /* ignore */ }
+  })
+
+  it('目录不存在 → no-op（不抛）', () => {
+    const spy = vi.spyOn(fs, 'readdirSync').mockImplementation(() => { throw new Error('ENOENT') })
+    expect(() => cleanupOldTaskLogs()).not.toThrow()
+    spy.mockRestore()
   })
 })
