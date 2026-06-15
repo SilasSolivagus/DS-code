@@ -14,12 +14,7 @@
 
 | id | 标题 | 来源 | 规模 | 优先级 | 状态 | 分支 | 备注 |
 |---|---|---|---|---|---|---|---|
-| L-001 | `/export` 导出对话到 markdown 文件 | cc-src | S | P1 | await-review:smoke | auto/slash-export | 纯函数 `exportTranscript(messages,meta)→md` + /export[path] 接线；8 单测，285 全绿；双审过。碰 `src/tui/`（命令菜单+notice），待真机冒烟 |
-| L-002 | `/copy` 复制上条回复到剪贴板 | cc-src | S | P1 | await-review:smoke | auto/slash-copy | 纯函数 `lastAssistantText` + `copyToClipboard`(pbcopy)；9 单测，286 全绿；双审 Approved。碰 `src/tui/`，待真机冒烟 |
-| L-003 | `/stats` 会话统计（轮数/工具调用/tok/缓存命中） | cc-src | S | P2 | await-review:smoke | auto/slash-stats | 纯函数 `sessionStats`+`formatStats`；10 单测，287 全绿；双审 Approved-with-nits。碰 `src/tui/`，待真机冒烟 |
-| L-004 | `/memory` 查看生效的记忆文件（简单版） | cc-src | S | P2 | await-review:smoke | auto/slash-memory | 复用 findMemoryFiles + 纯函数 formatMemory；6 单测，283 全绿；双审 Approved。碰 `src/tui/`，待真机冒烟。**$EDITOR 唤起留作增强** |
-| L-005 | `/keybindings` 展示快捷键 | cc-src | S | P3 | await-review:smoke | auto/slash-keybindings | 纯函数 formatKeybindings 分组静态展示；键位对照源码核实；3 单测，280 全绿；双审 Approved。碰 `src/tui/`，待真机冒烟 |
-| L-006 | 后台 bash `run_in_background` | cc-src | M | P2 | todo | — | BashTool 加后台模式 + 任务生命周期/缓冲/通知；dev server/watch 用 |
+| L-006 | 后台 bash `run_in_background` | cc-src | M | P2 | todo | — | BashTool 加后台模式 + 任务生命周期/缓冲/通知；dev server/watch 用。**注：编排分析后并入 L-041 后台任务体系** |
 | L-007 | Plan mode（EnterPlanMode/ExitPlanMode） | cc-src | M | P2 | todo | — | 切只读权限模式探查 → 出计划待批 |
 
 ## 大件 / 只出 spec（L，等你 brainstorm）
@@ -63,4 +58,9 @@
 
 ## 已合并（merged）
 
-（loop 合入 main 的 gap 移到这里，留痕）
+- **2026-06-15 第一批 5 个小 UX 命令**（用户授权合并，313 测试全绿、typecheck/build 干净；真机冒烟用户日后顺手扫一眼）：
+  - L-001 `/export` 导出对话到 markdown（merge `e5f49b0`）
+  - L-002 `/copy` 复制上条回复到剪贴板（merge `9c10e6d`）
+  - L-003 `/stats` 本会话统计（merge `5de2826`）
+  - L-004 `/memory` 查看生效的记忆文件（merge `4f3d784`）
+  - L-005 `/keybindings` 查看快捷键（merge `54257a9`）
