@@ -118,3 +118,31 @@ export function parseHookStdout(stdout: string, exitCode: number, stderr: string
   }
   return r
 }
+
+/** 并行结果按配置序合并：block=任一 blocking/deny；权限 deny>ask>allow；input/output 末个非空；context/sys 累加。 */
+export function mergeResults(results: HookResult[], _event: HookEvent): HookOutcome {
+  const out: HookOutcome = { block: false, preventContinuation: false, stop: false, results }
+  const ctx: string[] = []
+  const sys: string[] = []
+  const perms: Array<'allow' | 'deny' | 'ask'> = []
+  for (const r of results) {
+    if (r.outcome === 'blocking' || r.permissionDecision === 'deny') {
+      out.block = true
+      if (out.blockReason === undefined) out.blockReason = r.blockingError ?? r.permissionReason
+    }
+    if (r.preventContinuation) out.preventContinuation = true
+    if (r.stop) out.stop = true
+    if (r.permissionDecision) perms.push(r.permissionDecision)
+    if (r.permissionReason && out.permissionReason === undefined) out.permissionReason = r.permissionReason
+    if (r.updatedInput !== undefined) out.updatedInput = r.updatedInput
+    if (r.updatedOutput !== undefined) out.updatedOutput = r.updatedOutput
+    if (r.additionalContext) ctx.push(r.additionalContext)
+    if (r.systemMessage) sys.push(r.systemMessage)
+  }
+  if (perms.includes('deny')) out.permission = 'deny'
+  else if (perms.includes('ask')) out.permission = 'ask'
+  else if (perms.includes('allow')) out.permission = 'allow'
+  if (ctx.length) out.additionalContext = ctx.join('\n\n')
+  if (sys.length) out.systemMessage = sys.join('\n\n')
+  return out
+}

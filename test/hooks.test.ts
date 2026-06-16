@@ -1,6 +1,7 @@
 // test/hooks.test.ts
 import { describe, it, expect, vi } from 'vitest'
-import { matchesMatcher, matchQueryFor, evalIfCondition, parseHookStdout } from '../src/hooks.js'
+import { matchesMatcher, matchQueryFor, evalIfCondition, parseHookStdout, mergeResults } from '../src/hooks.js'
+import type { HookResult } from '../src/hooks.js'
 
 describe('matchesMatcher', () => {
   it('undefined / 空串 / * → 恒匹配', () => {
@@ -90,5 +91,32 @@ describe('parseHookStdout', () => {
   })
   it('exit 0 JSON continue:false → stop', () => {
     expect(parseHookStdout(JSON.stringify({ continue: false }), 0, '').stop).toBe(true)
+  })
+})
+
+const mk = (over: Partial<HookResult>): HookResult => ({ outcome: 'success', label: 'h', durationMs: 1, ...over })
+
+describe('mergeResults', () => {
+  it('任一 blocking / deny → block，取首个 reason', () => {
+    const o = mergeResults([mk({ outcome: 'success' }), mk({ outcome: 'blocking', blockingError: 'X' })], 'PreToolUse')
+    expect(o.block).toBe(true)
+    expect(o.blockReason).toBe('X')
+  })
+  it('优先级 deny > ask > allow', () => {
+    expect(mergeResults([mk({ permissionDecision: 'allow' }), mk({ permissionDecision: 'ask' }), mk({ permissionDecision: 'deny' })], 'PreToolUse').permission).toBe('deny')
+    expect(mergeResults([mk({ permissionDecision: 'allow' }), mk({ permissionDecision: 'ask' })], 'PreToolUse').permission).toBe('ask')
+    expect(mergeResults([mk({ permissionDecision: 'allow' })], 'PreToolUse').permission).toBe('allow')
+  })
+  it('updatedInput / updatedOutput 取配置序最后一个非空', () => {
+    const o = mergeResults([mk({ updatedInput: { a: 1 } }), mk({ updatedInput: { a: 2 } })], 'PreToolUse')
+    expect(o.updatedInput).toEqual({ a: 2 })
+  })
+  it('additionalContext / systemMessage 累加（\\n\\n 连接）', () => {
+    const o = mergeResults([mk({ additionalContext: 'A' }), mk({ additionalContext: 'B' })], 'PostToolUse')
+    expect(o.additionalContext).toBe('A\n\nB')
+  })
+  it('preventContinuation / stop 任一为真', () => {
+    expect(mergeResults([mk({}), mk({ preventContinuation: true })], 'Stop').preventContinuation).toBe(true)
+    expect(mergeResults([mk({ stop: true })], 'Stop').stop).toBe(true)
   })
 })
