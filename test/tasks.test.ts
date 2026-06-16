@@ -156,6 +156,22 @@ describe('enqueueNotification / drain / onNotification', () => {
   })
 })
 
+describe('local_hook 任务类型', () => {
+  beforeEach(() => clearAllTasks())
+  it('toNotification：local_hook 完成 → summary=命令钩子已完成 且带 result，无 outputFile', () => {
+    const t: BackgroundTask = {
+      id: 'h1', type: 'local_hook', status: 'completed', description: 'echo hi',
+      startTime: 0, outputFile: '/x', outputOffset: 0, notified: false, result: '上下文文本',
+    }
+    registerTask(t)
+    enqueueNotification(t)
+    const [n] = drainNotifications()
+    expect(n.summary).toBe('命令钩子已完成')
+    expect(n.result).toBe('上下文文本')
+    expect(n.outputFile).toBeUndefined()
+  })
+})
+
 describe('formatNotification', () => {
   it('bash completed → 含 output-file，无 result', () => {
     const n: TaskNotification = { id: 'b1', status: 'completed', summary: '命令退出码 0', outputFile: '/tmp/b1.log' }
