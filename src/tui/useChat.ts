@@ -20,6 +20,7 @@ import { onNotification, drainNotifications, formatNotification } from '../tasks
 import { buildSystemPrompt, findMemoryFiles } from '../prompt.js'
 import { formatMemory } from '../memory.js'
 import { loadSettings, saveSettings } from '../config.js'
+import { runHooks } from '../hooks.js'
 import { isDangerous, type Decision, type PermissionMode } from '../permissions.js'
 import type { ToolContext } from '../tools/types.js'
 import { newSession, openSession, listSessions, loadSession, type SessionHandle, type UsageRecord } from '../session.js'
@@ -206,6 +207,7 @@ export function createChatCore(opts: {
     fileState: new Map(),
     todos,
     recordBeforeImage: (absPath: string) => { if (currentTurnId > 0) checkpointer.capture(absPath, currentTurnId) },
+    hookDispatch: (event, payload) => runHooks(event, payload, settings.hooks),
   }
   const messages: any[] = [{ role: 'system', content: buildSystemPrompt(cwd) }]
   const usageLog: UsageRecord[] = []

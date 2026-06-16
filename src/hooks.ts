@@ -17,7 +17,14 @@ export const HOOK_EVENTS = [
 ] as const
 export type HookEvent = (typeof HOOK_EVENTS)[number]
 
-interface HookCommon { timeout?: number; if?: string; once?: boolean; statusMessage?: string }
+interface HookCommon {
+  timeout?: number
+  if?: string
+  /** 一次性 hook：CC 仅对 skill/plugin frontmatter hooks 实现（onHookSuccess→removeSessionHook）。
+   *  deepcode 尚无 skill hooks 系统，故当前**保留字段不消费**，待 L-022 skill 系统落地按 CC 实现。 */
+  once?: boolean
+  statusMessage?: string
+}
 export interface CommandHook extends HookCommon { type: 'command'; command: string; async?: boolean; asyncRewake?: boolean }
 export interface PromptHook extends HookCommon { type: 'prompt'; prompt: string; model?: string }
 export interface AgentHook extends HookCommon { type: 'agent'; prompt: string; model?: string }
