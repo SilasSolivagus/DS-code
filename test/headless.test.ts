@@ -1,6 +1,7 @@
 // test/headless.test.ts
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync, writeFileSync, rmSync } from 'node:fs'
+import path from 'node:path'
 
 const script: Array<{ deltas?: any[]; result: any }> = []
 vi.mock('../src/api.js', () => ({
@@ -14,11 +15,40 @@ vi.mock('../src/api.js', () => ({
   ),
 }))
 
+const hookCalls: Array<{ event: string; payload: any }> = []
+vi.mock('../src/hooks.js', async (orig) => {
+  const actual = await orig<typeof import('../src/hooks.js')>()
+  return {
+    ...actual,
+    runHooks: vi.fn(async (event: any, payload: any) => {
+      hookCalls.push({ event, payload })
+      return { block: false, preventContinuation: false, stop: false, results: [] }
+    }),
+  }
+})
+
+vi.mock('../src/config.js', async (orig) => {
+  const actual = await orig<typeof import('../src/config.js')>()
+  return {
+    ...actual,
+    loadSettings: vi.fn(() => ({
+      permissions: { allow: [] },
+      compactTokens: 200_000,
+      costWarnUSD: 2,
+      hooks: {
+        SessionStart: [{ matcher: '*', hooks: [] }],
+        InstructionsLoaded: [{ matcher: '*', hooks: [] }],
+        UserPromptSubmit: [{ matcher: '*', hooks: [] }],
+      },
+    })),
+  }
+})
+
 import { runHeadless } from '../src/headless.js'
 import { chatStream } from '../src/api.js'
 
 const usage = { prompt_tokens: 50, completion_tokens: 20, prompt_cache_hit_tokens: 10 }
-beforeEach(() => { script.length = 0; vi.mocked(chatStream).mockClear() })
+beforeEach(() => { script.length = 0; hookCalls.length = 0; vi.mocked(chatStream).mockClear() })
 
 describe('runHeadless', () => {
   it('跑完单 prompt 返回最终文本与累计 usage/cost/轮数', async () => {
@@ -104,5 +134,24 @@ describe('runHeadless', () => {
   it('headless 工具表不注册 AskUserQuestion（无人可答）', () => {
     const src = readFileSync(new URL('../src/headless.ts', import.meta.url), 'utf8')
     expect(src.includes('makeAskUserQuestionTool')).toBe(false)
+  })
+
+  it('启动派发 SessionStart(startup) 与 InstructionsLoaded', async () => {
+    hookCalls.length = 0
+    const memPath = path.join(process.cwd(), 'DEEPCODE.md')
+    const createdMem = !existsSync(memPath)
+    if (createdMem) writeFileSync(memPath, '# headless 测试记忆')
+    try {
+      script.push({ result: { content: '好的', toolCalls: [], usage, finishReason: 'stop' } })
+      await runHeadless({ client: {} as any, prompt: '你好', yolo: true })
+      const ss = hookCalls.find(c => c.event === 'SessionStart')
+      expect(ss?.payload.source).toBe('startup')
+      expect(ss?.payload.session_id).toMatch(/^headless-/)
+      const il = hookCalls.find(c => c.event === 'InstructionsLoaded' && c.payload.load_reason === 'startup')
+      expect(il).toBeTruthy()
+      expect(il!.payload.file_path).toContain('DEEPCODE.md')
+    } finally {
+      if (createdMem) rmSync(memPath, { force: true })
+    }
   })
 })

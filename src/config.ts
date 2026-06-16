@@ -83,9 +83,10 @@ export function hasApiKey(): boolean {
 
 export function saveApiKey(key: string): void {
   const s = loadSettings()
+  const hadKey = !!s.apiKey // 保存前是否已有落盘 key → 区分 init/maintenance
   s.apiKey = key || undefined
   saveSettings(s)
   try { fs.chmodSync(FILE, 0o600) } catch { /* 尽力而为 */ }
-  // Setup hook：首跑向导写 key 即初始化完成。fire-and-forget，hook 故障不阻断。
-  if (s.hooks) void runHooks('Setup', { hook_event_name: 'Setup', cwd: process.cwd(), trigger: 'init' }, s.hooks).catch(() => {})
+  // Setup hook：首跑向导写 key=init；后续改 key=maintenance。fire-and-forget，hook 故障不阻断。
+  if (s.hooks) void runHooks('Setup', { hook_event_name: 'Setup', cwd: process.cwd(), trigger: hadKey ? 'maintenance' : 'init' }, s.hooks).catch(() => {})
 }

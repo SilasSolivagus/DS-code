@@ -124,4 +124,14 @@ describe('saveApiKey Setup hook', () => {
     await new Promise(r => setImmediate(r))
     expect(hookCalls.find(c => c.event === 'Setup')).toBeFalsy()
   })
+
+  it('已有落盘 key 再改 → Setup(trigger=maintenance)', async () => {
+    saveSettings({ permissions: { allow: [] }, compactTokens: 200000, costWarnUSD: 2, apiKey: 'sk-old', hooks: { Setup: [{ hooks: [{ type: 'command', command: 'true' }] }] } } as any)
+    hookCalls.length = 0
+    saveApiKey('sk-changed')
+    await new Promise(r => setTimeout(r, 0))
+    const setup = hookCalls.find(c => c.event === 'Setup')
+    expect(setup).toBeTruthy()
+    expect(setup!.payload.trigger).toBe('maintenance')
+  })
 })

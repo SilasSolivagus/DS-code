@@ -1,5 +1,9 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { ensureSessionEnvDir, DEFAULT_SESSION_ENV_BASE, invalidateSessionEnvCache } from '../src/sessionEnv.js'
 
 // ── mock node:child_process：spawn 返回可控假 child；execFile 保留真实行为 ──
 const spawnMock = vi.fn()
@@ -258,5 +262,49 @@ describe('bash CwdChanged hook', () => {
     const ctx = { cwd: () => cwd, setCwd: (d: string) => { cwd = d }, signal: new AbortController().signal, fileState: new Map(), hookDispatch: dispatch }
     await bashTool.call({ command: 'echo hi' } as any, ctx as any)
     expect(events.includes('CwdChanged')).toBe(false)
+  })
+})
+
+describe('bash 注入 session env 前缀', () => {
+  const created: string[] = []
+  beforeEach(() => invalidateSessionEnvCache())
+  afterEach(() => {
+    for (const d of created) {
+      try { rmSync(d, { recursive: true, force: true }) } catch {}
+    }
+    created.length = 0
+  })
+
+  it('前台命令带上 hook 写入的 env 前缀（echo $FOO 能读到）', async () => {
+    const sid = 'bashtest-' + Math.random().toString(36).slice(2)
+    const dir = ensureSessionEnvDir(sid, DEFAULT_SESSION_ENV_BASE)
+    created.push(dir)
+    writeFileSync(path.join(dir, 'sessionstart-hook-0.sh'), 'export FOO=bar123')
+    invalidateSessionEnvCache(sid)
+    const ctx: any = { cwd: () => process.cwd(), setCwd: () => {}, signal: undefined, sessionId: () => sid }
+    const out = await bashTool.call({ command: 'echo "$FOO"' } as any, ctx)
+    expect(out).toContain('bar123')
+  })
+
+  it('无 sessionId → 无前缀，命令照常执行', async () => {
+    const ctx: any = { cwd: () => process.cwd(), setCwd: () => {}, signal: undefined, sessionId: () => undefined }
+    const out = await bashTool.call({ command: 'echo hello' } as any, ctx)
+    expect(out).toContain('hello')
+  })
+
+  it('CwdChanged：cd 后失效缓存 + 发事件带 session_id/new_cwd', async () => {
+    const sid = 'bashcwd-' + Math.random().toString(36).slice(2)
+    const events: any[] = []
+    const tmp = mkdtempSync(path.join(tmpdir(), 'bash-cwd-'))
+    let cur = process.cwd()
+    const ctx: any = {
+      cwd: () => cur, setCwd: (d: string) => { cur = d }, signal: undefined, sessionId: () => sid,
+      hookDispatch: async (event: string, payload: any) => { events.push({ event, payload }); return { block: false, preventContinuation: false, stop: false, results: [] } },
+    }
+    await bashTool.call({ command: `cd ${tmp}` } as any, ctx)
+    const cwdEvt = events.find(e => e.event === 'CwdChanged')
+    expect(cwdEvt).toBeTruthy()
+    expect(cwdEvt.payload.session_id).toBe(sid)
+    expect(cwdEvt.payload.new_cwd).toContain(path.basename(tmp))
   })
 })

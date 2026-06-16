@@ -5,6 +5,7 @@ import fs from 'node:fs'
 import type { Tool } from './types.js'
 import { TASKS_DIR, taskOutputPath } from '../config.js'
 import { registerTask, updateTask, getTask, enqueueNotification, generateTaskId } from '../tasks.js'
+import { getSessionEnvScript, clearCwdEnvFiles, invalidateSessionEnvCache } from '../sessionEnv.js'
 
 const MAX_OUTPUT = 30_000
 const MARKER = '__DEEPCODE_END__'
@@ -29,6 +30,8 @@ export const bashTool: Tool<typeof schema> = {
   isReadOnly: false,
   needsPermission: input => input.command,
   call(input, ctx) {
+    const envPrefix = getSessionEnvScript(ctx.sessionId?.())
+    const prefixed = (cmd: string) => (envPrefix ? `${envPrefix}\n${cmd}` : cmd)
     // 子代理保持纯执行：忽略 run_in_background，降级为前台同步执行（防污染主会话通知队列）。
     if (input.run_in_background === true && !ctx.isSubagent) {
       const id = generateTaskId('local_bash')
@@ -36,7 +39,7 @@ export const bashTool: Tool<typeof schema> = {
       fs.mkdirSync(TASKS_DIR, { recursive: true })
       const ws = fs.createWriteStream(outputFile)
       // detached:true → 子进程成进程组长，便于 kill 整组（杀 npm run dev 等 fork 的孙进程，修孤儿）
-      const child = spawn('/bin/bash', ['-c', input.command], { cwd: ctx.cwd(), detached: true })
+      const child = spawn('/bin/bash', ['-c', prefixed(input.command)], { cwd: ctx.cwd(), detached: true })
       // 两路都写同一文件：用 end:false，避免先结束的流提前关闭 ws 截断另一路；exit 时统一 ws.end()
       child.stdout.pipe(ws, { end: false })
       child.stderr.pipe(ws, { end: false })
@@ -68,13 +71,16 @@ export const bashTool: Tool<typeof schema> = {
       return Promise.resolve(`后台任务已启动 id=${id}，输出写入 ${outputFile}。用 TaskList/TaskOutput/TaskStop 管理。`)
     }
     return new Promise(resolve => {
+      // session-env 前缀（hook 写的 export 行）内联在用户命令前，使其 env 生效。
+      // 已知局限（与 CC 内联前缀一致）：若 hook 脚本含 `set -e` 等会泄漏到用户命令；
+      // 退出码经 err.code 兜底，但前缀提前退出会致 MARKER 未打印、本次 cwd 不更新。属病态 hook，不防御。
       // 捕获用户命令的退出码与结束时的 $PWD，与命令自身输出隔离
-      const wrapped = `${input.command}\n__dc_ec=$?\nprintf '\\n${MARKER}%s|%s' "$PWD" "$__dc_ec"`
+      const wrapped = `${prefixed(input.command)}\n__dc_ec=$?\nprintf '\\n${MARKER}%s|%s' "$PWD" "$__dc_ec"`
       execFile(
         '/bin/bash',
         ['-c', wrapped],
         { cwd: ctx.cwd(), timeout: input.timeout ?? 120_000, maxBuffer: 10 * 1024 * 1024, signal: ctx.signal },
-        (err: any, stdout, stderr) => {
+        async (err: any, stdout, stderr) => {
           let out = stdout
           // Default: use err.code if numeric (e.g. `exit 3` terminates bash before marker is printed)
           let exitCode = err ? (typeof err.code === 'number' ? err.code : 1) : 0
@@ -89,7 +95,12 @@ export const bashTool: Tool<typeof schema> = {
             if (newCwd && newCwd !== ctx.cwd()) {
               const oldCwd = ctx.cwd()
               ctx.setCwd(newCwd)
-              ctx.hookDispatch?.('CwdChanged', { hook_event_name: 'CwdChanged', old_cwd: oldCwd, new_cwd: newCwd }).catch(() => {})
+              const sid = ctx.sessionId?.()
+              if (sid) clearCwdEnvFiles(sid) // 清旧 cwd 专属 env，hook 重写新值
+              await ctx.hookDispatch?.('CwdChanged', {
+                hook_event_name: 'CwdChanged', cwd: newCwd, session_id: sid, old_cwd: oldCwd, new_cwd: newCwd,
+              })?.catch(() => undefined)
+              if (sid) invalidateSessionEnvCache(sid) // 下条命令重读前缀
             } else if (newCwd) {
               ctx.setCwd(newCwd)
             }
