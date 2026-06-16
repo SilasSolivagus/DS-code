@@ -146,3 +146,68 @@ export function mergeResults(results: HookResult[], _event: HookEvent): HookOutc
   if (sys.length) out.systemMessage = sys.join('\n\n')
   return out
 }
+
+export interface HookEngineDeps {
+  spawn?: typeof nodeSpawn
+  now?: () => number
+}
+
+/** 单 command hook：spawn bash -c，payload JSON 写 stdin，超时 SIGKILL，close→parseHookStdout。 */
+function execCommandHook(hook: CommandHook, payload: Record<string, unknown>, spawn: typeof nodeSpawn): Promise<HookResult> {
+  return new Promise(resolve => {
+    const timeoutMs = (hook.timeout ?? 60) * 1000
+    const opts: SpawnOptions = {
+      env: { ...process.env, DEEPCODE_PROJECT_DIR: process.cwd(), DEEPCODE_CWD: String(payload.cwd ?? '') },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }
+    let child: any
+    try { child = spawn('/bin/bash', ['-c', hook.command], opts) } catch { return resolve({ outcome: 'non_blocking_error', label: hook.command, durationMs: 0 }) }
+    let stdout = '', stderr = '', done = false
+    const finish = (r: HookResult) => { if (done) return; done = true; clearTimeout(timer); resolve(r) }
+    const timer = setTimeout(() => { try { child.kill('SIGKILL') } catch { /* 尽力 */ }; finish({ outcome: 'cancelled', label: hook.command, durationMs: 0 }) }, timeoutMs)
+    child.stdout?.on('data', (d: Buffer) => { stdout += d.toString() })
+    child.stderr?.on('data', (d: Buffer) => { stderr += d.toString() })
+    child.on('error', () => finish({ outcome: 'non_blocking_error', label: hook.command, durationMs: 0 }))
+    child.on('close', (code: number | null) => finish(parseHookStdout(stdout, code ?? 0, stderr)))
+    try { child.stdin?.write(JSON.stringify(payload) + '\n'); child.stdin?.end() } catch { /* 尽力 */ }
+  })
+}
+
+/** 单 hook 分派：①a 仅 command；其余类型占位（①c 接）。 */
+async function execOneHook(hook: HookCommand, payload: Record<string, unknown>, deps: Required<HookEngineDeps>): Promise<HookResult> {
+  const start = deps.now()
+  if (hook.type === 'command') {
+    const r = await execCommandHook(hook, payload, deps.spawn)
+    return { ...r, label: hook.command, durationMs: deps.now() - start }
+  }
+  return { outcome: 'non_blocking_error', label: `(${hook.type} 未支持)`, durationMs: deps.now() - start }
+}
+
+/** 引擎入口：选 matcher → 过 if → 并行执行 → 合并。未配置该事件→零开销空结果。 */
+export async function runHooks(
+  event: HookEvent,
+  payload: Record<string, unknown>,
+  config: HooksConfig | undefined,
+  deps: HookEngineDeps = {},
+): Promise<HookOutcome> {
+  const empty: HookOutcome = { block: false, preventContinuation: false, stop: false, results: [] }
+  const matchers = config?.[event]
+  if (!matchers || matchers.length === 0) return empty
+
+  const query = matchQueryFor(event, payload)
+  const toolName = typeof payload.tool_name === 'string' ? payload.tool_name : ''
+  const desc = typeof payload.tool_desc === 'string' ? payload.tool_desc : ''
+  const selected: HookCommand[] = []
+  for (const m of matchers) {
+    if (query !== undefined && !matchesMatcher(m.matcher, query)) continue
+    for (const h of m.hooks) {
+      if (h.if && !evalIfCondition(h.if, toolName, desc)) continue
+      selected.push(h)
+    }
+  }
+  if (selected.length === 0) return empty
+
+  const full: Required<HookEngineDeps> = { spawn: deps.spawn ?? nodeSpawn, now: deps.now ?? Date.now }
+  const results = await Promise.all(selected.map(h => execOneHook(h, payload, full)))
+  return mergeResults(results, event)
+}

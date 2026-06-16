@@ -1,7 +1,8 @@
 // test/hooks.test.ts
 import { describe, it, expect, vi } from 'vitest'
-import { matchesMatcher, matchQueryFor, evalIfCondition, parseHookStdout, mergeResults } from '../src/hooks.js'
-import type { HookResult } from '../src/hooks.js'
+import { EventEmitter } from 'node:events'
+import { matchesMatcher, matchQueryFor, evalIfCondition, parseHookStdout, mergeResults, runHooks } from '../src/hooks.js'
+import type { HookResult, HooksConfig } from '../src/hooks.js'
 
 describe('matchesMatcher', () => {
   it('undefined / 空串 / * → 恒匹配', () => {
@@ -118,5 +119,61 @@ describe('mergeResults', () => {
   it('preventContinuation / stop 任一为真', () => {
     expect(mergeResults([mk({}), mk({ preventContinuation: true })], 'Stop').preventContinuation).toBe(true)
     expect(mergeResults([mk({ stop: true })], 'Stop').stop).toBe(true)
+  })
+})
+
+// 造假 child：可控 stdout/stderr/exit；记录 stdin。
+function fakeChild(stdout: string, code: number, stderr = '') {
+  const child: any = new EventEmitter()
+  child.stdin = { write: vi.fn(), end: vi.fn() }
+  child.stdout = new EventEmitter()
+  child.stderr = new EventEmitter()
+  child.kill = vi.fn()
+  queueMicrotask(() => {
+    if (stdout) child.stdout.emit('data', Buffer.from(stdout))
+    if (stderr) child.stderr.emit('data', Buffer.from(stderr))
+    child.emit('close', code)
+  })
+  return child
+}
+
+describe('runHooks', () => {
+  it('未配置该事件 → 零开销，spawn 不被调用', async () => {
+    const spawn = vi.fn()
+    const o = await runHooks('PreToolUse', { tool_name: 'Write' }, undefined, { spawn })
+    expect(o.results).toEqual([])
+    expect(spawn).not.toHaveBeenCalled()
+  })
+  it('command 类型：写 stdin payload + 解析 exit 0 JSON', async () => {
+    const spawn = vi.fn(() => fakeChild(JSON.stringify({ hookSpecificOutput: { additionalContext: 'ok' } }), 0))
+    const cfg: HooksConfig = { PreToolUse: [{ matcher: 'Write', hooks: [{ type: 'command', command: 'echo hi' }] }] }
+    const o = await runHooks('PreToolUse', { tool_name: 'Write', tool_input: { a: 1 } }, cfg, { spawn })
+    expect(spawn).toHaveBeenCalledTimes(1)
+    expect(o.additionalContext).toBe('ok')
+    expect(o.results[0].label).toBe('echo hi')
+  })
+  it('matcher 不匹配 → 不 spawn', async () => {
+    const spawn = vi.fn(() => fakeChild('', 0))
+    const cfg: HooksConfig = { PreToolUse: [{ matcher: 'Edit', hooks: [{ type: 'command', command: 'x' }] }] }
+    await runHooks('PreToolUse', { tool_name: 'Write' }, cfg, { spawn })
+    expect(spawn).not.toHaveBeenCalled()
+  })
+  it('if 不匹配 → 跳过该 hook', async () => {
+    const spawn = vi.fn(() => fakeChild('', 0))
+    const cfg: HooksConfig = { PreToolUse: [{ hooks: [{ type: 'command', command: 'x', if: 'Bash(git:*)' }] }] }
+    await runHooks('PreToolUse', { tool_name: 'Bash', tool_desc: 'npm test' }, cfg, { spawn })
+    expect(spawn).not.toHaveBeenCalled()
+  })
+  it('exit 2 → block', async () => {
+    const spawn = vi.fn(() => fakeChild('', 2, '拒绝'))
+    const cfg: HooksConfig = { PreToolUse: [{ hooks: [{ type: 'command', command: 'guard' }] }] }
+    const o = await runHooks('PreToolUse', { tool_name: 'Write' }, cfg, { spawn })
+    expect(o.block).toBe(true)
+    expect(o.blockReason).toBe('拒绝')
+  })
+  it('未支持类型（prompt）→ non_blocking_error 占位，不崩', async () => {
+    const cfg: HooksConfig = { PreToolUse: [{ hooks: [{ type: 'prompt', prompt: 'x' }] }] }
+    const o = await runHooks('PreToolUse', { tool_name: 'Write' }, cfg, {})
+    expect(o.results[0].outcome).toBe('non_blocking_error')
   })
 })
