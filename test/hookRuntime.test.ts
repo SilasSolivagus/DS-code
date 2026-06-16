@@ -23,3 +23,10 @@ describe('makeHookRuntime.llm', () => {
     expect(text).toBe('{"ok":true}')
   })
 })
+
+describe('makeHookRuntime registerAsync', () => {
+  it('返回的 deps 含 registerAsync', () => {
+    const deps = makeHookRuntime({ client: {} as any, getModel: () => 'm', cwd: () => '/tmp' })
+    expect(typeof deps.registerAsync).toBe('function')
+  })
+})

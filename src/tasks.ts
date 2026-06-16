@@ -5,7 +5,7 @@ import path from 'node:path'
 import type { ChildProcess } from 'node:child_process'
 import { TASKS_DIR } from './config.js'
 
-export type TaskType = 'local_bash' | 'local_agent'
+export type TaskType = 'local_bash' | 'local_agent' | 'local_hook'
 export type TaskStatus = 'running' | 'completed' | 'failed' | 'killed'
 
 export interface BackgroundTask {
@@ -26,6 +26,8 @@ export interface BackgroundTask {
   prompt?: string
   abortController?: AbortController
   result?: string
+  // hook 专有（async/asyncRewake）
+  asyncRewake?: boolean
 }
 
 export interface TaskNotification {
@@ -83,14 +85,12 @@ const queue: TaskNotification[] = []
 const subscribers = new Set<() => void>()
 
 function toNotification(task: BackgroundTask): TaskNotification {
-  const summary = task.type === 'local_agent'
-    ? `子代理${statusZh(task.status)}`
-    : `命令${statusZh(task.status)}`
+  const kind = task.type === 'local_agent' ? '子代理' : task.type === 'local_hook' ? '命令钩子' : '命令'
   return {
     id: task.id,
     status: task.status,
-    summary,
-    result: task.type === 'local_agent' ? task.result : undefined,
+    summary: `${kind}${statusZh(task.status)}`,
+    result: (task.type === 'local_agent' || task.type === 'local_hook') ? task.result : undefined,
     outputFile: task.type === 'local_bash' ? task.outputFile : undefined,
   }
 }
@@ -172,6 +172,7 @@ function killRunningTasks(): void {
     if (t.status !== 'running') continue
     try {
       if (t.type === 'local_bash') killProcessTree(t.child, 'SIGKILL')
+      else if (t.type === 'local_hook') { try { t.child?.kill('SIGKILL') } catch { /* 尽力 */ } }
       else t.abortController?.abort()
     } catch { /* 尽力而为 */ }
   }

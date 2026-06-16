@@ -99,7 +99,7 @@ async function execCall(call: ToolCall, deps: LoopDeps): Promise<{ ok: boolean; 
       onRequest: (name: string, d: string) =>
         runHooks('PermissionRequest', { hook_event_name: 'PermissionRequest', cwd, tool_name: name, tool_desc: d }, deps.hooks, deps.hookDeps),
       onDenied: async (name: string, d: string, reason: string) => {
-        await runHooks('PermissionDenied', { hook_event_name: 'PermissionDenied', cwd, tool_name: name, tool_desc: d, reason }, deps.hooks, deps.hookDeps)
+        await runHooks('PermissionDenied', { hook_event_name: 'PermissionDenied', cwd, tool_name: name, tool_input: input, tool_desc: d, reason }, deps.hooks, deps.hookDeps)
       },
     } : undefined
     const perm = await checkPermission(tool, input, deps.permission, permHooks)

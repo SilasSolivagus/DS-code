@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events'
 import { mkdtempSync, readFileSync, existsSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { matchesMatcher, matchQueryFor, evalIfCondition, parseHookStdout, mergeResults, runHooks, substituteArguments, parseHookEvalResult, interpolateEnvVars } from '../src/hooks.js'
+import { matchesMatcher, matchQueryFor, evalIfCondition, parseHookStdout, mergeResults, runHooks, substituteArguments, parseHookEvalResult, interpolateEnvVars, isAsyncFirstLine } from '../src/hooks.js'
 import type { HookResult, HooksConfig } from '../src/hooks.js'
 
 describe('matchesMatcher', () => {
@@ -326,5 +326,117 @@ describe('runHooks http 类型', () => {
     const config = { Stop: [{ hooks: [{ type: 'http', url: 'https://hook.test/y' }] }] } as any
     const out = await runHooks('Stop', { hook_event_name: 'Stop' }, config, { fetch: fakeFetch })
     expect(out.results[0].outcome).toBe('blocking')
+  })
+})
+
+describe('runHooks async', () => {
+  it('配置 async:true → 调 registerAsync，返 backgrounded，不阻塞', async () => {
+    const registerAsync = vi.fn()
+    const spawn = vi.fn(() => fakeChild('', 0)) // 即便 child 会 close，配置级 async 已在 stdin 后 handoff
+    const cfg: HooksConfig = { PreToolUse: [{ hooks: [{ type: 'command', command: 'bg', async: true }] }] }
+    const o = await runHooks('PreToolUse', { tool_name: 'Write' }, cfg, { spawn, registerAsync })
+    expect(registerAsync).toHaveBeenCalledTimes(1)
+    expect(o.results[0].outcome).toBe('backgrounded')
+    expect(o.block).toBe(false)
+  })
+
+  it('stdout 首行 {"async":true} → 调 registerAsync 并 handoff', async () => {
+    const registerAsync = vi.fn()
+    // child 仅 emit 首行 marker，不 close（模拟仍在后台跑）
+    const child: any = new EventEmitter()
+    child.stdin = { write: vi.fn(), end: vi.fn() }
+    child.stdout = new EventEmitter()
+    child.stderr = new EventEmitter()
+    child.kill = vi.fn()
+    queueMicrotask(() => child.stdout.emit('data', Buffer.from('{"async":true}\n')))
+    const spawn = vi.fn(() => child)
+    const cfg: HooksConfig = { PreToolUse: [{ hooks: [{ type: 'command', command: 'maybe' }] }] }
+    const o = await runHooks('PreToolUse', { tool_name: 'Write' }, cfg, { spawn, registerAsync })
+    expect(registerAsync).toHaveBeenCalledTimes(1)
+    expect(o.results[0].outcome).toBe('backgrounded')
+  })
+
+  it('stdout 首行 marker 跨两个 chunk 分片 → 仍正确 handoff', async () => {
+    const registerAsync = vi.fn()
+    const child: any = new EventEmitter()
+    child.stdin = { write: vi.fn(), end: vi.fn() }
+    child.stdout = new EventEmitter()
+    child.stderr = new EventEmitter()
+    child.kill = vi.fn()
+    const spawn = vi.fn(() => child)
+    const cfg: HooksConfig = { PreToolUse: [{ hooks: [{ type: 'command', command: 'maybe' }] }] }
+    const p = runHooks('PreToolUse', { tool_name: 'Write' }, cfg, { spawn, registerAsync })
+    // chunk 1：不完整首行（无闭合括号）→ 不应 handoff
+    await new Promise(r => queueMicrotask(() => r(undefined)))
+    child.stdout.emit('data', Buffer.from('{"async":'))
+    await new Promise(r => setTimeout(r, 0))
+    expect(registerAsync).not.toHaveBeenCalled()
+    // chunk 2：补全首行 → handoff
+    child.stdout.emit('data', Buffer.from('true}\n'))
+    const o = await p
+    expect(registerAsync).toHaveBeenCalledTimes(1)
+    expect(o.results[0].outcome).toBe('backgrounded')
+  })
+
+  it('配置 async 无显式 timeout → registerAsync 收到 600s（对齐 CC 工具 hook 预算）', async () => {
+    const registerAsync = vi.fn()
+    const spawn = vi.fn(() => fakeChild('', 0))
+    const cfg: HooksConfig = { PreToolUse: [{ hooks: [{ type: 'command', command: 'bg', async: true }] }] }
+    await runHooks('PreToolUse', { tool_name: 'Write' }, cfg, { spawn, registerAsync })
+    expect(registerAsync.mock.calls[0][0].asyncTimeout).toBe(600000)
+  })
+
+  it('配置 async 带显式 timeout=5（秒）→ registerAsync 收到 5000ms', async () => {
+    const registerAsync = vi.fn()
+    const spawn = vi.fn(() => fakeChild('', 0))
+    const cfg: HooksConfig = { PreToolUse: [{ hooks: [{ type: 'command', command: 'bg', async: true, timeout: 5 }] }] }
+    await runHooks('PreToolUse', { tool_name: 'Write' }, cfg, { spawn, registerAsync })
+    expect(registerAsync.mock.calls[0][0].asyncTimeout).toBe(5000)
+  })
+
+  it('stdout marker 无 asyncTimeout → registerAsync 收到 undefined（registerAsync 内部落 15s 默认）', async () => {
+    const registerAsync = vi.fn()
+    const child: any = new EventEmitter()
+    child.stdin = { write: vi.fn(), end: vi.fn() }
+    child.stdout = new EventEmitter()
+    child.stderr = new EventEmitter()
+    child.kill = vi.fn()
+    queueMicrotask(() => child.stdout.emit('data', Buffer.from('{"async":true}\n')))
+    const spawn = vi.fn(() => child)
+    const cfg: HooksConfig = { PreToolUse: [{ hooks: [{ type: 'command', command: 'maybe' }] }] }
+    await runHooks('PreToolUse', { tool_name: 'Write' }, cfg, { spawn, registerAsync })
+    expect(registerAsync.mock.calls[0][0].asyncTimeout).toBeUndefined()
+  })
+
+  it('fail-safe：配置 async 但无 registerAsync dep → 同步阻塞执行', async () => {
+    const spawn = vi.fn(() => fakeChild(JSON.stringify({ hookSpecificOutput: { additionalContext: 'sync' } }), 0))
+    const cfg: HooksConfig = { PreToolUse: [{ hooks: [{ type: 'command', command: 'bg', async: true }] }] }
+    const o = await runHooks('PreToolUse', { tool_name: 'Write' }, cfg, { spawn })
+    expect(o.results[0].outcome).toBe('success')
+    expect(o.additionalContext).toBe('sync')
+  })
+})
+
+describe('isAsyncFirstLine', () => {
+  it('合法 async marker → 解析', () => {
+    expect(isAsyncFirstLine('{"async":true}')).toEqual({ async: true })
+  })
+  it('带 asyncTimeout（ms）', () => {
+    expect(isAsyncFirstLine('{"async":true,"asyncTimeout":5000}')).toEqual({ async: true, asyncTimeout: 5000 })
+  })
+  it('async 非 true → null', () => {
+    expect(isAsyncFirstLine('{"async":false}')).toBeNull()
+  })
+  it('无 async 字段 → null', () => {
+    expect(isAsyncFirstLine('{"foo":1}')).toBeNull()
+  })
+  it('行不完整（无闭合括号）→ null', () => {
+    expect(isAsyncFirstLine('{"async":tru')).toBeNull()
+  })
+  it('非 JSON → null', () => {
+    expect(isAsyncFirstLine('hello world')).toBeNull()
+  })
+  it('asyncTimeout 非数字 → 忽略该字段', () => {
+    expect(isAsyncFirstLine('{"async":true,"asyncTimeout":"x"}')).toEqual({ async: true })
   })
 })

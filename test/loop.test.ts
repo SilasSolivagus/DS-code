@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { z } from 'zod'
-import { mkdtempSync, writeFileSync, existsSync, rmSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -507,6 +507,24 @@ describe('execCall + hooks', () => {
     await runOneToolCall(deps)
     expect(ask).not.toHaveBeenCalled()
     expect(calls.length).toBe(1)
+  })
+
+  it('PermissionDenied payload 含 tool_input（用户拒绝时）', async () => {
+    const { tool, calls } = recTool()
+    const deps = makeDeps([tool])
+    // mode default + ask 返回 no → checkPermission 落到 onDenied → 触发 PermissionDenied hook
+    deps.permission = { mode: 'default', rules: [], saveRule: () => {}, ask: async () => 'no' }
+    const dir = mkdtempSync(path.join(tmpdir(), 'dc-pd-'))
+    const payloadFile = path.join(dir, 'payload.json')
+    // command hook 把 stdin（hook payload JSON）原样落盘，供断言读取
+    deps.hooks = { PermissionDenied: [{ hooks: [{ type: 'command', command: `cat > ${payloadFile}` }] }] }
+    await runOneToolCall(deps, { v: 'orig' })
+    expect(calls.length).toBe(0) // 工具被拒，未执行
+    const payload = JSON.parse(readFileSync(payloadFile, 'utf8'))
+    expect(payload.hook_event_name).toBe('PermissionDenied')
+    expect(payload.tool_name).toBe('Rec')
+    expect(payload.tool_input).toEqual({ v: 'orig' })
+    rmSync(dir, { recursive: true, force: true })
   })
 
   it('PostToolUse updatedOutput → 替换工具结果', async () => {
