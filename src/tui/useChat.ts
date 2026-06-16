@@ -594,6 +594,7 @@ export function createChatCore(opts: {
       todos.reset()
       compacted = false
       lastPromptTokens = 0
+      pendingSessionContext = null
       session = newSession({ cwd, model, thinking, permMode }, sessionDir)
       session.appendMessage(messages[0])
       checkpointer = createCheckpointer(checkpointStoreFor(session.file))

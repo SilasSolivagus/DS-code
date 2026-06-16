@@ -96,7 +96,7 @@ describe('useChat PreCompact/PostCompact hook', () => {
 describe('useChat SessionStart hook', () => {
   it('新会话 → SessionStart(source=startup) 触发', async () => {
     createChatCore({ client: {} as any, yolo: true, cwd: process.cwd(), sessionDir, onState: () => {} })
-    await Promise.resolve() // 等 fire-and-forget 的 .then 微任务落定
+    await new Promise(r => setImmediate(r)) // 等 fire-and-forget 的 .then 微任务落定
     const ss = hookCalls.find(c => c.event === 'SessionStart')
     expect(ss).toBeTruthy()
     expect(ss!.payload.source).toBe('startup')
@@ -106,7 +106,7 @@ describe('useChat SessionStart hook', () => {
     createChatCore({ client: {} as any, yolo: true, cwd: process.cwd(), sessionDir, onState: () => {} })
     hookCalls.length = 0
     createChatCore({ client: {} as any, yolo: true, cwd: process.cwd(), continueSession: true, sessionDir, onState: () => {} })
-    await Promise.resolve()
+    await new Promise(r => setImmediate(r))
     const ss = hookCalls.find(c => c.event === 'SessionStart')
     expect(ss).toBeTruthy()
     expect(ss!.payload.source).toBe('resume')
@@ -118,7 +118,7 @@ describe('useChat SessionStart hook', () => {
       : emptyOutcome
     script.push({ result: { content: '答', toolCalls: [], usage, finishReason: 'stop' } })
     const core = createChatCore({ client: {} as any, yolo: true, cwd: process.cwd(), sessionDir, onState: () => {} })
-    await Promise.resolve()
+    await new Promise(r => setImmediate(r))
     await core.send('你好')
     const sent = (chatStream as any).mock.calls.at(-1)[1].messages as any[]
     expect(JSON.stringify(sent)).toContain('项目使用 pnpm')
