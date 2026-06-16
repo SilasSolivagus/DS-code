@@ -1,7 +1,17 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // src/config.ts 在模块加载时就计算 DIR = path.join(os.homedir(), '.deepcode')，
 // 所以必须在 import 之前把 node:os 的 homedir mock 到临时目录（含 default 导出形态）。
+// mock runHooks 捕获调用；vi.mock 被 vitest hoisted，config.ts 加载时拿到的是 mock 版本。
+const hookCalls: Array<{ event: string; payload: any }> = []
+vi.mock('../src/hooks.js', async orig => ({
+  ...(await orig() as any),
+  runHooks: vi.fn(async (event: string, payload: any) => {
+    hookCalls.push({ event, payload })
+    return { block: false, preventContinuation: false, stop: false, results: [] }
+  }),
+}))
+
 vi.mock('node:os', async importOriginal => {
   const os = await importOriginal<typeof import('node:os')>()
   const { mkdtempSync } = await import('node:fs')
@@ -93,5 +103,25 @@ describe('parseHooksConfig', () => {
     const out = parseHooksConfig(raw)!
     expect((out as any).Bogus).toBeUndefined()
     expect(out.PreToolUse!.length).toBe(1)
+  })
+})
+
+describe('saveApiKey Setup hook', () => {
+  beforeEach(() => { hookCalls.length = 0 })
+
+  it('已配置 hooks 时写 key → Setup(trigger=init) 触发', async () => {
+    saveSettings({ permissions: { allow: [] }, compactTokens: 200000, costWarnUSD: 2, hooks: { Setup: [{ hooks: [{ type: 'command', command: 'true' }] }] } } as any)
+    saveApiKey('sk-test')
+    await new Promise(r => setImmediate(r))
+    const setup = hookCalls.find(c => c.event === 'Setup')
+    expect(setup).toBeTruthy()
+    expect(setup!.payload.trigger).toBe('init')
+  })
+
+  it('未配置 hooks 时写 key → 不触发 Setup', async () => {
+    saveSettings({ permissions: { allow: [] }, compactTokens: 200000, costWarnUSD: 2 } as any)
+    saveApiKey('sk-test2')
+    await new Promise(r => setImmediate(r))
+    expect(hookCalls.find(c => c.event === 'Setup')).toBeFalsy()
   })
 })

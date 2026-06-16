@@ -2,7 +2,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
-import { HOOK_EVENTS, type HooksConfig, type HookEvent } from './hooks.js'
+import { HOOK_EVENTS, type HooksConfig, type HookEvent, runHooks } from './hooks.js'
 
 export interface Settings {
   permissions: { allow: string[] }
@@ -83,4 +83,6 @@ export function saveApiKey(key: string): void {
   s.apiKey = key || undefined
   saveSettings(s)
   try { fs.chmodSync(FILE, 0o600) } catch { /* 尽力而为 */ }
+  // Setup hook：首跑向导写 key 即初始化完成。fire-and-forget，hook 故障不阻断。
+  if (s.hooks) void runHooks('Setup', { hook_event_name: 'Setup', cwd: process.cwd(), trigger: 'init' }, s.hooks).catch(() => {})
 }
