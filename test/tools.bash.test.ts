@@ -122,6 +122,22 @@ describe('Bash run_in_background', () => {
     expect(notes[0].status).toBe('failed')
   })
 
+  it('已 killed（TaskStop）→ SIGTERM 触发的 exit 回调不覆写成 failed', async () => {
+    const { updateTask } = await import('../src/tasks.js')
+    const child = makeFakeChild()
+    spawnMock.mockReturnValue(child)
+
+    await bashTool.call({ command: 'sleep 30', run_in_background: true }, makeCtx('/tmp'))
+    const id = listTasks()[0].id
+    // 模拟 TaskStop：置 killed + notified
+    updateTask(id, { status: 'killed', notified: true })
+    // SIGTERM 让进程非零退出 → exit 回调触发
+    child.emit('exit', 143)
+
+    expect(getTask(id)!.status).toBe('killed') // 不被覆写成 failed
+    expect(drainNotifications().length).toBe(0) // 已 killed 不再重复入队
+  })
+
   it('用 spawn 跑命令（shell -c），cwd 取自 ctx', async () => {
     const child = makeFakeChild()
     spawnMock.mockReturnValue(child)

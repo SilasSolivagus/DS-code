@@ -53,6 +53,9 @@ export const bashTool: Tool<typeof schema> = {
       })
       child.once('exit', code => {
         ws.end()
+        // 若已被 TaskStop 置为 killed，保留之——SIGTERM 触发的本 exit 回调不该把 killed 覆写成 failed。
+        const t = getTask(id)
+        if (t && t.status === 'killed') return
         updateTask(id, { status: code === 0 ? 'completed' : 'failed', endTime: Date.now() })
         enqueueNotification(getTask(id)!)
       })
