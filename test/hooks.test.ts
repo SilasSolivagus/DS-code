@@ -1,6 +1,9 @@
 // test/hooks.test.ts
 import { describe, it, expect, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
+import { mkdtempSync, readFileSync, existsSync, readdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { matchesMatcher, matchQueryFor, evalIfCondition, parseHookStdout, mergeResults, runHooks } from '../src/hooks.js'
 import type { HookResult, HooksConfig } from '../src/hooks.js'
 
@@ -192,5 +195,42 @@ describe('runHooks', () => {
     const cfg: HooksConfig = { PreToolUse: [{ hooks: [{ type: 'prompt', prompt: 'x' }] }] }
     const o = await runHooks('PreToolUse', { tool_name: 'Write' }, cfg, {})
     expect(o.results[0].outcome).toBe('non_blocking_error')
+  })
+})
+
+describe('runHooks 注入 DEEPCODE_ENV_FILE', () => {
+  it('SessionStart command hook 收到指向 sessionstart-hook-0.sh 的 DEEPCODE_ENV_FILE 且目录已建', async () => {
+    const base = mkdtempSync(path.join(tmpdir(), 'deepcode-eng-senv-'))
+    const config = {
+      SessionStart: [{ matcher: '*', hooks: [{ type: 'command', command: 'echo export FOO=bar >> "$DEEPCODE_ENV_FILE"' }] }],
+    } as any
+    await runHooks('SessionStart',
+      { hook_event_name: 'SessionStart', session_id: 'sess-eng', source: 'startup' },
+      config, { sessionEnvBase: base })
+    const f = path.join(base, 'sess-eng', 'sessionstart-hook-0.sh')
+    expect(existsSync(f)).toBe(true)
+    expect(readFileSync(f, 'utf8')).toContain('export FOO=bar')
+  })
+
+  it('非 env-file 事件（PreToolUse）不注入 DEEPCODE_ENV_FILE', async () => {
+    const base = mkdtempSync(path.join(tmpdir(), 'deepcode-eng-senv2-'))
+    const config = {
+      PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: 'echo "${DEEPCODE_ENV_FILE:-NONE}" >> /dev/stderr' }] }],
+    } as any
+    const out = await runHooks('PreToolUse',
+      { hook_event_name: 'PreToolUse', tool_name: 'Bash', session_id: 'sess-x' },
+      config, { sessionEnvBase: base })
+    expect(existsSync(path.join(base, 'sess-x'))).toBe(false)
+    expect(out.block).toBe(false)
+  })
+
+  it('env-file 事件但 payload 无 session_id → 不注入、不建目录', async () => {
+    const base = mkdtempSync(path.join(tmpdir(), 'deepcode-eng-senv3-'))
+    const config = {
+      Setup: [{ matcher: '*', hooks: [{ type: 'command', command: 'echo export X=1 >> "${DEEPCODE_ENV_FILE:-/dev/null}"' }] }],
+    } as any
+    await runHooks('Setup', { hook_event_name: 'Setup', trigger: 'init' }, config, { sessionEnvBase: base })
+    expect(existsSync(base)).toBe(true)
+    expect(readdirSync(base)).toEqual([])
   })
 })

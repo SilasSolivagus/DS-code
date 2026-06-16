@@ -1,7 +1,9 @@
 // src/hooks.ts
 import { spawn as nodeSpawn } from 'node:child_process'
 import type { SpawnOptions } from 'node:child_process'
+import path from 'node:path'
 import { matchRule } from './permissions.js'
+import { ENV_FILE_EVENTS, ensureSessionEnvDir, hookEnvFileName, DEFAULT_SESSION_ENV_BASE } from './sessionEnv.js'
 
 export const HOOK_EVENTS = [
   'PreToolUse', 'PostToolUse', 'PostToolUseFailure',
@@ -159,14 +161,20 @@ export function mergeResults(results: HookResult[], _event: HookEvent): HookOutc
 export interface HookEngineDeps {
   spawn?: typeof nodeSpawn
   now?: () => number
+  sessionEnvBase?: string
 }
 
 /** 单 command hook：spawn bash -c，payload JSON 写 stdin，超时 SIGKILL，close→parseHookStdout。 */
-function execCommandHook(hook: CommandHook, payload: Record<string, unknown>, spawn: typeof nodeSpawn): Promise<HookResult> {
+function execCommandHook(hook: CommandHook, payload: Record<string, unknown>, spawn: typeof nodeSpawn, envFilePath?: string): Promise<HookResult> {
   return new Promise(resolve => {
     const timeoutMs = (hook.timeout ?? 60) * 1000
     const opts: SpawnOptions = {
-      env: { ...process.env, DEEPCODE_PROJECT_DIR: process.cwd(), DEEPCODE_CWD: String(payload.cwd ?? '') },
+      env: {
+        ...process.env,
+        DEEPCODE_PROJECT_DIR: process.cwd(),
+        DEEPCODE_CWD: String(payload.cwd ?? ''),
+        ...(envFilePath ? { DEEPCODE_ENV_FILE: envFilePath } : {}),
+      },
       stdio: ['pipe', 'pipe', 'pipe'],
     }
     let child: any
@@ -183,10 +191,10 @@ function execCommandHook(hook: CommandHook, payload: Record<string, unknown>, sp
 }
 
 /** 单 hook 分派：①a 仅 command；其余类型占位（①c 接）。 */
-async function execOneHook(hook: HookCommand, payload: Record<string, unknown>, deps: Required<HookEngineDeps>): Promise<HookResult> {
+async function execOneHook(hook: HookCommand, payload: Record<string, unknown>, deps: Required<HookEngineDeps>, envFilePath?: string): Promise<HookResult> {
   const start = deps.now()
   if (hook.type === 'command') {
-    const r = await execCommandHook(hook, payload, deps.spawn)
+    const r = await execCommandHook(hook, payload, deps.spawn, envFilePath)
     return { ...r, label: hook.command, durationMs: deps.now() - start }
   }
   return { outcome: 'non_blocking_error', label: `(${hook.type} 未支持)`, durationMs: deps.now() - start }
@@ -216,7 +224,20 @@ export async function runHooks(
   }
   if (selected.length === 0) return empty
 
-  const full: Required<HookEngineDeps> = { spawn: deps.spawn ?? nodeSpawn, now: deps.now ?? Date.now }
-  const results = await Promise.all(selected.map(h => execOneHook(h, payload, full)))
+  const full: Required<HookEngineDeps> = {
+    spawn: deps.spawn ?? nodeSpawn,
+    now: deps.now ?? Date.now,
+    sessionEnvBase: deps.sessionEnvBase ?? DEFAULT_SESSION_ENV_BASE,
+  }
+
+  // env-file 机制：Setup/SessionStart/CwdChanged/FileChanged 的 command hook 注入 DEEPCODE_ENV_FILE。
+  const sid = typeof payload.session_id === 'string' && payload.session_id ? payload.session_id : undefined
+  let envDir: string | undefined
+  if (sid && ENV_FILE_EVENTS.has(event) && selected.some(h => h.type === 'command')) {
+    envDir = ensureSessionEnvDir(sid, full.sessionEnvBase)
+  }
+  const results = await Promise.all(selected.map((h, i) =>
+    execOneHook(h, payload, full, (envDir && h.type === 'command') ? path.join(envDir, hookEnvFileName(event, i)) : undefined),
+  ))
   return mergeResults(results, event)
 }
