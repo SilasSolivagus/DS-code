@@ -46,6 +46,7 @@ vi.mock('../src/config.js', async (orig) => {
 
 import { runHeadless } from '../src/headless.js'
 import { chatStream } from '../src/api.js'
+import { runHooks } from '../src/hooks.js'
 
 const usage = { prompt_tokens: 50, completion_tokens: 20, prompt_cache_hit_tokens: 10 }
 beforeEach(() => { script.length = 0; hookCalls.length = 0; vi.mocked(chatStream).mockClear() })
@@ -134,6 +135,29 @@ describe('runHeadless', () => {
   it('headless 工具表不注册 AskUserQuestion（无人可答）', () => {
     const src = readFileSync(new URL('../src/headless.ts', import.meta.url), 'utf8')
     expect(src.includes('makeAskUserQuestionTool')).toBe(false)
+  })
+
+  it('UserPromptSubmit block 时拦截文本同时带上 blockReason 与 additionalContext', async () => {
+    vi.mocked(runHooks).mockImplementation(async (event: any, payload: any) => {
+      hookCalls.push({ event, payload })
+      // 仅 UserPromptSubmit 返回 block + additionalContext，其余事件走默认放行
+      if (event === 'UserPromptSubmit') {
+        return { block: true, preventContinuation: false, stop: false, blockReason: '拒', additionalContext: '附加上下文', results: [] } as any
+      }
+      return { block: false, preventContinuation: false, stop: false, results: [] } as any
+    })
+    try {
+      const r = await runHeadless({ client: {} as any, prompt: '坏输入', yolo: true })
+      expect(r.status).toBe('aborted')
+      expect(r.text).toContain('拒')
+      expect(r.text).toContain('附加上下文')
+    } finally {
+      // mockImplementation 持久，恢复默认放行实现避免污染后续用例
+      vi.mocked(runHooks).mockImplementation(async (event: any, payload: any) => {
+        hookCalls.push({ event, payload })
+        return { block: false, preventContinuation: false, stop: false, results: [] } as any
+      })
+    }
   })
 
   it('启动派发 SessionStart(startup) 与 InstructionsLoaded', async () => {

@@ -78,7 +78,8 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
       hook_event_name: 'UserPromptSubmit', cwd, prompt: opts.prompt,
     }, settings.hooks, hookDeps)
     if (ups.block || ups.preventContinuation) {
-      return { text: `输入被 hook 拦截：${ups.blockReason ?? ''}`, status: 'aborted', turns: 0, usage: total, costUSD: 0 }
+      const extra = ups.additionalContext ? `\n\n<hook-context>\n${ups.additionalContext}\n</hook-context>` : ''
+      return { text: `输入被 hook 拦截：${ups.blockReason ?? ''}${extra}`, status: 'aborted', turns: 0, usage: total, costUSD: 0 }
     }
     if (ups.additionalContext) promptText = `${opts.prompt}\n\n<hook-context>\n${ups.additionalContext}\n</hook-context>`
   }
