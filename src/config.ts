@@ -22,6 +22,14 @@ export interface Settings {
 const DIR = path.join(os.homedir(), '.deepcode')
 const FILE = path.join(DIR, 'settings.json')
 
+/** 后台任务输出落盘目录（~/.deepcode/tasks） */
+export const TASKS_DIR = path.join(os.homedir(), '.deepcode', 'tasks')
+
+/** 后台任务输出日志路径 */
+export function taskOutputPath(id: string): string {
+  return path.join(TASKS_DIR, id + '.log')
+}
+
 export function loadSettings(): Settings {
   let raw: any = {}
   try {

@@ -18,6 +18,14 @@ vi.mock('../src/api.js', () => ({
 
 import { runLoop, type LoopDeps } from '../src/loop.js'
 import { readTool } from '../src/tools/read.js'
+import {
+  registerTask,
+  enqueueNotification,
+  getTask,
+  clearAllTasks,
+  drainNotifications,
+  type BackgroundTask,
+} from '../src/tasks.js'
 
 const usage = { prompt_tokens: 10, completion_tokens: 5, prompt_cache_hit_tokens: 0 }
 
@@ -39,7 +47,18 @@ async function drain(gen: AsyncGenerator<any, any>) {
   return { events, ret: r.value }
 }
 
-beforeEach(() => { script.length = 0 })
+beforeEach(() => { script.length = 0; clearAllTasks(); drainNotifications() })
+
+// 造一条 completed 后台任务并 enqueue 一条通知
+function enqueueCompletedTask(id: string, result = '子代理结果'): void {
+  const t: BackgroundTask = {
+    id, type: 'local_agent', status: 'completed', description: '后台调查',
+    startTime: 0, endTime: 1, outputFile: `/tmp/${id}.log`, outputOffset: 0,
+    notified: false, result,
+  }
+  registerTask(t)
+  enqueueNotification(getTask(id)!)
+}
 
 describe('runLoop', () => {
   it('工具调用 → 结果回灌 → 第二轮收尾', async () => {
@@ -330,5 +349,80 @@ describe('runLoop', () => {
     expect(plain?.delta).toBe('答案')
     // reasoning 不进 messages
     expect(messages.find(m => m.role === 'assistant').content).toBe('答案')
+  })
+
+  it('终止点有后台通知时：注入 user 消息续跑而非立即结束', async () => {
+    const { chatStream } = await import('../src/api.js')
+    ;(chatStream as any).mockClear()
+    enqueueCompletedTask('atest1234', '调查完成：找到 3 处')
+    script.push(
+      // 第一幕：模型无工具调用 → 本应结束，但有通知应续跑
+      { result: { content: '我先看看', toolCalls: [], usage, finishReason: 'stop' } },
+      // 第二幕：模型据通知决策，仍无工具调用、此时无通知 → 正常结束
+      { result: { content: '收到通知，已处理', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    const deps = makeDeps([readTool])
+    deps.injectTaskNotifications = true
+    const messages: any[] = [{ role: 'user', content: 'hi' }]
+    const { ret } = await drain(runLoop(messages, deps))
+
+    expect(ret).toBe('done')
+    // chatStream 被调两次（注入后又发了一轮）
+    expect((chatStream as any).mock.calls.length).toBe(2)
+    // 注入的 user 消息含 <task-notification>
+    const note = messages.find(
+      m => m.role === 'user' && typeof m.content === 'string' && m.content.includes('<task-notification>'),
+    )
+    expect(note).toBeDefined()
+    expect(note.content).toContain('atest1234')
+    expect(note.content).toContain('completed')
+    // 注入 user 消息位于第一条 assistant（我先看看）之后
+    const asstIdx = messages.findIndex(m => m.role === 'assistant' && m.content === '我先看看')
+    const noteIdx = messages.indexOf(note)
+    expect(noteIdx).toBeGreaterThan(asstIdx)
+  })
+
+  it('终止点无后台通知时：正常 return done，chatStream 只调一次（回归）', async () => {
+    const { chatStream } = await import('../src/api.js')
+    ;(chatStream as any).mockClear()
+    script.push({ result: { content: '完事', toolCalls: [], usage, finishReason: 'stop' } })
+    const deps = makeDeps([readTool])
+    deps.injectTaskNotifications = true // 开启注入但队列为空 → 仍正常结束
+    const messages: any[] = [{ role: 'user', content: 'hi' }]
+    const { ret } = await drain(runLoop(messages, deps))
+    expect(ret).toBe('done')
+    expect((chatStream as any).mock.calls.length).toBe(1)
+    expect(messages.some(m => m.role === 'user' && String(m.content).includes('<task-notification>'))).toBe(false)
+  })
+
+  it('持续有通知也不超过 maxTurns（注入受轮数约束，不死循环）', async () => {
+    // 每幕模型都无工具调用；每幕之前都再塞一条新通知 → 若无约束会无限续跑
+    script.push(
+      { result: { content: 'a', toolCalls: [], usage, finishReason: 'stop' } },
+      { result: { content: 'b', toolCalls: [], usage, finishReason: 'stop' } },
+      { result: { content: 'c', toolCalls: [], usage, finishReason: 'stop' } },
+      { result: { content: 'd', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    const { chatStream } = await import('../src/api.js')
+    ;(chatStream as any).mockClear()
+    // 每次 drainNotifications 被调时模拟「又有新任务完成」：用 spy 在每轮塞一条
+    enqueueCompletedTask('aloop0001')
+    const orig = (chatStream as any).getMockImplementation()
+    let n = 0
+    ;(chatStream as any).mockImplementation((...args: any[]) => {
+      // 在每次发起 API 前确保队列里再有一条新通知（模拟后台不断完成）
+      n++
+      enqueueCompletedTask(`aloop${String(n).padStart(4, '0')}`)
+      return orig(...args)
+    })
+    const deps = makeDeps([readTool])
+    deps.maxTurns = 3
+    deps.injectTaskNotifications = true
+    const messages: any[] = [{ role: 'user', content: 'hi' }]
+    const { ret } = await drain(runLoop(messages, deps))
+    ;(chatStream as any).mockImplementation(orig)
+    expect(ret).toBe('max_turns')
+    // 不无限：调用次数受 maxTurns 约束
+    expect((chatStream as any).mock.calls.length).toBe(3)
   })
 })

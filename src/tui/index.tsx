@@ -8,6 +8,7 @@ import { FullscreenApp } from './FullscreenApp.js'
 import { enterAltScreen, installCleanup } from './altscreen.js'
 import { makeMouseFilteredStdin } from './mouseStdin.js'
 import { emitWheel } from './wheel.js'
+import { installTaskCleanup, cleanupOldTaskLogs } from '../tasks.js'
 import type OpenAI from 'openai'
 
 export async function startTui(opts: {
@@ -16,6 +17,9 @@ export async function startTui(opts: {
   continueSession?: boolean
   inline?: boolean
 }): Promise<void> {
+  // 后台任务：退出时 kill running 任务（追加监听，不抢占下方 altscreen 清理）+ 清理超龄旧日志。
+  installTaskCleanup()
+  cleanupOldTaskLogs()
   // 全屏：默认开；inline 逃生开关 或 非 TTY 时退回内联 App。
   const fullscreen = !opts.inline && !!process.stdout.isTTY
   const Root = fullscreen ? FullscreenApp : App

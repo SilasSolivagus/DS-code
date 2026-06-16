@@ -5,6 +5,7 @@ import type { Tool, ToolContext } from './tools/types.js'
 import { toApiTools } from './tools/index.js'
 import { checkPermission, type PermissionContext } from './permissions.js'
 import { sanitize } from './text.js'
+import { drainNotifications, formatNotification } from './tasks.js'
 
 export type LoopEvent =
   | { type: 'text'; delta: string; reasoning?: boolean }
@@ -25,6 +26,10 @@ export interface LoopDeps {
    *  调用方可借此推进轮计数（如 TodoStore.tick）。
    *  供给函数不得抛异常（抛出会丢失该轮 usage 记录）。 */
   reminders?: () => string[]
+  /** 仅主会话开启：到终止点（模型本轮无工具调用）时 drain 后台任务完成通知，
+   *  有则作为 user 消息注入并续跑（受 maxTurns 约束）。默认 false —— 子代理子循环
+   *  不得 drain 全局通知队列（否则会吞掉主会话的通知并误触续跑）。Task 6 在主会话调用处置 true。 */
+  injectTaskNotifications?: boolean
 }
 
 const CONCURRENCY = 5
@@ -134,6 +139,14 @@ export async function* runLoop(
       if (result.finishReason === 'length') {
         messages.push({ role: 'user', content: '（上一条回复因长度上限被截断，请继续输出剩余内容。）' })
         continue
+      }
+      // 模型本轮无工具调用：主会话先看有没有后台任务完成通知要注入（子代理子循环不参与）
+      if (deps.injectTaskNotifications) {
+        const notes = drainNotifications()
+        if (notes.length > 0) {
+          messages.push({ role: 'user', content: notes.map(formatNotification).join('\n') })
+          continue // 不 return，进入下一轮 turn（再发一次 API，模型据通知决策；受 maxTurns 约束）
+        }
       }
       return 'done'
     }

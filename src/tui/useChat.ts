@@ -15,6 +15,8 @@ import { todoWriteTool } from '../tools/todowrite.js'
 import { makeAgentTool } from '../tools/agent.js'
 import { makeWebFetchTool } from '../tools/webfetch.js'
 import { makeAskUserQuestionTool, type Question, type Answer } from '../tools/askUserQuestion.js'
+import { taskListTool, taskOutputTool, taskStopTool } from '../tools/taskTools.js'
+import { onNotification, drainNotifications, formatNotification } from '../tasks.js'
 import { buildSystemPrompt, findMemoryFiles } from '../prompt.js'
 import { formatMemory } from '../memory.js'
 import { loadSettings, saveSettings } from '../config.js'
@@ -168,6 +170,8 @@ export interface ChatCore {
   subscribe(listener: () => void): () => void
   rewindList(): { turnId: number; preview: string; fileCount: number }[]
   rewind(toTurnId: number, mode: 'conversation' | 'code' | 'both'): void
+  /** 退订后台任务通知订阅，避免泄漏（core 生命周期 = 进程，App 无需调用；测试与正确性需要） */
+  dispose(): void
 }
 
 const HELP_TEXT =
@@ -309,6 +313,9 @@ export function createChatCore(opts: {
       onUsage: (u, m) => { usageLog.push({ usage: u, model: m }); session.appendUsage(u, m) },
     }),
     makeAskUserQuestionTool({ ask: questionAsk }),
+    taskListTool,
+    taskOutputTool,
+    taskStopTool,
   ]
 
   /** compact：总结→重建消息→落盘 compact 记录与新前缀。失败不破坏现场（messages 仅在成功后替换）。 */
@@ -389,6 +396,7 @@ export function createChatCore(opts: {
           const note = todos.staleReminder()
           return note ? [note] : []
         },
+        injectTaskNotifications: true, // 主会话：runLoop 终止点 drain 后台完成通知续跑
       }
       const gen = runLoop(messages, deps)
       let firstDeltaAt: number | null = null // 本 turn 首个流式分片时间戳（tok/s 计算）
@@ -441,7 +449,22 @@ export function createChatCore(opts: {
     busy = false
     turnStartAt = null
     setState()
+    // 收尾自检：若某后台任务在本轮终止点 drain 之后、busy 复位之前完成入队，会滞留队列；
+    // 此处 busy 已 false，重新唤醒一次把滞留通知补上（无则即返），避免拖到下次用户输入。
+    wakeOnNotification()
   }
+
+  /** 空闲唤醒：后台任务完成通知到达且当前 idle 时，drain 通知作为 user 消息自动跑一轮，
+   *  让模型据完成情况决策。busy 时不抢——此刻 runLoop 终止点（injectTaskNotifications）会 drain 注入。
+   *  busy 守卫天然防重入：唤醒触发的 runTurn 会置 busy，期间再来的通知不重复触发。 */
+  const wakeOnNotification = (): void => {
+    if (busy) return
+    const notes = drainNotifications()
+    if (notes.length === 0) return
+    const text = notes.map(formatNotification).join('\n')
+    void runTurn('（后台任务完成通知）', text)
+  }
+  const unsubNotification = onNotification(wakeOnNotification)
 
   /** 斜杠命令本地处理（/resume 由 UI 走 resumeList/resume，/exit 归 UI） */
   const send = async (line: string): Promise<void> => {
@@ -680,6 +703,7 @@ export function createChatCore(opts: {
         notice('info', `[rewind] 代码：${parts.join('、')}`)
       }
     },
+    dispose: () => { unsubNotification() },
   }
 }
 
