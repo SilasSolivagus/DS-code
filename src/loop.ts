@@ -3,7 +3,7 @@ import type OpenAI from 'openai'
 import { chatStream, type ChatResult, type ToolCall } from './api.js'
 import type { Tool, ToolContext } from './tools/types.js'
 import { toApiTools } from './tools/index.js'
-import { checkPermission, type PermissionContext } from './permissions.js'
+import { checkPermission, type PermissionContext, type PermissionHooks } from './permissions.js'
 import { sanitize } from './text.js'
 import { drainNotifications, formatNotification } from './tasks.js'
 import { runHooks, type HooksConfig } from './hooks.js'
@@ -93,7 +93,14 @@ async function execCall(call: ToolCall, deps: LoopDeps): Promise<{ ok: boolean; 
   }
 
   if (!preAllow) {
-    const perm = await checkPermission(tool, input, deps.permission)
+    const permHooks = deps.hooks ? {
+      onRequest: (name: string, d: string) =>
+        runHooks('PermissionRequest', { hook_event_name: 'PermissionRequest', cwd, tool_name: name, tool_desc: d }, deps.hooks),
+      onDenied: async (name: string, d: string, reason: string) => {
+        await runHooks('PermissionDenied', { hook_event_name: 'PermissionDenied', cwd, tool_name: name, tool_desc: d, reason }, deps.hooks)
+      },
+    } : undefined
+    const perm = await checkPermission(tool, input, deps.permission, permHooks)
     if (!perm.ok) return { ok: false, content: perm.reason, ms: 0 }
   }
 
@@ -125,6 +132,7 @@ export async function* runLoop(
   deps: LoopDeps,
 ): AsyncGenerator<LoopEvent, 'done' | 'aborted' | 'max_turns'> {
   const apiTools = toApiTools(deps.tools)
+  let stopHookFired = false // Stop hook block→续跑守卫：每次 runLoop 最多续跑一次，硬防无限循环
   for (let turn = 0; turn < (deps.maxTurns ?? 80); turn++) {
     let result: ChatResult
     try {
@@ -151,6 +159,14 @@ export async function* runLoop(
       if (deps.ctx.signal.aborted) {
         sealMessages(messages, '（本轮已被用户中断。）')
         return 'aborted'
+      }
+      // StopFailure hook：API 调用异常（非用户中断）。记录/通知用途，await 完成后继续抛（不改变控制流）。
+      if (deps.hooks) {
+        await runHooks('StopFailure', {
+          hook_event_name: 'StopFailure',
+          cwd: deps.ctx.cwd(),
+          error: (e as any)?.message ?? String(e),
+        }, deps.hooks)
       }
       throw e
     }
@@ -181,6 +197,26 @@ export async function* runLoop(
         if (notes.length > 0) {
           messages.push({ role: 'user', content: notes.map(formatNotification).join('\n') })
           continue // 不 return，进入下一轮 turn（再发一次 API，模型据通知决策；受 maxTurns 约束）
+        }
+      }
+      // Stop hook：即将自然结束前触发。对齐 CC（query.ts:1267-1306）——
+      // preventContinuation（decision:block / exit2）→ 注入 blockReason 作 user 消息续跑（守卫限一次）；
+      // 读 preventContinuation/stop 而非 block（block 在 permission 通道也为真，语义重载，见 ①a 终审 I-1）。
+      if (deps.hooks) {
+        const lastAssistant = messages[messages.length - 1] // 本路径 !toolCalls.length，tail 必为刚推入的 assistant
+        const stop = await runHooks('Stop', {
+          hook_event_name: 'Stop',
+          cwd: deps.ctx.cwd(),
+          // 首次触发时 stopHookFired=false；续跑后重入本路径时已为 true → hook 据此知「本轮系上次续跑触发」（对齐 CC）。
+          stop_hook_active: stopHookFired,
+          last_assistant_message: typeof lastAssistant?.content === 'string' ? lastAssistant.content : '',
+        }, deps.hooks)
+        // continue:false（硬停）优先于 block 续跑：即便另一 hook 要续跑，continue:false 也压倒之，直接结束。
+        if (stop.stop) return 'done'
+        if (stop.preventContinuation && !stopHookFired) {
+          stopHookFired = true
+          messages.push({ role: 'user', content: stop.blockReason ?? '（Stop hook 要求继续未尽事项）' })
+          continue
         }
       }
       return 'done'

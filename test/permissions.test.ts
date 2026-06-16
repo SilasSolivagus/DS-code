@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { matchRule, checkPermission, isDangerous, type PermissionContext, type Decision } from '../src/permissions.js'
 
 const fakeTool = (name: string, isReadOnly: boolean, desc: false | string = 'x'): any => ({
@@ -130,5 +130,59 @@ describe('checkPermission 高危分支', () => {
     expect(rules).toEqual(['Bash(rm -rf /tmp/scratch echo done)'])
     expect((await checkPermission(tool, {}, ctx)).ok).toBe(true)
     expect(asks).toBe(1) // 第二次不再询问
+  })
+})
+
+describe('checkPermission + hooks', () => {
+  const writeTool: any = {
+    name: 'Write', isReadOnly: false,
+    needsPermission: () => 'write /etc/passwd',
+    inputSchema: { safeParse: (x: any) => ({ success: true, data: x }) },
+    call: async () => 'ok',
+  }
+  const pc = (decision: any) => ({ mode: 'default' as const, rules: [], saveRule: () => {}, ask: async () => decision })
+
+  it('PermissionRequest hook allow → 跳过弹窗直接放行（ask 不被调用）', async () => {
+    const ask = vi.fn(async () => 'no' as const)
+    const hooks = {
+      onRequest: async () => ({ block: false, preventContinuation: false, stop: false, results: [], permission: 'allow' as const }),
+      onDenied: vi.fn(async () => {}),
+    }
+    const r = await checkPermission(writeTool, {}, { mode: 'default', rules: [], saveRule: () => {}, ask }, hooks)
+    expect(r.ok).toBe(true)
+    expect(ask).not.toHaveBeenCalled()
+  })
+
+  it('PermissionRequest hook deny → 拒绝并触发 onDenied', async () => {
+    const denied: string[] = []
+    const hooks = {
+      onRequest: async () => ({ block: false, preventContinuation: false, stop: false, results: [], permission: 'deny' as const, permissionReason: '禁写系统文件' }),
+      onDenied: async (_n: string, _d: string, reason: string) => { denied.push(reason) },
+    }
+    const r = await checkPermission(writeTool, {}, pc('no'), hooks)
+    expect(r.ok).toBe(false)
+    expect(denied[0]).toBe('禁写系统文件')
+  })
+
+  it('用户拒绝 → onDenied 以「用户拒绝」触发', async () => {
+    const denied: string[] = []
+    const hooks = {
+      onRequest: async () => ({ block: false, preventContinuation: false, stop: false, results: [] }),
+      onDenied: async (_n: string, _d: string, reason: string) => { denied.push(reason) },
+    }
+    const r = await checkPermission(writeTool, {}, pc('no'), hooks)
+    expect(r.ok).toBe(false)
+    expect(denied[0]).toContain('用户拒绝')
+  })
+
+  it('onRequest 既非 allow 也非 deny（hook 出错/空 outcome）→ fall through 到 ask（fail-safe 问用户）', async () => {
+    const ask = vi.fn(async () => 'yes' as const)
+    const hooks = {
+      onRequest: async () => ({ block: false, preventContinuation: false, stop: false, results: [] }),
+      onDenied: vi.fn(async () => {}),
+    }
+    const r = await checkPermission(writeTool, {}, { mode: 'default', rules: [], saveRule: () => {}, ask }, hooks)
+    expect(r.ok).toBe(true)
+    expect(ask).toHaveBeenCalled() // 锁定 fail-safe：hook 未明确裁决时回落到用户审批
   })
 })

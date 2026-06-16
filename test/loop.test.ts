@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { z } from 'zod'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, existsSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -507,5 +507,65 @@ describe('execCall + hooks', () => {
     expect(content).toContain('ORIGINAL')
     expect(content).toContain('<hook-context>')
     expect(content).toContain('NOTE')
+  })
+})
+
+describe('runLoop + Stop hook', () => {
+  it('Stop hook decision:block → 注入 reason 作 user 消息续跑一次', async () => {
+    script.push(
+      { result: { content: '先到这', toolCalls: [], usage, finishReason: 'stop' } },
+      { result: { content: '续跑完成', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    const deps = makeDeps([readTool])
+    deps.hooks = { Stop: [{ hooks: [{ type: 'command', command: `printf '%s' '{"decision":"block","reason":"还有事没做"}'` }] }] }
+    const messages: any[] = [{ role: 'user', content: 'go' }]
+    const { ret } = await drain(runLoop(messages, deps))
+    expect(ret).toBe('done')
+    expect(messages.some(m => m.role === 'user' && typeof m.content === 'string' && m.content.includes('还有事没做'))).toBe(true)
+  })
+
+  it('Stop hook 反复 block → 守卫只续跑一次（防无限循环）', async () => {
+    // 只放两幕：第一次 done→block→续跑（第二幕）→第二次 done 时 stopHookFired 已 true→不再续跑。
+    // 若守卫失效会第三次 shift 空 script 抛 'script exhausted'。
+    script.push(
+      { result: { content: 'a', toolCalls: [], usage, finishReason: 'stop' } },
+      { result: { content: 'b', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    const deps = makeDeps([readTool])
+    deps.hooks = { Stop: [{ hooks: [{ type: 'command', command: `printf '%s' '{"decision":"block","reason":"再来"}'` }] }] }
+    const { ret } = await drain(runLoop([{ role: 'user', content: 'go' }], deps))
+    expect(ret).toBe('done')
+  })
+
+  it('Stop hook continue:false 与 block 并存 → 硬停优先，不续跑', async () => {
+    // 一个 hook continue:false（stop），一个 decision:block（preventContinuation）；合并后 stop 压倒续跑。
+    // 仅一幕：若硬停失效会续跑→第二次 shift 空 script 抛 exhausted。
+    script.push({ result: { content: 'a', toolCalls: [], usage, finishReason: 'stop' } })
+    const deps = makeDeps([readTool])
+    deps.hooks = { Stop: [{ hooks: [
+      { type: 'command', command: `printf '%s' '{"continue":false}'` },
+      { type: 'command', command: `printf '%s' '{"decision":"block","reason":"想续跑"}'` },
+    ] }] }
+    const { ret } = await drain(runLoop([{ role: 'user', content: 'go' }], deps))
+    expect(ret).toBe('done')
+  })
+
+  it('未配置 Stop hook → 正常 done，不续跑', async () => {
+    script.push({ result: { content: '完成', toolCalls: [], usage, finishReason: 'stop' } })
+    const { ret } = await drain(runLoop([{ role: 'user', content: 'go' }], makeDeps([readTool])))
+    expect(ret).toBe('done')
+  })
+})
+
+describe('runLoop + StopFailure hook', () => {
+  it('API 抛错（非中断）→ StopFailure hook 触发后继续抛', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'dc-sf-'))
+    const flag = path.join(dir, 'fired.txt')
+    // 不 push script → mock chatStream 抛 'script exhausted'，进 catch（signal 未 abort）
+    const deps = makeDeps([readTool])
+    deps.hooks = { StopFailure: [{ hooks: [{ type: 'command', command: `printf fired > ${flag}` }] }] }
+    await expect(drain(runLoop([{ role: 'user', content: 'go' }], deps))).rejects.toThrow()
+    expect(existsSync(flag)).toBe(true)
+    rmSync(dir, { recursive: true, force: true })
   })
 })

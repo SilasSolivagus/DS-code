@@ -22,6 +22,11 @@ const usage = { prompt_tokens: 30, completion_tokens: 10, prompt_cache_hit_token
 const ctx = (): any => ({
   cwd: () => process.cwd(), setCwd: () => {}, signal: new AbortController().signal, fileState: new Map(),
 })
+const ctxWithHook = (dispatch: any): any => ({
+  cwd: () => process.cwd(), setCwd: () => {}, signal: new AbortController().signal, fileState: new Map(),
+  hookDispatch: dispatch,
+})
+const emptyOutcome = { block: false, preventContinuation: false, stop: false, results: [] }
 beforeEach(() => { script.length = 0; vi.clearAllMocks(); clearAllTasks(); drainNotifications() })
 
 /** 让脱钩的后台 async 跑完：轮询直到任务进入终态（或超时）。 */
@@ -103,6 +108,50 @@ describe('Agent 子代理', () => {
     script.push({ result: { content: '正常结果', toolCalls: [], usage, finishReason: 'stop' } })
     const out = await tool.call({ description: 'ok', prompt: 'ok' }, ctx())
     expect(out).toContain('正常结果')
+  })
+
+  it('SubagentStart hook 的 additionalContext 注入子代理上下文', async () => {
+    script.push({ result: { content: '已读到注入的上下文', toolCalls: [], usage, finishReason: 'stop' } })
+    const seen: any[] = []
+    const dispatch = vi.fn(async (event: string, _p: any) => {
+      seen.push(event)
+      if (event === 'SubagentStart') return { ...emptyOutcome, additionalContext: '注意：只看 src/' }
+      return emptyOutcome
+    })
+    const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
+    const out = await tool.call({ description: 'x', prompt: '查文件' }, ctxWithHook(dispatch))
+    expect(out).toContain('已读到注入的上下文')
+    expect(seen).toContain('SubagentStart')
+    expect(seen).toContain('SubagentStop')
+  })
+
+  it('SubagentStop preventContinuation → 注入 reason 续跑子循环一次', async () => {
+    // 两幕：第一次结束→SubagentStop block→续跑→第二次结束（守卫限一次）
+    script.push(
+      { result: { content: '第一版', toolCalls: [], usage, finishReason: 'stop' } },
+      { result: { content: '修订版', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    const dispatch = vi.fn(async (event: string, payload: any) => {
+      if (event === 'SubagentStop' && payload.stop_hook_active === false) {
+        return { ...emptyOutcome, preventContinuation: true, blockReason: '再核对一遍' }
+      }
+      return emptyOutcome
+    })
+    const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
+    const out = await tool.call({ description: 'x', prompt: '审查' }, ctxWithHook(dispatch))
+    expect(out).toContain('修订版')
+  })
+
+  it('signal 已中断 → 跳过 SubagentStop（不续跑、不 fire Stop）', async () => {
+    // 不 push script：子代理 runLoop 首轮 chatStream 抛 exhausted → catch 见 aborted → return 'aborted'。
+    const ac = new AbortController(); ac.abort()
+    const seen: string[] = []
+    const dispatch = vi.fn(async (event: string) => { seen.push(event); return emptyOutcome })
+    const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
+    const ctxAborted: any = { cwd: () => process.cwd(), setCwd: () => {}, signal: ac.signal, fileState: new Map(), hookDispatch: dispatch }
+    await tool.call({ description: 'x', prompt: 'y' }, ctxAborted)
+    expect(seen).toContain('SubagentStart') // Start 在 runLoop 前无条件触发
+    expect(seen).not.toContain('SubagentStop') // !signal.aborted 门把 Stop 跳过
   })
 })
 

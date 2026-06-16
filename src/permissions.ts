@@ -1,5 +1,6 @@
 // src/permissions.ts
 import type { Tool } from './tools/types.js'
+import type { HookOutcome } from './hooks.js'
 
 export type PermissionMode = 'default' | 'acceptEdits' | 'yolo'
 export type Decision = 'yes' | 'no' | 'always'
@@ -9,6 +10,13 @@ export interface PermissionContext {
   rules: string[]
   saveRule: (rule: string) => void
   ask: (toolName: string, desc: string) => Promise<Decision>
+}
+
+export interface PermissionHooks {
+  /** 交互 ask 前：hook 可返回 permission==='allow'（跳弹窗放行）或 'deny'/block（拒绝）。 */
+  onRequest?: (toolName: string, desc: string) => Promise<HookOutcome>
+  /** 判定拒绝后：记录/通知。 */
+  onDenied?: (toolName: string, desc: string, reason: string) => Promise<void>
 }
 
 const DANGEROUS_PATTERNS = [
@@ -45,6 +53,7 @@ export async function checkPermission(
   tool: Tool<any>,
   input: unknown,
   pc: PermissionContext,
+  hooks?: PermissionHooks,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   if (tool.isReadOnly) return { ok: true }
   const desc = tool.needsPermission(input)
@@ -52,6 +61,19 @@ export async function checkPermission(
   if (pc.mode === 'yolo') return { ok: true }
   if (pc.mode === 'acceptEdits' && (tool.name === 'Edit' || tool.name === 'Write')) return { ok: true }
   if (pc.rules.some(r => matchRule(r, tool.name, desc))) return { ok: true }
+  // PermissionRequest hook：交互 ask 前。allow→跳弹窗放行；deny/block→拒绝。
+  if (hooks?.onRequest) {
+    const out = await hooks.onRequest(tool.name, desc)
+    if (out.permission === 'allow') return { ok: true }
+    // 权限门控事件：exit-2/decision:block 即「拒绝本操作」，故 block 在此是必要 deny 信号
+    // （与 Stop 类 I-1 不同——那里 block 语义重载须读 preventContinuation；门控同 PreToolUse 用 block）。
+    if (out.permission === 'deny' || out.block) {
+      const reason = out.permissionReason ?? out.blockReason ?? '权限被 hook 拒绝'
+      await hooks.onDenied?.(tool.name, desc, reason)
+      return { ok: false, reason }
+    }
+    // 既非 allow 也非 deny/block（含 hook 出错/超时返回空 outcome）→ fall through 到 pc.ask（fail-safe 问用户）。
+  }
   const decision = await pc.ask(tool.name, desc)
   if (decision === 'always') {
     // Bash 取第一行的前两个词做前缀规则（如 "npm test:*"）；其他工具按完整描述精确匹配
@@ -64,5 +86,7 @@ export async function checkPermission(
     pc.saveRule(`${tool.name}(${pat})`)
     return { ok: true }
   }
-  return decision === 'yes' ? { ok: true } : { ok: false, reason: '用户拒绝了此操作' }
+  if (decision === 'yes') return { ok: true }
+  await hooks?.onDenied?.(tool.name, desc, '用户拒绝了此操作')
+  return { ok: false, reason: '用户拒绝了此操作' }
 }

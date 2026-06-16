@@ -1,6 +1,7 @@
 // src/tools/types.ts
 import type { z } from 'zod'
 import type { TodoStore } from '../todo.js'
+import type { HookEvent, HookOutcome } from '../hooks.js'
 
 export interface ToolContext {
   cwd: () => string
@@ -14,6 +15,9 @@ export interface ToolContext {
   recordBeforeImage?: (absPath: string) => void
   /** 子代理上下文标记：子代理保持纯执行，禁止起后台任务（防污染主会话通知队列）。 */
   isSubagent?: boolean
+  /** hooks 生命周期分派闭包（捕获会话 hooks 快照）。主会话与 headless 顶层 ctx 注入；子代理内部子 ctx 不注入。
+   *  工具层事件（SubagentStart/Stop、①b-2 的 CwdChanged/Task/Notification）经此发事件。对空配置零开销返回空 outcome。 */
+  hookDispatch?: (event: HookEvent, payload: Record<string, unknown>) => Promise<HookOutcome>
 }
 
 export interface Tool<S extends z.ZodTypeAny = z.ZodTypeAny> {

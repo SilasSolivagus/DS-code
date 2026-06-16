@@ -20,6 +20,7 @@ import { onNotification, drainNotifications, formatNotification } from '../tasks
 import { buildSystemPrompt, findMemoryFiles } from '../prompt.js'
 import { formatMemory } from '../memory.js'
 import { loadSettings, saveSettings } from '../config.js'
+import { runHooks } from '../hooks.js'
 import { isDangerous, type Decision, type PermissionMode } from '../permissions.js'
 import type { ToolContext } from '../tools/types.js'
 import { newSession, openSession, listSessions, loadSession, type SessionHandle, type UsageRecord } from '../session.js'
@@ -206,6 +207,7 @@ export function createChatCore(opts: {
     fileState: new Map(),
     todos,
     recordBeforeImage: (absPath: string) => { if (currentTurnId > 0) checkpointer.capture(absPath, currentTurnId) },
+    hookDispatch: (event, payload) => runHooks(event, payload, settings.hooks),
   }
   const messages: any[] = [{ role: 'system', content: buildSystemPrompt(cwd) }]
   const usageLog: UsageRecord[] = []
@@ -319,19 +321,31 @@ export function createChatCore(opts: {
   ]
 
   /** compact：总结→重建消息→落盘 compact 记录与新前缀。失败不破坏现场（messages 仅在成功后替换）。 */
-  const doCompact = async (): Promise<void> => {
+  const doCompact = async (trigger: 'auto' | 'manual' = 'auto'): Promise<void> => {
     notice('info', '[compact 总结中…]')
     const ac = new AbortController()
+    if (settings.hooks) {
+      await runHooks('PreCompact', {
+        hook_event_name: 'PreCompact', cwd, trigger, messages_count: messages.length,
+      }, settings.hooks)
+    }
     const { summary, usage: u, truncated } = await summarize(opts.client, messages, ac.signal)
     usageLog.push({ usage: u, model: 'deepseek-v4-flash' })
     session.appendUsage(u, 'deepseek-v4-flash')
     const rebuilt = rebuildMessages(messages, summary)
+    const before = messages.length
     messages.length = 0
     messages.push(...rebuilt)
     session.appendCompact()
     for (const m of messages) session.appendMessage(m)
     compacted = true
     lastPromptTokens = 0
+    if (settings.hooks) {
+      await runHooks('PostCompact', {
+        hook_event_name: 'PostCompact', cwd, trigger, summary, truncated,
+        messages_before: before, messages_after: messages.length,
+      }, settings.hooks)
+    }
     notice('info', 'compact 完成：历史已压缩为总结 + 最近 8 条（fileState 保留）')
     if (truncated) notice('warn', '[compact 警告] 总结被长度截断，信息可能有损')
   }
@@ -345,6 +359,19 @@ export function createChatCore(opts: {
 
   /** 非斜杠输入：边界 reminders → user 消息落盘 → runLoop 驱动 →落盘 + 自动 compact */
   const runTurn = async (displayLine: string, userText: string): Promise<void> => {
+    // UserPromptSubmit hook：用户输入提交前。block/preventContinuation→拦截不发；additionalContext→附到 user 文本。
+    // 守卫与 loop.ts 的 `if (deps.hooks)` 一致：未配 hooks 时不引入额外 await（保持 idle 唤醒时序）。
+    if (settings.hooks) {
+      const ups = await runHooks('UserPromptSubmit', {
+        hook_event_name: 'UserPromptSubmit', cwd, prompt: userText,
+      }, settings.hooks)
+      if (ups.block || ups.preventContinuation) {
+        dispatch({ type: 'push', item: { kind: 'user', text: displayLine } })
+        notice('warn', `输入被 hook 拦截：${ups.blockReason ?? '（无原因）'}`)
+        return
+      }
+      if (ups.additionalContext) userText = `${userText}\n\n<hook-context>\n${ups.additionalContext}\n</hook-context>`
+    }
     busy = true
     turnStartAt = Date.now()
     turnOutTokens = 0
@@ -445,7 +472,7 @@ export function createChatCore(opts: {
 
     // 自动 compact（落盘之后；busy 保持 true 直到 compact 结束）
     if (lastPromptTokens > settings.compactTokens) {
-      try { await doCompact() } catch (e: any) { notice('error', `[自动 compact 失败，将在下轮重试] ${e?.message ?? e}`) }
+      try { await doCompact('auto') } catch (e: any) { notice('error', `[自动 compact 失败，将在下轮重试] ${e?.message ?? e}`) }
     }
     busy = false
     turnStartAt = null
@@ -534,7 +561,7 @@ export function createChatCore(opts: {
     if (line === '/compact') {
       busy = true
       setState()
-      try { await doCompact() } catch (e: any) { notice('error', `[compact 失败] ${e?.message ?? e}`) }
+      try { await doCompact('manual') } catch (e: any) { notice('error', `[compact 失败] ${e?.message ?? e}`) }
       busy = false
       setState()
       return

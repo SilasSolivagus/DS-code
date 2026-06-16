@@ -9,6 +9,7 @@ import { taskListTool, taskOutputTool, taskStopTool } from './tools/taskTools.js
 import { installTaskCleanup } from './tasks.js'
 import { buildSystemPrompt } from './prompt.js'
 import { loadSettings } from './config.js'
+import { runHooks } from './hooks.js'
 import { TodoStore } from './todo.js'
 import { costUSD } from './pricing.js'
 import type { ToolContext } from './tools/types.js'
@@ -35,6 +36,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     signal: new AbortController().signal,
     fileState: new Map(),
     todos,
+    hookDispatch: (event, payload) => runHooks(event, payload, settings.hooks),
   }
   const total: Usage = { prompt_tokens: 0, completion_tokens: 0, prompt_cache_hit_tokens: 0 }
   let turns = 0
@@ -44,9 +46,19 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     total.completion_tokens += u.completion_tokens
     total.prompt_cache_hit_tokens += u.prompt_cache_hit_tokens
   }
+  let promptText = opts.prompt
+  if (settings.hooks) {
+    const ups = await runHooks('UserPromptSubmit', {
+      hook_event_name: 'UserPromptSubmit', cwd, prompt: opts.prompt,
+    }, settings.hooks)
+    if (ups.block || ups.preventContinuation) {
+      return { text: `输入被 hook 拦截：${ups.blockReason ?? ''}`, status: 'aborted', turns: 0, usage: total, costUSD: 0 }
+    }
+    if (ups.additionalContext) promptText = `${opts.prompt}\n\n<hook-context>\n${ups.additionalContext}\n</hook-context>`
+  }
   const messages: any[] = [
     { role: 'system', content: buildSystemPrompt(cwd) },
-    { role: 'user', content: opts.prompt },
+    { role: 'user', content: promptText },
   ]
   const gen = runLoop(messages, {
     client: opts.client,
