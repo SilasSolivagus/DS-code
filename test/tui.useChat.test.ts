@@ -1,6 +1,6 @@
 // test/tui.useChat.test.ts
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -263,5 +263,22 @@ describe('createChatCore.runTurn', () => {
     // 第二次回复的内容不应混入第一次的内容
     const lastAssistant = core.state.transcript.filter(i => i.kind === 'assistant').at(-1) as any
     expect(lastAssistant.text).toBe('新的回复')
+  })
+})
+
+describe('createChatCore /export 默认文件名', () => {
+  it('/export 无参 → 写 deepcode-export-<sessionId>.md（默认名复用 sessionIdFromFile）', async () => {
+    const cwd = mkdtempSync(path.join(tmpdir(), 'deepcode-export-'))
+    const core = createChatCore({ client: {} as any, yolo: true, cwd, sessionDir, onState: () => {} })
+    await core.send('/export')
+    // 会话落盘文件名去 .jsonl 即默认导出名的 sessionId 段
+    const sessionFile = readdirSync(sessionDir).find(f => f.endsWith('.jsonl'))!
+    const base = sessionFile.replace(/\.jsonl$/, '')
+    const files = readdirSync(cwd)
+    expect(files).toContain(`deepcode-export-${base}.md`)
+    // base 非空 → 用带 sessionId 的名字，而非兜底名
+    expect(files).not.toContain('deepcode-export.md')
+    const md = readFileSync(path.join(cwd, `deepcode-export-${base}.md`), 'utf8')
+    expect(md).toContain('# deepcode 对话导出')
   })
 })
