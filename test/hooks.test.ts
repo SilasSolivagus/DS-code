@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events'
 import { mkdtempSync, readFileSync, existsSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { matchesMatcher, matchQueryFor, evalIfCondition, parseHookStdout, mergeResults, runHooks, substituteArguments, parseHookEvalResult } from '../src/hooks.js'
+import { matchesMatcher, matchQueryFor, evalIfCondition, parseHookStdout, mergeResults, runHooks, substituteArguments, parseHookEvalResult, interpolateEnvVars } from '../src/hooks.js'
 import type { HookResult, HooksConfig } from '../src/hooks.js'
 
 describe('matchesMatcher', () => {
@@ -291,5 +291,40 @@ describe('runHooks agent 类型', () => {
     const out = await runHooks('SubagentStop', { hook_event_name: 'SubagentStop' }, config, {})
     expect(out.block).toBe(false)
     expect(out.results[0].outcome).toBe('non_blocking_error')
+  })
+})
+
+describe('interpolateEnvVars', () => {
+  it('白名单内插值，白名单外→空串；消毒 CRLF/NUL', () => {
+    process.env.DC_HOOK_TOK = 'secret'
+    process.env.DC_HOOK_EVIL = 'a\r\nX-Evil: 1'
+    const allowed = new Set(['DC_HOOK_TOK', 'DC_HOOK_EVIL'])
+    expect(interpolateEnvVars('Bearer $DC_HOOK_TOK', allowed)).toBe('Bearer secret')
+    expect(interpolateEnvVars('Bearer ${DC_HOOK_TOK}', allowed)).toBe('Bearer secret')
+    expect(interpolateEnvVars('$DC_NOT_ALLOWED', new Set())).toBe('')
+    expect(interpolateEnvVars('$DC_HOOK_EVIL', allowed)).toBe('aX-Evil: 1')
+    delete process.env.DC_HOOK_TOK; delete process.env.DC_HOOK_EVIL
+  })
+})
+
+describe('runHooks http 类型', () => {
+  it('POST payload JSON + 插值 header；2xx + decision:block → block', async () => {
+    let captured: any
+    const fakeFetch = (async (url: string, init: any) => { captured = { url, init }; return { status: 200, text: async () => '{"decision":"block","reason":"webhook 拒绝"}' } }) as any
+    const config = { PreToolUse: [{ matcher: '*', hooks: [{ type: 'http', url: 'https://hook.test/x', headers: { 'X-Tok': '$DC_T' } }] }] } as any
+    process.env.DC_T = 'tok1'
+    const out = await runHooks('PreToolUse', { hook_event_name: 'PreToolUse', tool_name: 'Bash' }, config, { fetch: fakeFetch })
+    expect(out.block).toBe(true)
+    expect(captured.url).toBe('https://hook.test/x')
+    expect(captured.init.method).toBe('POST')
+    expect(JSON.parse(captured.init.body).tool_name).toBe('Bash')
+    expect(captured.init.headers['X-Tok']).toBe('') // 未配 allowedEnvVars → 空串
+    delete process.env.DC_T
+  })
+  it('非 2xx → blocking', async () => {
+    const fakeFetch = (async () => ({ status: 500, text: async () => '' })) as any
+    const config = { Stop: [{ hooks: [{ type: 'http', url: 'https://hook.test/y' }] }] } as any
+    const out = await runHooks('Stop', { hook_event_name: 'Stop' }, config, { fetch: fakeFetch })
+    expect(out.results[0].outcome).toBe('blocking')
   })
 })

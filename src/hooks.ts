@@ -30,7 +30,7 @@ interface HookCommon {
 export interface CommandHook extends HookCommon { type: 'command'; command: string; async?: boolean; asyncRewake?: boolean }
 export interface PromptHook extends HookCommon { type: 'prompt'; prompt: string; model?: string }
 export interface AgentHook extends HookCommon { type: 'agent'; prompt: string; model?: string }
-export interface HttpHook extends HookCommon { type: 'http'; url: string; headers?: Record<string, string> }
+export interface HttpHook extends HookCommon { type: 'http'; url: string; headers?: Record<string, string>; allowedEnvVars?: string[] }
 export type HookCommand = CommandHook | PromptHook | AgentHook | HttpHook
 export interface HookMatcher { matcher?: string; hooks: HookCommand[] }
 export type HooksConfig = Partial<Record<HookEvent, HookMatcher[]>>
@@ -264,7 +264,41 @@ async function execAgentHook(hook: AgentHook, payload: Record<string, unknown>, 
   } finally { clearTimeout(timer) }
 }
 
-/** 单 hook 分派：①a 仅 command；其余类型占位（①c 接）。 */
+/** header 值 env 插值（仅白名单内变量），随后消毒去 \r\n\x00（防 CRLF 注入）。对齐 CC。 */
+export function interpolateEnvVars(value: string, allowed: Set<string>): string {
+  const replaced = value.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g, (_m, braced, plain) => {
+    const name = braced ?? plain
+    return allowed.has(name) ? (process.env[name] ?? '') : ''
+  })
+  // eslint-disable-next-line no-control-regex
+  return replaced.replace(/[\r\n\x00]/g, '')
+}
+
+/** webhook：POST payload JSON，响应体按 hook JSON 解析；非 2xx→blocking。 */
+async function execHttpHook(hook: HttpHook, payload: Record<string, unknown>, deps: ResolvedHookDeps): Promise<HookResult> {
+  const allowed = new Set(hook.allowedEnvVars ?? [])
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  for (const [k, v] of Object.entries(hook.headers ?? {})) headers[k] = interpolateEnvVars(v, allowed)
+  const ac = new AbortController()
+  const timer = setTimeout(() => ac.abort(), (hook.timeout ?? 30) * 1000)
+  const base: HookResult = { outcome: 'success', label: '', durationMs: 0 }
+  try {
+    const res = await deps.fetch(hook.url, { method: 'POST', headers, body: JSON.stringify(payload), signal: ac.signal })
+    const bodyText = (await res.text()).trim()
+    let json: any
+    if (bodyText) { try { json = JSON.parse(bodyText) } catch { /* 非 JSON 体 */ } }
+    let r = (json && typeof json === 'object' && !Array.isArray(json)) ? applyHookJson(json, base) : { ...base }
+    if (res.status < 200 || res.status >= 300) {
+      r = { ...r, outcome: 'blocking', preventContinuation: true, blockingError: r.blockingError ?? `HTTP ${res.status}` }
+    }
+    return r
+  } catch (e) {
+    if (ac.signal.aborted) return { ...base, outcome: 'cancelled' }
+    return { ...base, outcome: 'non_blocking_error', blockingError: String((e as any)?.message ?? e) }
+  } finally { clearTimeout(timer) }
+}
+
+/** 单 hook 分派：command/prompt/agent/http 四类型；未知 type → non_blocking_error 兜底。 */
 async function execOneHook(hook: HookCommand, payload: Record<string, unknown>, deps: ResolvedHookDeps, envFilePath?: string): Promise<HookResult> {
   const start = deps.now()
   if (hook.type === 'command') {
@@ -279,7 +313,11 @@ async function execOneHook(hook: HookCommand, payload: Record<string, unknown>, 
     const r = await execAgentHook(hook, payload, deps)
     return { ...r, label: truncLabel(hook.prompt), durationMs: deps.now() - start }
   }
-  return { outcome: 'non_blocking_error', label: `(${hook.type} 未支持)`, durationMs: deps.now() - start }
+  if (hook.type === 'http') {
+    const r = await execHttpHook(hook, payload, deps)
+    return { ...r, label: hook.url, durationMs: deps.now() - start }
+  }
+  return { outcome: 'non_blocking_error', label: `(${(hook as any).type} 未支持)`, durationMs: deps.now() - start }
 }
 
 /** 引擎入口：选 matcher → 过 if → 并行执行 → 合并。未配置该事件→零开销空结果。 */
