@@ -125,6 +125,7 @@ export async function* runLoop(
   deps: LoopDeps,
 ): AsyncGenerator<LoopEvent, 'done' | 'aborted' | 'max_turns'> {
   const apiTools = toApiTools(deps.tools)
+  let stopHookFired = false // Stop hook block→续跑守卫：每次 runLoop 最多续跑一次，硬防无限循环
   for (let turn = 0; turn < (deps.maxTurns ?? 80); turn++) {
     let result: ChatResult
     try {
@@ -181,6 +182,24 @@ export async function* runLoop(
         if (notes.length > 0) {
           messages.push({ role: 'user', content: notes.map(formatNotification).join('\n') })
           continue // 不 return，进入下一轮 turn（再发一次 API，模型据通知决策；受 maxTurns 约束）
+        }
+      }
+      // Stop hook：即将自然结束前触发。对齐 CC（query.ts:1267-1306）——
+      // preventContinuation（decision:block / exit2）→ 注入 blockReason 作 user 消息续跑（守卫限一次）；
+      // 读 preventContinuation/stop 而非 block（block 在 permission 通道也为真，语义重载，见 ①a 终审 I-1）。
+      if (deps.hooks) {
+        const lastAssistant = messages[messages.length - 1] // 本路径 !toolCalls.length，tail 必为刚推入的 assistant
+        const stop = await runHooks('Stop', {
+          hook_event_name: 'Stop',
+          cwd: deps.ctx.cwd(),
+          // 首次触发时 stopHookFired=false；续跑后重入本路径时已为 true → hook 据此知「本轮系上次续跑触发」（对齐 CC）。
+          stop_hook_active: stopHookFired,
+          last_assistant_message: typeof lastAssistant?.content === 'string' ? lastAssistant.content : '',
+        }, deps.hooks)
+        if (stop.preventContinuation && !stopHookFired) {
+          stopHookFired = true
+          messages.push({ role: 'user', content: stop.blockReason ?? '（Stop hook 要求继续未尽事项）' })
+          continue
         }
       }
       return 'done'

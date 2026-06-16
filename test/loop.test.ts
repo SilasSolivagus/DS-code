@@ -509,3 +509,37 @@ describe('execCall + hooks', () => {
     expect(content).toContain('NOTE')
   })
 })
+
+describe('runLoop + Stop hook', () => {
+  it('Stop hook decision:block → 注入 reason 作 user 消息续跑一次', async () => {
+    script.push(
+      { result: { content: '先到这', toolCalls: [], usage, finishReason: 'stop' } },
+      { result: { content: '续跑完成', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    const deps = makeDeps([readTool])
+    deps.hooks = { Stop: [{ hooks: [{ type: 'command', command: `printf '%s' '{"decision":"block","reason":"还有事没做"}'` }] }] }
+    const messages: any[] = [{ role: 'user', content: 'go' }]
+    const { ret } = await drain(runLoop(messages, deps))
+    expect(ret).toBe('done')
+    expect(messages.some(m => m.role === 'user' && typeof m.content === 'string' && m.content.includes('还有事没做'))).toBe(true)
+  })
+
+  it('Stop hook 反复 block → 守卫只续跑一次（防无限循环）', async () => {
+    // 只放两幕：第一次 done→block→续跑（第二幕）→第二次 done 时 stopHookFired 已 true→不再续跑。
+    // 若守卫失效会第三次 shift 空 script 抛 'script exhausted'。
+    script.push(
+      { result: { content: 'a', toolCalls: [], usage, finishReason: 'stop' } },
+      { result: { content: 'b', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    const deps = makeDeps([readTool])
+    deps.hooks = { Stop: [{ hooks: [{ type: 'command', command: `printf '%s' '{"decision":"block","reason":"再来"}'` }] }] }
+    const { ret } = await drain(runLoop([{ role: 'user', content: 'go' }], deps))
+    expect(ret).toBe('done')
+  })
+
+  it('未配置 Stop hook → 正常 done，不续跑', async () => {
+    script.push({ result: { content: '完成', toolCalls: [], usage, finishReason: 'stop' } })
+    const { ret } = await drain(runLoop([{ role: 'user', content: 'go' }], makeDeps([readTool])))
+    expect(ret).toBe('done')
+  })
+})
