@@ -1,6 +1,6 @@
 {
   "name": "@silassolivagus/deepcode",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "description": "Claude Code-style terminal coding agent for the DeepSeek API (command: deepcode)",
   "license": "MIT",
   "type": "module",

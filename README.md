@@ -105,8 +105,10 @@ src/
 - [x] **M7① 问用户**（本版）：AskUserQuestion 工具 —— 模型在歧义/需选择时弹结构化多选题（对齐 CC：tab 导航条、`←→` 回上一题重选、多选确认按钮、提交复核页），headless 不注册（`v0.7.0-m7`）
 - [x] **M8 P1 全屏可滚**：alt-screen 全屏接管 + 键盘滚动 `PageUp`/`PageDown`/`Ctrl+G` + auto-follow，修终端原生回滚失效；`--inline`/`DEEPCODE_INLINE=1`/settings `inline:true` 退回内联（`v0.7.0-m7`）
 - [x] **M7② 回退**（本版）：`/rewind` —— CC 式 before-image 落盘回退，两步选还原点 + 三模式（仅对话/仅代码/两者），跨 compact/resume 锚点稳定（`v0.7.1-m7`）
-- [x] **M8 P2 滚轮**（本版）：鼠标/触控板滚轮滚历史 —— SGR 鼠标捕获 + 喂 ink 前过滤序列防污染输入框（`v0.7.1-m7`）
-- [ ] **M7 续**：可写 subagent + git worktree
+- [x] **M8 P2 滚轮**：鼠标/触控板滚轮滚历史 —— SGR 鼠标捕获 + 喂 ink 前过滤序列防污染输入框（`v0.7.1-m7`）
+- [x] **编排① 类型化子代理**（本版）：`subagent_type` + 内建注册表（general-purpose/Explore/Plan）+ CC 式工具解析（deny 赢 allow）+ Bash yolo 钳制（`v0.8.0`）
+- [x] **编排② 后台任务**（本版）：Bash/Agent `run_in_background` 启动即返句柄 + `<task-notification>` 完成通知（runLoop 注入 + idle 自动唤醒）+ TaskList/TaskOutput/TaskStop（`v0.8.0`）
+- [ ] **编排续**：hooks 生命周期、结构化输出、子代理 steering、多 agent 工作流、可写 subagent + worktree、MCP 客户端、skills（见 `loop/BACKLOG.md` 编排层 + `docs/specs/2026-06-16-cc-mechanisms-roadmap.md`）
 - [ ] **M8 续**：P3 应用内选中复制
 
 ## 开发
