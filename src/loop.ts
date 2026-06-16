@@ -6,6 +6,7 @@ import { toApiTools } from './tools/index.js'
 import { checkPermission, type PermissionContext } from './permissions.js'
 import { sanitize } from './text.js'
 import { drainNotifications, formatNotification } from './tasks.js'
+import { runHooks, type HooksConfig } from './hooks.js'
 
 export type LoopEvent =
   | { type: 'text'; delta: string; reasoning?: boolean }
@@ -30,6 +31,8 @@ export interface LoopDeps {
    *  有则作为 user 消息注入并续跑（受 maxTurns 约束）。默认 false —— 子代理子循环
    *  不得 drain 全局通知队列（否则会吞掉主会话的通知并误触续跑）。Task 6 在主会话调用处置 true。 */
   injectTaskNotifications?: boolean
+  /** hooks 生命周期配置（会话启动快照）。仅主会话传入；子代理/webfetch 内部 loop 不传（①a）。 */
+  hooks?: HooksConfig
 }
 
 const CONCURRENCY = 5
@@ -58,16 +61,10 @@ function previewOf(content: string): { text: string; extra: number } {
 async function execCall(call: ToolCall, deps: LoopDeps): Promise<{ ok: boolean; content: string; ms: number }> {
   const tool = deps.tools.find(t => t.name === call.name)
   if (!tool) {
-    return {
-      ok: false,
-      content: `错误：工具 ${call.name} 不存在。可用工具：${deps.tools.map(t => t.name).join(', ')}`,
-      ms: 0,
-    }
+    return { ok: false, content: `错误：工具 ${call.name} 不存在。可用工具：${deps.tools.map(t => t.name).join(', ')}`, ms: 0 }
   }
   let raw: unknown
-  try {
-    raw = JSON.parse(call.args || '{}')
-  } catch {
+  try { raw = JSON.parse(call.args || '{}') } catch {
     return { ok: false, content: '错误：参数不是合法 JSON。请重新发起本次工具调用，确保 arguments 是完整 JSON 对象。', ms: 0 }
   }
   const parsed = tool.inputSchema.safeParse(raw)
@@ -75,13 +72,51 @@ async function execCall(call: ToolCall, deps: LoopDeps): Promise<{ ok: boolean; 
     const issues = parsed.error.issues.map((i: any) => `${i.path.join('.')}: ${i.message}`).join('; ')
     return { ok: false, content: `错误：参数不符合 schema：${issues}`, ms: 0 }
   }
-  const perm = await checkPermission(tool, parsed.data, deps.permission)
-  if (!perm.ok) return { ok: false, content: perm.reason, ms: 0 }
+  let input = parsed.data
+  const cwd = deps.ctx.cwd()
+
+  // —— PreToolUse hook（权限检查前）——
+  let preAllow = false
+  if (deps.hooks) {
+    const descMaybe = tool.needsPermission(input)
+    const pre = await runHooks('PreToolUse', {
+      hook_event_name: 'PreToolUse', cwd, tool_name: tool.name, tool_input: input,
+      tool_desc: typeof descMaybe === 'string' ? descMaybe : '',
+    }, deps.hooks)
+    if (pre.block) return { ok: false, content: `PreToolUse hook 阻止本次调用：${pre.blockReason ?? ''}`, ms: 0 }
+    if (pre.updatedInput !== undefined) {
+      const re = tool.inputSchema.safeParse(pre.updatedInput)
+      if (!re.success) return { ok: false, content: 'PreToolUse hook 的 updatedInput 不符合工具 schema，已拒绝执行。', ms: 0 }
+      input = re.data
+    }
+    preAllow = pre.permission === 'allow'
+  }
+
+  if (!preAllow) {
+    const perm = await checkPermission(tool, input, deps.permission)
+    if (!perm.ok) return { ok: false, content: perm.reason, ms: 0 }
+  }
+
   const t0 = Date.now()
   try {
-    return { ok: true, content: await tool.call(parsed.data, deps.ctx), ms: Date.now() - t0 }
+    let content = await tool.call(input, deps.ctx)
+    if (deps.hooks) {
+      const post = await runHooks('PostToolUse', {
+        hook_event_name: 'PostToolUse', cwd, tool_name: tool.name, tool_input: input, tool_output: content,
+      }, deps.hooks)
+      if (post.updatedOutput !== undefined) content = post.updatedOutput
+      if (post.additionalContext) content += `\n\n<hook-context>\n${post.additionalContext}\n</hook-context>`
+    }
+    return { ok: true, content, ms: Date.now() - t0 }
   } catch (e: any) {
-    return { ok: false, content: `错误：${e?.message ?? String(e)}`, ms: Date.now() - t0 }
+    let content = `错误：${e?.message ?? String(e)}`
+    if (deps.hooks) {
+      const fail = await runHooks('PostToolUseFailure', {
+        hook_event_name: 'PostToolUseFailure', cwd, tool_name: tool.name, tool_input: input, error: content,
+      }, deps.hooks)
+      if (fail.additionalContext) content += `\n\n<hook-context>\n${fail.additionalContext}\n</hook-context>`
+    }
+    return { ok: false, content, ms: Date.now() - t0 }
   }
 }
 

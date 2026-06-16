@@ -14,7 +14,7 @@ vi.mock('node:os', async importOriginal => {
 import os from 'node:os'
 import fs from 'node:fs'
 import path from 'node:path'
-import { loadSettings, saveSettings, saveApiKey, hasApiKey } from '../src/config.js'
+import { loadSettings, saveSettings, saveApiKey, hasApiKey, parseHooksConfig } from '../src/config.js'
 
 const fakeHome = os.homedir()
 const settingsFile = path.join(fakeHome, '.deepcode', 'settings.json')
@@ -76,5 +76,22 @@ describe('apiKey 持久化', () => {
     process.env.DEEPSEEK_API_KEY = 'sk-from-env'
     expect(hasApiKey()).toBe(true)
     delete process.env.DEEPSEEK_API_KEY
+  })
+})
+
+describe('parseHooksConfig', () => {
+  it('合法 hooks 原样返回', () => {
+    const raw = { PreToolUse: [{ matcher: 'Write', hooks: [{ type: 'command', command: 'x' }] }] }
+    expect(parseHooksConfig(raw)).toEqual(raw)
+  })
+  it('非对象 → undefined', () => {
+    expect(parseHooksConfig(null)).toBeUndefined()
+    expect(parseHooksConfig('x')).toBeUndefined()
+  })
+  it('丢弃未知事件键与结构非法的 matcher 条目', () => {
+    const raw = { Bogus: [{ hooks: [] }], PreToolUse: [{ hooks: [{ type: 'command', command: 'ok' }] }, { foo: 1 }] }
+    const out = parseHooksConfig(raw)!
+    expect((out as any).Bogus).toBeUndefined()
+    expect(out.PreToolUse!.length).toBe(1)
   })
 })
