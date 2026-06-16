@@ -329,6 +329,42 @@ describe('runHooks http 类型', () => {
   })
 })
 
+describe('runHooks async', () => {
+  it('配置 async:true → 调 registerAsync，返 backgrounded，不阻塞', async () => {
+    const registerAsync = vi.fn()
+    const spawn = vi.fn(() => fakeChild('', 0)) // 即便 child 会 close，配置级 async 已在 stdin 后 handoff
+    const cfg: HooksConfig = { PreToolUse: [{ hooks: [{ type: 'command', command: 'bg', async: true }] }] }
+    const o = await runHooks('PreToolUse', { tool_name: 'Write' }, cfg, { spawn, registerAsync })
+    expect(registerAsync).toHaveBeenCalledTimes(1)
+    expect(o.results[0].outcome).toBe('backgrounded')
+    expect(o.block).toBe(false)
+  })
+
+  it('stdout 首行 {"async":true} → 调 registerAsync 并 handoff', async () => {
+    const registerAsync = vi.fn()
+    // child 仅 emit 首行 marker，不 close（模拟仍在后台跑）
+    const child: any = new EventEmitter()
+    child.stdin = { write: vi.fn(), end: vi.fn() }
+    child.stdout = new EventEmitter()
+    child.stderr = new EventEmitter()
+    child.kill = vi.fn()
+    queueMicrotask(() => child.stdout.emit('data', Buffer.from('{"async":true}\n')))
+    const spawn = vi.fn(() => child)
+    const cfg: HooksConfig = { PreToolUse: [{ hooks: [{ type: 'command', command: 'maybe' }] }] }
+    const o = await runHooks('PreToolUse', { tool_name: 'Write' }, cfg, { spawn, registerAsync })
+    expect(registerAsync).toHaveBeenCalledTimes(1)
+    expect(o.results[0].outcome).toBe('backgrounded')
+  })
+
+  it('fail-safe：配置 async 但无 registerAsync dep → 同步阻塞执行', async () => {
+    const spawn = vi.fn(() => fakeChild(JSON.stringify({ hookSpecificOutput: { additionalContext: 'sync' } }), 0))
+    const cfg: HooksConfig = { PreToolUse: [{ hooks: [{ type: 'command', command: 'bg', async: true }] }] }
+    const o = await runHooks('PreToolUse', { tool_name: 'Write' }, cfg, { spawn })
+    expect(o.results[0].outcome).toBe('success')
+    expect(o.additionalContext).toBe('sync')
+  })
+})
+
 describe('isAsyncFirstLine', () => {
   it('合法 async marker → 解析', () => {
     expect(isAsyncFirstLine('{"async":true}')).toEqual({ async: true })

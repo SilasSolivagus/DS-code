@@ -173,6 +173,17 @@ export interface HookEngineDeps {
   runAgent?: (prompt: string, model: string | undefined, signal: AbortSignal) => Promise<string>
   /** http hook：默认全局 fetch。 */
   fetch?: typeof fetch
+  /** async/asyncRewake command hook：把已 spawn 的 child 交后台接管（挂 tasks.ts）。
+   *  缺省 → async hook fail-safe 退化为同步阻塞执行（对齐 CC forceSyncExecution）。 */
+  registerAsync?: (args: {
+    child: import('node:child_process').ChildProcess
+    hook: CommandHook
+    payload: Record<string, unknown>
+    label: string
+    asyncTimeout?: number
+    initialStdout?: string
+    initialStderr?: string
+  }) => void
 }
 
 interface ResolvedHookDeps {
@@ -182,12 +193,16 @@ interface ResolvedHookDeps {
   fetch: typeof fetch
   llm?: HookEngineDeps['llm']
   runAgent?: HookEngineDeps['runAgent']
+  registerAsync?: HookEngineDeps['registerAsync']
 }
 
-/** 单 command hook：spawn bash -c，payload JSON 写 stdin，超时 SIGKILL，close→parseHookStdout。 */
-function execCommandHook(hook: CommandHook, payload: Record<string, unknown>, spawn: typeof nodeSpawn, envFilePath?: string): Promise<HookResult> {
+/** 单 command hook：spawn bash -c，payload JSON 写 stdin，超时 SIGKILL，close→parseHookStdout。
+ *  async/asyncRewake：先 spawn 后判定（配置级 / stdout 首行 marker），命中 → registerAsync 接管返 backgrounded。 */
+function execCommandHook(hook: CommandHook, payload: Record<string, unknown>, deps: ResolvedHookDeps, envFilePath?: string): Promise<HookResult> {
   return new Promise(resolve => {
     const timeoutMs = (hook.timeout ?? 60) * 1000
+    const isAsyncConfig = !!(hook.async || hook.asyncRewake)
+    const canAsync = !!deps.registerAsync
     const opts: SpawnOptions = {
       env: {
         ...process.env,
@@ -198,15 +213,43 @@ function execCommandHook(hook: CommandHook, payload: Record<string, unknown>, sp
       stdio: ['pipe', 'pipe', 'pipe'],
     }
     let child: any
-    try { child = spawn('/bin/bash', ['-c', hook.command], opts) } catch { return resolve({ outcome: 'non_blocking_error', label: hook.command, durationMs: 0 }) }
-    let stdout = '', stderr = '', done = false
-    const finish = (r: HookResult) => { if (done) return; done = true; clearTimeout(timer); resolve(r) }
+    try { child = deps.spawn('/bin/bash', ['-c', hook.command], opts) } catch { return resolve({ outcome: 'non_blocking_error', label: hook.command, durationMs: 0 }) }
+    let stdout = '', stderr = '', done = false, handed = false, initialChecked = false
+    const finish = (r: HookResult) => { if (done || handed) return; done = true; clearTimeout(timer); resolve(r) }
     const timer = setTimeout(() => { try { child.kill('SIGKILL') } catch { /* 尽力 */ }; finish({ outcome: 'cancelled', label: hook.command, durationMs: 0 }) }, timeoutMs)
-    child.stdout?.on('data', (d: Buffer) => { stdout += d.toString() })
-    child.stderr?.on('data', (d: Buffer) => { stderr += d.toString() })
-    child.on('error', () => finish({ outcome: 'non_blocking_error', label: hook.command, durationMs: 0 }))
-    child.on('close', (code: number | null) => finish(parseHookStdout(stdout, code ?? 0, stderr)))
+    const handOff = (asyncTimeout?: number) => {
+      if (done || handed) return
+      handed = true
+      clearTimeout(timer)
+      child.stdout?.off('data', onData)
+      child.stderr?.off('data', onErr)
+      child.off('close', onClose)
+      child.off('error', onError)
+      deps.registerAsync!({ child, hook, payload, label: hook.command, asyncTimeout, initialStdout: stdout, initialStderr: stderr })
+      resolve({ outcome: 'backgrounded', label: hook.command, durationMs: 0 })
+    }
+    const onData = (d: Buffer) => {
+      stdout += d.toString()
+      // stdout 首行 async 检测（仅在可 async 且非配置级 async 时）
+      if (!initialChecked && canAsync && !isAsyncConfig) {
+        const firstLine = stdout.split('\n')[0]
+        if (firstLine.includes('}')) {
+          initialChecked = true
+          const parsed = isAsyncFirstLine(firstLine.trim())
+          if (parsed) handOff(parsed.asyncTimeout)
+        }
+      }
+    }
+    const onErr = (d: Buffer) => { stderr += d.toString() }
+    const onClose = (code: number | null) => finish(parseHookStdout(stdout, code ?? 0, stderr))
+    const onError = () => finish({ outcome: 'non_blocking_error', label: hook.command, durationMs: 0 })
+    child.stdout?.on('data', onData)
+    child.stderr?.on('data', onErr)
+    child.on('error', onError)
+    child.on('close', onClose)
     try { child.stdin?.write(JSON.stringify(payload) + '\n'); child.stdin?.end() } catch { /* 尽力 */ }
+    // 配置级 async/asyncRewake：写完 stdin 立即 handoff（asyncTimeout 来自配置 timeout）。
+    if (isAsyncConfig && canAsync) handOff(hook.timeout ? hook.timeout * 1000 : undefined)
   })
 }
 
@@ -314,7 +357,7 @@ async function execHttpHook(hook: HttpHook, payload: Record<string, unknown>, de
 async function execOneHook(hook: HookCommand, payload: Record<string, unknown>, deps: ResolvedHookDeps, envFilePath?: string): Promise<HookResult> {
   const start = deps.now()
   if (hook.type === 'command') {
-    const r = await execCommandHook(hook, payload, deps.spawn, envFilePath)
+    const r = await execCommandHook(hook, payload, deps, envFilePath)
     return { ...r, label: hook.command, durationMs: deps.now() - start }
   }
   if (hook.type === 'prompt') {
@@ -363,6 +406,7 @@ export async function runHooks(
     fetch: deps.fetch ?? (globalThis.fetch as typeof fetch),
     llm: deps.llm,
     runAgent: deps.runAgent,
+    registerAsync: deps.registerAsync,
   }
 
   // env-file 机制：Setup/SessionStart/CwdChanged/FileChanged 的 command hook 注入 DEEPCODE_ENV_FILE。
