@@ -86,7 +86,13 @@ export const bashTool: Tool<typeof schema> = {
             const sep = tail.lastIndexOf('|')
             const newCwd = tail.slice(0, sep)
             exitCode = Number(tail.slice(sep + 1)) || 0
-            if (newCwd) ctx.setCwd(newCwd)
+            if (newCwd && newCwd !== ctx.cwd()) {
+              const oldCwd = ctx.cwd()
+              ctx.setCwd(newCwd)
+              ctx.hookDispatch?.('CwdChanged', { hook_event_name: 'CwdChanged', old_cwd: oldCwd, new_cwd: newCwd }).catch(() => {})
+            } else if (newCwd) {
+              ctx.setCwd(newCwd)
+            }
           }
           const merged = [out, stderr && `[stderr]\n${stderr}`].filter(Boolean).join('\n')
           if (err?.killed) {

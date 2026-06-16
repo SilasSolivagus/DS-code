@@ -238,3 +238,25 @@ describe('Bash TaskCreated/TaskCompleted hooks', () => {
     await expect(bashTool.call({ command: 'echo x', run_in_background: true } as any, subCtx as any)).resolves.toBeTruthy()
   })
 })
+
+describe('bash CwdChanged hook', () => {
+  it('cd 改变 cwd → CwdChanged(old/new) 触发', async () => {
+    const events: Array<{ event: string; payload: any }> = []
+    const dispatch = vi.fn(async (event: string, payload: any) => { events.push({ event, payload }); return { block: false, preventContinuation: false, stop: false, results: [] } })
+    let cwd = process.cwd()
+    const ctx = { cwd: () => cwd, setCwd: (d: string) => { cwd = d }, signal: new AbortController().signal, fileState: new Map(), hookDispatch: dispatch }
+    await bashTool.call({ command: 'cd /tmp' } as any, ctx as any)
+    const cc = events.find(e => e.event === 'CwdChanged')
+    expect(cc).toBeTruthy()
+    expect(cc!.payload.new_cwd).toContain('tmp')
+    expect(cc!.payload.old_cwd).not.toBe(cc!.payload.new_cwd)
+  })
+  it('cwd 未变 → 不发 CwdChanged', async () => {
+    const events: string[] = []
+    const dispatch = vi.fn(async (event: string) => { events.push(event); return { block: false, preventContinuation: false, stop: false, results: [] } })
+    let cwd = process.cwd()
+    const ctx = { cwd: () => cwd, setCwd: (d: string) => { cwd = d }, signal: new AbortController().signal, fileState: new Map(), hookDispatch: dispatch }
+    await bashTool.call({ command: 'echo hi' } as any, ctx as any)
+    expect(events.includes('CwdChanged')).toBe(false)
+  })
+})
