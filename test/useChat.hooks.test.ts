@@ -1,8 +1,9 @@
 // test/useChat.hooks.test.ts —— L-042 ①b-1：useChat 自有事件（mock runHooks 注入受控 outcome）
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { chatStream } from '../src/api.js'
 
 const script: Array<{ deltas?: any[]; result: any }> = []
 vi.mock('../src/api.js', async orig => ({
@@ -33,6 +34,7 @@ vi.mock('../src/config.js', async orig => {
   return {
     ...actual,
     loadSettings: () => ({ ...actual.loadSettings(), hooks: { UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'true' }] }] } }),
+    saveSettings: vi.fn(),
   }
 })
 
@@ -89,5 +91,111 @@ describe('useChat PreCompact/PostCompact hook', () => {
     expect(pre!.payload.trigger).toBe('manual')
     expect(post).toBeTruthy()
     expect(post!.payload.summary).toBe('历史总结')
+  })
+})
+
+describe('useChat SessionStart hook', () => {
+  it('新会话 → SessionStart(source=startup) 触发', async () => {
+    createChatCore({ client: {} as any, yolo: true, cwd: process.cwd(), sessionDir, onState: () => {} })
+    await new Promise(r => setImmediate(r)) // 等 fire-and-forget 的 .then 微任务落定
+    const ss = hookCalls.find(c => c.event === 'SessionStart')
+    expect(ss).toBeTruthy()
+    expect(ss!.payload.source).toBe('startup')
+  })
+
+  it('--continue 恢复 → SessionStart(source=resume) 触发', async () => {
+    createChatCore({ client: {} as any, yolo: true, cwd: process.cwd(), sessionDir, onState: () => {} })
+    hookCalls.length = 0
+    createChatCore({ client: {} as any, yolo: true, cwd: process.cwd(), continueSession: true, sessionDir, onState: () => {} })
+    await new Promise(r => setImmediate(r))
+    const ss = hookCalls.find(c => c.event === 'SessionStart')
+    expect(ss).toBeTruthy()
+    expect(ss!.payload.source).toBe('resume')
+  })
+
+  it('additionalContext → 注入到下一轮发送的 messages', async () => {
+    hookImpl = (event) => event === 'SessionStart'
+      ? { ...emptyOutcome, additionalContext: '项目使用 pnpm' }
+      : emptyOutcome
+    script.push({ result: { content: '答', toolCalls: [], usage, finishReason: 'stop' } })
+    const core = createChatCore({ client: {} as any, yolo: true, cwd: process.cwd(), sessionDir, onState: () => {} })
+    await new Promise(r => setImmediate(r))
+    await core.send('你好')
+    const sent = (chatStream as any).mock.calls.at(-1)[1].messages as any[]
+    expect(JSON.stringify(sent)).toContain('项目使用 pnpm')
+  })
+})
+
+describe('useChat Notification hook', () => {
+  it('权限弹窗浮现 → Notification(notification_type=permission) 触发', async () => {
+    // 非 yolo：未放行命令触发 ask；脚本让模型调一次 Bash
+    script.push({ result: { content: '', toolCalls: [{ id: 't1', name: 'Bash', args: JSON.stringify({ command: 'echo hi' }) }], usage, finishReason: 'tool_calls' } })
+    const core = createChatCore({ client: {} as any, yolo: false, cwd: process.cwd(), sessionDir, onState: () => {} })
+    await new Promise(r => setImmediate(r))
+    hookCalls.length = 0
+    const p = core.send('跑个命令')
+    await vi.waitFor(() => expect(hookCalls.find(c => c.event === 'Notification')).toBeTruthy())
+    const n = hookCalls.find(c => c.event === 'Notification')!
+    expect(n.payload.notification_type).toBe('permission')
+    core.resolveAsk('no')
+    await p
+  })
+})
+
+describe('useChat SessionEnd hook', () => {
+  it('/clear → SessionEnd(reason=clear) 在新会话 SessionStart 之前触发', async () => {
+    const core = createChatCore({ client: {} as any, yolo: true, cwd: process.cwd(), sessionDir, onState: () => {} })
+    await new Promise(r => setImmediate(r))
+    hookCalls.length = 0
+    await core.send('/clear')
+    await new Promise(r => setImmediate(r))
+    const end = hookCalls.find(c => c.event === 'SessionEnd')
+    const start = hookCalls.find(c => c.event === 'SessionStart')
+    expect(end).toBeTruthy()
+    expect(end!.payload.reason).toBe('clear')
+    expect(start!.payload.source).toBe('clear')
+  })
+
+  it('dispose() → SessionEnd(reason=exit) 触发', async () => {
+    const core = createChatCore({ client: {} as any, yolo: true, cwd: process.cwd(), sessionDir, onState: () => {} })
+    await new Promise(r => setImmediate(r))
+    hookCalls.length = 0
+    core.dispose()
+    await new Promise(r => setImmediate(r))
+    const end = hookCalls.find(c => c.event === 'SessionEnd')
+    expect(end).toBeTruthy()
+    expect(end!.payload.reason).toBe('exit')
+  })
+})
+
+describe('useChat InstructionsLoaded hook', () => {
+  it('启动加载记忆文件 → 每文件发 InstructionsLoaded(load_reason=startup)', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'deepcode-mem-'))
+    writeFileSync(path.join(dir, 'DEEPCODE.md'), '# 测试记忆')
+    createChatCore({ client: {} as any, yolo: true, cwd: dir, sessionDir, onState: () => {} })
+    await new Promise(r => setImmediate(r))
+    const il = hookCalls.find(c => c.event === 'InstructionsLoaded' && String(c.payload.file_path).includes(dir))
+    expect(il).toBeTruthy()
+    expect(il!.payload.load_reason).toBe('startup')
+    expect(il!.payload.memory_type).toBe('project')
+    expect(il!.payload.file_path).toContain('DEEPCODE.md')
+  })
+})
+
+describe('useChat ConfigChange hook', () => {
+  it('权限确认选"始终允许" → saveRule → ConfigChange(source=permissions) 触发', async () => {
+    script.push({ result: { content: '', toolCalls: [{ id: 't1', name: 'Bash', args: JSON.stringify({ command: 'echo hi' }) }], usage, finishReason: 'tool_calls' } })
+    // saveRule 放行后命令执行，loop 继续下一轮模型收尾
+    script.push({ result: { content: '完成', toolCalls: [], usage, finishReason: 'stop' } })
+    const core = createChatCore({ client: {} as any, yolo: false, cwd: process.cwd(), sessionDir, onState: () => {} })
+    await new Promise(r => setImmediate(r))
+    hookCalls.length = 0
+    const p = core.send('跑个命令')
+    await vi.waitFor(() => expect(core.state.pendingAsk).toBeTruthy())
+    core.resolveAsk('always') // Decision='always' 触发 saveRule → ConfigChange
+    await p
+    const cc = hookCalls.find(c => c.event === 'ConfigChange')
+    expect(cc).toBeTruthy()
+    expect(cc!.payload.source).toBe('permissions')
   })
 })

@@ -63,6 +63,11 @@ function makeHandle(file: string): SessionHandle {
   }
 }
 
+/** 会话文件路径 → 会话 ID（basename 去 .jsonl）。会话级 hook payload 的 session_id；①b-3 env-file 目录键。 */
+export function sessionIdFromFile(file: string): string {
+  return path.basename(file).replace(/\.jsonl$/, '')
+}
+
 /** 新会话：建目录、写 meta 首行、返回句柄。文件名含可读时间戳 + 随机段防碰撞。 */
 export function newSession(meta: SessionMeta, dir: string = DEFAULT_DIR): SessionHandle {
   fs.mkdirSync(dir, { recursive: true })

@@ -52,13 +52,18 @@ export const bashTool: Tool<typeof schema> = {
         notified: false,
         startTime: Date.now(),
       })
+      ctx.hookDispatch?.('TaskCreated', { hook_event_name: 'TaskCreated', task_id: id, task_description: input.command }).catch(() => {})
       child.once('exit', code => {
         ws.end()
         // 若已被 TaskStop 置为 killed，保留之——SIGTERM 触发的本 exit 回调不该把 killed 覆写成 failed。
         const t = getTask(id)
-        if (t && t.status === 'killed') return
+        if (t && t.status === 'killed') {
+          ctx.hookDispatch?.('TaskCompleted', { hook_event_name: 'TaskCompleted', task_id: id, status: 'killed' }).catch(() => {})
+          return
+        }
         updateTask(id, { status: code === 0 ? 'completed' : 'failed', endTime: Date.now() })
         enqueueNotification(getTask(id)!)
+        ctx.hookDispatch?.('TaskCompleted', { hook_event_name: 'TaskCompleted', task_id: id, status: getTask(id)!.status }).catch(() => {})
       })
       return Promise.resolve(`后台任务已启动 id=${id}，输出写入 ${outputFile}。用 TaskList/TaskOutput/TaskStop 管理。`)
     }
@@ -81,7 +86,13 @@ export const bashTool: Tool<typeof schema> = {
             const sep = tail.lastIndexOf('|')
             const newCwd = tail.slice(0, sep)
             exitCode = Number(tail.slice(sep + 1)) || 0
-            if (newCwd) ctx.setCwd(newCwd)
+            if (newCwd && newCwd !== ctx.cwd()) {
+              const oldCwd = ctx.cwd()
+              ctx.setCwd(newCwd)
+              ctx.hookDispatch?.('CwdChanged', { hook_event_name: 'CwdChanged', old_cwd: oldCwd, new_cwd: newCwd }).catch(() => {})
+            } else if (newCwd) {
+              ctx.setCwd(newCwd)
+            }
           }
           const merged = [out, stderr && `[stderr]\n${stderr}`].filter(Boolean).join('\n')
           if (err?.killed) {

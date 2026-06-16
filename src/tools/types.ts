@@ -18,6 +18,9 @@ export interface ToolContext {
   /** hooks 生命周期分派闭包（捕获会话 hooks 快照）。主会话与 headless 顶层 ctx 注入；子代理内部子 ctx 不注入。
    *  工具层事件（SubagentStart/Stop、①b-2 的 CwdChanged/Task/Notification）经此发事件。对空配置零开销返回空 outcome。 */
   hookDispatch?: (event: HookEvent, payload: Record<string, unknown>) => Promise<HookOutcome>
+  /** 会话 ID（落盘文件 basename）。会话级事件 payload 的 session_id；①b-3 env-file 目录键。
+   *  主会话/headless 顶层 ctx 注入；子代理子 ctx 不注入。getter 形式：resume/clear 换 session 后随之更新。 */
+  sessionId?: () => string | undefined
 }
 
 export interface Tool<S extends z.ZodTypeAny = z.ZodTypeAny> {

@@ -1,4 +1,7 @@
 // src/headless.ts
+import crypto from 'node:crypto'
+import os from 'node:os'
+import path from 'node:path'
 import type OpenAI from 'openai'
 import { runLoop } from './loop.js'
 import { allTools } from './tools/index.js'
@@ -7,7 +10,7 @@ import { makeAgentTool } from './tools/agent.js'
 import { makeWebFetchTool } from './tools/webfetch.js'
 import { taskListTool, taskOutputTool, taskStopTool } from './tools/taskTools.js'
 import { installTaskCleanup } from './tasks.js'
-import { buildSystemPrompt } from './prompt.js'
+import { buildSystemPrompt, findMemoryFiles } from './prompt.js'
 import { loadSettings } from './config.js'
 import { runHooks } from './hooks.js'
 import { TodoStore } from './todo.js'
@@ -30,6 +33,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
   const model = 'deepseek-v4-flash'
   let cwd = process.cwd()
   const todos = new TodoStore()
+  const sessionId = 'headless-' + crypto.randomBytes(4).toString('hex')
   const ctx: ToolContext = {
     cwd: () => cwd,
     setCwd: d => { cwd = d },
@@ -37,6 +41,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     fileState: new Map(),
     todos,
     hookDispatch: (event, payload) => runHooks(event, payload, settings.hooks),
+    sessionId: () => sessionId,
   }
   const total: Usage = { prompt_tokens: 0, completion_tokens: 0, prompt_cache_hit_tokens: 0 }
   let turns = 0
@@ -45,6 +50,24 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     total.prompt_tokens += u.prompt_tokens
     total.completion_tokens += u.completion_tokens
     total.prompt_cache_hit_tokens += u.prompt_cache_hit_tokens
+  }
+  // SessionStart：会话开始（headless 恒 startup）。await 注入 additionalContext 到初始上下文。
+  const initMsgs: any[] = [{ role: 'system', content: buildSystemPrompt(cwd) }]
+  if (settings.hooks) {
+    const ss = await runHooks('SessionStart', {
+      hook_event_name: 'SessionStart', cwd, session_id: ctx.sessionId?.(), source: 'startup',
+    }, settings.hooks)
+    if (ss.additionalContext) initMsgs.push({ role: 'user', content: `<hook-context>\n${ss.additionalContext}\n</hook-context>` })
+    if (ss.systemMessage) process.stderr.write(ss.systemMessage + '\n')
+    // InstructionsLoaded：记忆文件加载记录（DEEPCODE.md/CLAUDE.md/全局）。fire-and-forget。
+    const home = os.homedir()
+    const globalMem = path.join(home, '.deepcode', 'DEEPCODE.md')
+    for (const f of findMemoryFiles(cwd)) {
+      void runHooks('InstructionsLoaded', {
+        hook_event_name: 'InstructionsLoaded', cwd, session_id: ctx.sessionId?.(),
+        file_path: f, memory_type: f === globalMem ? 'user' : 'project', load_reason: 'startup',
+      }, settings.hooks!).catch(() => {})
+    }
   }
   let promptText = opts.prompt
   if (settings.hooks) {
@@ -56,10 +79,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     }
     if (ups.additionalContext) promptText = `${opts.prompt}\n\n<hook-context>\n${ups.additionalContext}\n</hook-context>`
   }
-  const messages: any[] = [
-    { role: 'system', content: buildSystemPrompt(cwd) },
-    { role: 'user', content: promptText },
-  ]
+  const messages: any[] = [...initMsgs, { role: 'user', content: promptText }]
   const gen = runLoop(messages, {
     client: opts.client,
     tools: [...allTools, todoWriteTool, makeAgentTool({ client: opts.client, onUsage: (u, _model) => addUsage(u), getModel: () => model }), makeWebFetchTool({ client: opts.client, onUsage: (u, _model) => addUsage(u) }), taskListTool, taskOutputTool, taskStopTool],

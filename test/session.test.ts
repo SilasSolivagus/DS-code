@@ -3,7 +3,7 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import * as nodeFs from 'node:fs'
-import { newSession, openSession, listSessions, loadSession, type SessionMeta } from '../src/session.js'
+import { newSession, openSession, listSessions, loadSession, sessionIdFromFile, type SessionMeta } from '../src/session.js'
 
 let dir: string
 beforeEach(() => {
@@ -164,5 +164,14 @@ describe('session', () => {
     const loaded = loadSession(h.file)
     expect(loaded.messages.map(m => m.role)).toEqual(['assistant', 'tool', 'tool', 'user'])
     expect(loaded.messages.slice(1, 3).map(m => m.tool_call_id).sort()).toEqual(['a', 'b'])
+  })
+})
+
+describe('sessionIdFromFile', () => {
+  it('取 basename 去 .jsonl 后缀', () => {
+    expect(sessionIdFromFile('/home/u/.deepcode/sessions/2026-06-16T01-02-03-abc.jsonl')).toBe('2026-06-16T01-02-03-abc')
+  })
+  it('无目录无扩展名时原样返回 basename', () => {
+    expect(sessionIdFromFile('plain')).toBe('plain')
   })
 })

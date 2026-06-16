@@ -19,11 +19,11 @@ import { taskListTool, taskOutputTool, taskStopTool } from '../tools/taskTools.j
 import { onNotification, drainNotifications, formatNotification } from '../tasks.js'
 import { buildSystemPrompt, findMemoryFiles } from '../prompt.js'
 import { formatMemory } from '../memory.js'
-import { loadSettings, saveSettings } from '../config.js'
+import { loadSettings, saveSettings, SETTINGS_FILE } from '../config.js'
 import { runHooks } from '../hooks.js'
 import { isDangerous, type Decision, type PermissionMode } from '../permissions.js'
 import type { ToolContext } from '../tools/types.js'
-import { newSession, openSession, listSessions, loadSession, type SessionHandle, type UsageRecord } from '../session.js'
+import { newSession, openSession, listSessions, loadSession, sessionIdFromFile, type SessionHandle, type UsageRecord } from '../session.js'
 import { costUSD } from '../pricing.js'
 import { summarize, rebuildMessages } from '../compact.js'
 import { TodoStore } from '../todo.js'
@@ -208,6 +208,7 @@ export function createChatCore(opts: {
     todos,
     recordBeforeImage: (absPath: string) => { if (currentTurnId > 0) checkpointer.capture(absPath, currentTurnId) },
     hookDispatch: (event, payload) => runHooks(event, payload, settings.hooks),
+    sessionId: () => (session ? sessionIdFromFile(session.file) : undefined),
   }
   const messages: any[] = [{ role: 'system', content: buildSystemPrompt(cwd) }]
   const usageLog: UsageRecord[] = []
@@ -283,16 +284,61 @@ export function createChatCore(opts: {
     return loaded.messages.filter(m => m.role === 'user').length
   }
 
+  // —— SessionStart：会话开始事件。构造同步 → fire-and-forget；additionalContext 缓冲到下一轮 runTurn 起始 flush。 ——
+  let pendingSessionContext: string | null = null
+  const fireSessionStart = (source: 'startup' | 'resume' | 'clear'): void => {
+    if (!settings.hooks) return
+    void runHooks('SessionStart', {
+      hook_event_name: 'SessionStart', cwd, session_id: ctx.sessionId?.(), source,
+    }, settings.hooks).then(out => {
+      if (out.additionalContext) {
+        pendingSessionContext = pendingSessionContext ? `${pendingSessionContext}\n\n${out.additionalContext}` : out.additionalContext
+      }
+      if (out.systemMessage) notice('info', out.systemMessage)
+    }).catch(() => { /* SessionStart hook 失败不影响会话启动 */ })
+  }
+
+  // —— SessionEnd：会话结束事件。fire-and-forget；失败不阻断退出/清空。 ——
+  const fireSessionEnd = (reason: 'clear' | 'exit'): void => {
+    if (!settings.hooks) return
+    void runHooks('SessionEnd', {
+      hook_event_name: 'SessionEnd', cwd, session_id: ctx.sessionId?.(), reason,
+    }, settings.hooks).catch(() => { /* SessionEnd hook 失败不阻断退出/清空 */ })
+  }
+
+  // —— ConfigChange：会话内配置（权限规则）变更事件。fire-and-forget；失败不阻断保存。 ——
+  const fireConfigChange = (): void => {
+    if (!settings.hooks) return
+    void runHooks('ConfigChange', {
+      hook_event_name: 'ConfigChange', cwd, session_id: ctx.sessionId?.(),
+      source: 'permissions', file_path: SETTINGS_FILE,
+    }, settings.hooks).catch(() => { /* ConfigChange hook 失败不阻断保存 */ })
+  }
+
   // 恢复（--continue）或新建会话
   const sessionDir = opts.sessionDir  // undefined → newSession/listSessions 使用默认路径
   const recovered = opts.continueSession ? listSessions(cwd, sessionDir)[0] : undefined
   if (recovered) {
     const turns = restoreSession(recovered.file)
     notice('info', `已恢复会话（${turns} 轮对话），继续写入 ${recovered.file}`)
+    fireSessionStart('resume')
   } else {
     session = newSession({ cwd, model, thinking, permMode }, sessionDir)
     session.appendMessage(messages[0]) // 持久化 system 消息
     checkpointer = createCheckpointer(checkpointStoreFor(session.file))
+    fireSessionStart('startup')
+  }
+
+  // InstructionsLoaded：记忆文件加载记录（DEEPCODE.md/CLAUDE.md/全局）。fire-and-forget。
+  if (settings.hooks) {
+    const home = os.homedir()
+    const globalMem = path.join(home, '.deepcode', 'DEEPCODE.md')
+    for (const f of findMemoryFiles(cwd)) {
+      void runHooks('InstructionsLoaded', {
+        hook_event_name: 'InstructionsLoaded', cwd, session_id: ctx.sessionId?.(),
+        file_path: f, memory_type: f === globalMem ? 'user' : 'project', load_reason: 'startup',
+      }, settings.hooks).catch(() => {})
+    }
   }
 
   // AskUserQuestion 桥：挂起 Promise + pendingQuestion 状态，UI 用 resolveQuestion 回答
@@ -353,6 +399,13 @@ export function createChatCore(opts: {
   // 权限确认桥：挂起 Promise + pendingAsk 状态，UI 用 resolveAsk 回答
   const ask = (toolName: string, desc: string): Promise<Decision> =>
     new Promise<Decision>(res => {
+      // Notification hook：权限弹窗浮现给用户时通知（桌面通知转发等）。fire-and-forget。
+      if (settings.hooks) {
+        void runHooks('Notification', {
+          hook_event_name: 'Notification', cwd, session_id: ctx.sessionId?.(),
+          notification_type: 'permission', title: 'deepcode 需要确认', message: `${toolName}: ${desc}`,
+        }, settings.hooks).catch(() => {})
+      }
       pendingAsk = { toolName, desc, dangerous: isDangerous(desc), resolve: res }
       setState()
     })
@@ -371,6 +424,11 @@ export function createChatCore(opts: {
         return
       }
       if (ups.additionalContext) userText = `${userText}\n\n<hook-context>\n${ups.additionalContext}\n</hook-context>`
+    }
+    // SessionStart 注入的上下文（若有）于本轮起始一次性并入用户文本（落在用户消息之前）。
+    if (pendingSessionContext) {
+      userText = `<hook-context>\n${pendingSessionContext}\n</hook-context>\n\n${userText}`
+      pendingSessionContext = null
     }
     busy = true
     turnStartAt = Date.now()
@@ -415,7 +473,7 @@ export function createChatCore(opts: {
         permission: {
           mode: permMode,
           rules: settings.permissions.allow,
-          saveRule: r => { settings.permissions.allow.push(r); saveSettings(settings) },
+          saveRule: r => { settings.permissions.allow.push(r); saveSettings(settings); fireConfigChange() },
           ask,
         },
         reminders: () => {
@@ -567,17 +625,20 @@ export function createChatCore(opts: {
       return
     }
     if (line === '/clear') {
+      fireSessionEnd('clear') // 旧会话结束，先于新会话 SessionStart
       messages.length = 1 // 保留 system
       ctx.fileState.clear()
       todos.reset()
       compacted = false
       lastPromptTokens = 0
+      pendingSessionContext = null
       session = newSession({ cwd, model, thinking, permMode }, sessionDir)
       session.appendMessage(messages[0])
       checkpointer = createCheckpointer(checkpointStoreFor(session.file))
       nextTurnId = 1; currentTurnId = 0
       dispatch({ type: 'clear' })
       notice('info', '对话已清空，已开新会话文件（本会话花费累计保留）')
+      fireSessionStart('clear')
       return
     }
     if (line === '/context') {
@@ -625,6 +686,7 @@ export function createChatCore(opts: {
         if (settings.permissions.allow[i] !== undefined) {
           notice('info', `已删除：${settings.permissions.allow.splice(i, 1)[0]}`)
           saveSettings(settings)
+          fireConfigChange()
         } else notice('warn', '编号无效')
       } else if (settings.permissions.allow.length) {
         notice('info', settings.permissions.allow.map((r, i) => `  ${i + 1}. ${r}`).join('\n') + '\n（/permissions rm <编号> 删除对应规则）')
@@ -685,6 +747,7 @@ export function createChatCore(opts: {
       const turns = restoreSession(file)
       dispatch({ type: 'clear' }) // 换了会话，旧 transcript 不再对应当前 messages
       notice('info', `已恢复会话（${turns} 轮对话）`)
+      fireSessionStart('resume')
     },
     customCommands,
     subscribe: (listener: () => void) => {
@@ -731,7 +794,7 @@ export function createChatCore(opts: {
         notice('info', `[rewind] 代码：${parts.join('、')}`)
       }
     },
-    dispose: () => { unsubNotification() },
+    dispose: () => { fireSessionEnd('exit'); unsubNotification() },
   }
 }
 
