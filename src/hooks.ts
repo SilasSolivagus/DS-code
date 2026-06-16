@@ -62,3 +62,28 @@ export function matchesMatcher(matcher: string | undefined, query: string): bool
   if (/^[A-Za-z0-9_]+$/.test(matcher)) return matcher === query
   try { return new RegExp(matcher).test(query) } catch { return false }
 }
+
+/** 各事件 matcher 匹配的 payload 字段；返回 undefined = 该事件忽略 matcher（恒匹配）。 */
+export function matchQueryFor(event: HookEvent, payload: Record<string, unknown>): string | undefined {
+  const s = (k: string) => (typeof payload[k] === 'string' ? (payload[k] as string) : undefined)
+  switch (event) {
+    case 'PreToolUse': case 'PostToolUse': case 'PostToolUseFailure':
+    case 'PermissionRequest': case 'PermissionDenied':
+      return s('tool_name')
+    case 'SessionStart': case 'ConfigChange': return s('source')
+    case 'Setup': case 'PreCompact': case 'PostCompact': return s('trigger')
+    case 'Notification': return s('notification_type')
+    case 'SessionEnd': return s('reason')
+    case 'SubagentStart': case 'SubagentStop': return s('agent_type')
+    case 'InstructionsLoaded': return s('load_reason')
+    case 'FileChanged': return s('file_basename')
+    default: return undefined
+  }
+}
+
+/** if 条件求值（仅工具类事件有意义）：裸 'Tool' 仅比工具名；'Tool(pat)' 复用 permissions.matchRule。 */
+export function evalIfCondition(ifExpr: string | undefined, toolName: string, desc: string): boolean {
+  if (!ifExpr) return true
+  if (/^[A-Za-z0-9_]+$/.test(ifExpr)) return ifExpr === toolName
+  return matchRule(ifExpr, toolName, desc)
+}
