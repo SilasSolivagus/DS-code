@@ -14,8 +14,8 @@
 
 | id | 标题 | 来源 | 规模 | 优先级 | 状态 | 分支 | 备注 |
 |---|---|---|---|---|---|---|---|
-| L-006 | 后台 bash `run_in_background` | cc-src | M | P2 | todo | — | BashTool 加后台模式 + 任务生命周期/缓冲/通知；dev server/watch 用。**注：编排分析后并入 L-041 后台任务体系** |
-| L-007 | Plan mode（EnterPlanMode/ExitPlanMode） | cc-src | M | P2 | todo | — | 切只读权限模式探查 → 出计划待批 |
+| ~~L-006~~ | 后台 bash `run_in_background` | cc-src | M | P2 | **merged** | — | **已并入 L-041 后台任务体系实现**（见已合并段）。原条目作废 |
+| L-007 | Plan mode（EnterPlanMode/ExitPlanMode） | cc-src | M | P2 | todo | — | 切只读权限模式探查 → 出计划待批。**注：实为机制件（路线图 I），改由人会话 brainstorm** |
 
 ## 大件 / 只出 spec（L，等你 brainstorm）
 
@@ -40,7 +40,7 @@
 | id | 标题 | 规模 | 价值 | 状态 | 依赖 | 备注 |
 |---|---|---|---|---|---|---|
 | ~~L-040~~ | **子代理类型化** ✅ **已合 main** | M | 高 | **merged** | — | 见下「已合并」。L-041/L-020/L-044/L-045 的挂载点已就位 |
-| ~~L-041~~ | **后台任务 + 完成通知** ✅ **已合 main** | L | 高 | **merged** | — | 见下「已合并」。L-043/L-045 的挂载点已就位。**遗留 follow-up（opus nit）**：TaskStop/退出清理只 kill 直接进程不杀进程树，`npm run dev` 这类 fork 子进程会留孤儿——需 spawn `detached:true` + `process.kill(-pid)`，待跟进 |
+| ~~L-041~~ | **后台任务 + 完成通知** ✅ **已合 main** | L | 高 | **merged** | — | 见下「已合并」。L-043/L-045 的挂载点已就位。~~遗留 follow-up（opus nit）：进程树 kill~~ ✅ **2026-06-16 已修**：bash 后台 spawn `detached:true` + `killProcessTree(child, sig)` 杀整个进程组（`process.kill(-pid)`，无 pid 退化 child.kill），三处 kill 点（spawn/TaskStop/退出清理）统一走它，杀 `npm run dev` fork 的孙进程修孤儿。+4 测试（393 绿） |
 | **L-042** | Hooks 生命周期（Pre/PostToolUse/SubagentStop/…） | M | 中 | needs-human | 无 | `execCall` 前后插可插拔 dispatch 点。本身偏策略层，但**是 L-044 结构化输出的底座** |
 | **L-043** | 子代理 steering / 续聊（SendMessage 式注入 + 可恢复） | L | 中-高 | needs-human | L-041 | 当前子代理是一次性纯函数、不可寻址；主 loop 也 busy 拒输入（仅 Esc 全中断）。建在后台任务句柄上 |
 | **L-044** | 结构化输出强约束（子代理结果按 schema 校验回传） | M | 中 | needs-human | L-042 | CC 用 Stop hook + SyntheticOutputTool 强制子代理产出符合 schema 的 JSON。让父代理拿机器可解析结果而非自由文本。服务于 fan-out 聚合 |

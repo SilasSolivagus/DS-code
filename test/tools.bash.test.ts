@@ -148,6 +148,7 @@ describe('Bash run_in_background', () => {
     expect(typeof shell).toBe('string')
     expect(args).toEqual(expect.arrayContaining(['-c', 'echo x']))
     expect(opts.cwd).toBe('/some/dir')
+    expect(opts.detached).toBe(true) // 进程组长 → 可 kill 整组（修 dev server 孤儿）
   })
 
   it('前台路径回归：run_in_background 缺省 → 不调 spawn，走真实 execFile', async () => {
