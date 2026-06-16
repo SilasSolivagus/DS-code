@@ -66,6 +66,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
       return note ? [note] : []
     },
     injectTaskNotifications: true, // 运行中完成的后台任务在终止点注入续跑（单发模式无空闲订阅）
+    hooks: settings.hooks,
   })
   let step
   while (!(step = await gen.next()).done) {

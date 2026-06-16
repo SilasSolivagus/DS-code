@@ -397,6 +397,7 @@ export function createChatCore(opts: {
           return note ? [note] : []
         },
         injectTaskNotifications: true, // 主会话：runLoop 终止点 drain 后台完成通知续跑
+        hooks: settings.hooks,
       }
       const gen = runLoop(messages, deps)
       let firstDeltaAt: number | null = null // 本 turn 首个流式分片时间戳（tok/s 计算）
