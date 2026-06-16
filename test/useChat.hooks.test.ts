@@ -1,6 +1,6 @@
 // test/useChat.hooks.test.ts —— L-042 ①b-1：useChat 自有事件（mock runHooks 注入受控 outcome）
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { chatStream } from '../src/api.js'
@@ -165,6 +165,20 @@ describe('useChat SessionEnd hook', () => {
     const end = hookCalls.find(c => c.event === 'SessionEnd')
     expect(end).toBeTruthy()
     expect(end!.payload.reason).toBe('exit')
+  })
+})
+
+describe('useChat InstructionsLoaded hook', () => {
+  it('启动加载记忆文件 → 每文件发 InstructionsLoaded(load_reason=startup)', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'deepcode-mem-'))
+    writeFileSync(path.join(dir, 'DEEPCODE.md'), '# 测试记忆')
+    createChatCore({ client: {} as any, yolo: true, cwd: dir, sessionDir, onState: () => {} })
+    await new Promise(r => setImmediate(r))
+    const il = hookCalls.find(c => c.event === 'InstructionsLoaded' && String(c.payload.file_path).includes(dir))
+    expect(il).toBeTruthy()
+    expect(il!.payload.load_reason).toBe('startup')
+    expect(il!.payload.memory_type).toBe('project')
+    expect(il!.payload.file_path).toContain('DEEPCODE.md')
   })
 })
 

@@ -1,5 +1,7 @@
 // src/headless.ts
 import crypto from 'node:crypto'
+import os from 'node:os'
+import path from 'node:path'
 import type OpenAI from 'openai'
 import { runLoop } from './loop.js'
 import { allTools } from './tools/index.js'
@@ -8,7 +10,7 @@ import { makeAgentTool } from './tools/agent.js'
 import { makeWebFetchTool } from './tools/webfetch.js'
 import { taskListTool, taskOutputTool, taskStopTool } from './tools/taskTools.js'
 import { installTaskCleanup } from './tasks.js'
-import { buildSystemPrompt } from './prompt.js'
+import { buildSystemPrompt, findMemoryFiles } from './prompt.js'
 import { loadSettings } from './config.js'
 import { runHooks } from './hooks.js'
 import { TodoStore } from './todo.js'
@@ -57,6 +59,15 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     }, settings.hooks)
     if (ss.additionalContext) initMsgs.push({ role: 'user', content: `<hook-context>\n${ss.additionalContext}\n</hook-context>` })
     if (ss.systemMessage) process.stderr.write(ss.systemMessage + '\n')
+    // InstructionsLoaded：记忆文件加载记录（DEEPCODE.md/CLAUDE.md/全局）。fire-and-forget。
+    const home = os.homedir()
+    const globalMem = path.join(home, '.deepcode', 'DEEPCODE.md')
+    for (const f of findMemoryFiles(cwd)) {
+      void runHooks('InstructionsLoaded', {
+        hook_event_name: 'InstructionsLoaded', cwd, session_id: ctx.sessionId?.(),
+        file_path: f, memory_type: f === globalMem ? 'user' : 'project', load_reason: 'startup',
+      }, settings.hooks!).catch(() => {})
+    }
   }
   let promptText = opts.prompt
   if (settings.hooks) {

@@ -329,6 +329,18 @@ export function createChatCore(opts: {
     fireSessionStart('startup')
   }
 
+  // InstructionsLoaded：记忆文件加载记录（DEEPCODE.md/CLAUDE.md/全局）。fire-and-forget。
+  if (settings.hooks) {
+    const home = os.homedir()
+    const globalMem = path.join(home, '.deepcode', 'DEEPCODE.md')
+    for (const f of findMemoryFiles(cwd)) {
+      void runHooks('InstructionsLoaded', {
+        hook_event_name: 'InstructionsLoaded', cwd, session_id: ctx.sessionId?.(),
+        file_path: f, memory_type: f === globalMem ? 'user' : 'project', load_reason: 'startup',
+      }, settings.hooks).catch(() => {})
+    }
+  }
+
   // AskUserQuestion 桥：挂起 Promise + pendingQuestion 状态，UI 用 resolveQuestion 回答
   const questionAsk = (questions: Question[]): Promise<Answer[] | null> =>
     new Promise<Answer[] | null>(res => {
