@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { chatStream } from '../src/api.js'
 
 const script: Array<{ deltas?: any[]; result: any }> = []
 vi.mock('../src/api.js', async orig => ({
@@ -89,5 +90,37 @@ describe('useChat PreCompact/PostCompact hook', () => {
     expect(pre!.payload.trigger).toBe('manual')
     expect(post).toBeTruthy()
     expect(post!.payload.summary).toBe('历史总结')
+  })
+})
+
+describe('useChat SessionStart hook', () => {
+  it('新会话 → SessionStart(source=startup) 触发', async () => {
+    createChatCore({ client: {} as any, yolo: true, cwd: process.cwd(), sessionDir, onState: () => {} })
+    await Promise.resolve() // 等 fire-and-forget 的 .then 微任务落定
+    const ss = hookCalls.find(c => c.event === 'SessionStart')
+    expect(ss).toBeTruthy()
+    expect(ss!.payload.source).toBe('startup')
+  })
+
+  it('--continue 恢复 → SessionStart(source=resume) 触发', async () => {
+    createChatCore({ client: {} as any, yolo: true, cwd: process.cwd(), sessionDir, onState: () => {} })
+    hookCalls.length = 0
+    createChatCore({ client: {} as any, yolo: true, cwd: process.cwd(), continueSession: true, sessionDir, onState: () => {} })
+    await Promise.resolve()
+    const ss = hookCalls.find(c => c.event === 'SessionStart')
+    expect(ss).toBeTruthy()
+    expect(ss!.payload.source).toBe('resume')
+  })
+
+  it('additionalContext → 注入到下一轮发送的 messages', async () => {
+    hookImpl = (event) => event === 'SessionStart'
+      ? { ...emptyOutcome, additionalContext: '项目使用 pnpm' }
+      : emptyOutcome
+    script.push({ result: { content: '答', toolCalls: [], usage, finishReason: 'stop' } })
+    const core = createChatCore({ client: {} as any, yolo: true, cwd: process.cwd(), sessionDir, onState: () => {} })
+    await Promise.resolve()
+    await core.send('你好')
+    const sent = (chatStream as any).mock.calls.at(-1)[1].messages as any[]
+    expect(JSON.stringify(sent)).toContain('项目使用 pnpm')
   })
 })

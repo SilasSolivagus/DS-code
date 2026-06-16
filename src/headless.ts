@@ -49,6 +49,15 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     total.completion_tokens += u.completion_tokens
     total.prompt_cache_hit_tokens += u.prompt_cache_hit_tokens
   }
+  // SessionStart：会话开始（headless 恒 startup）。await 注入 additionalContext 到初始上下文。
+  const initMsgs: any[] = [{ role: 'system', content: buildSystemPrompt(cwd) }]
+  if (settings.hooks) {
+    const ss = await runHooks('SessionStart', {
+      hook_event_name: 'SessionStart', cwd, session_id: ctx.sessionId?.(), source: 'startup',
+    }, settings.hooks)
+    if (ss.additionalContext) initMsgs.push({ role: 'user', content: `<hook-context>\n${ss.additionalContext}\n</hook-context>` })
+    if (ss.systemMessage) process.stderr.write(ss.systemMessage + '\n')
+  }
   let promptText = opts.prompt
   if (settings.hooks) {
     const ups = await runHooks('UserPromptSubmit', {
@@ -59,10 +68,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     }
     if (ups.additionalContext) promptText = `${opts.prompt}\n\n<hook-context>\n${ups.additionalContext}\n</hook-context>`
   }
-  const messages: any[] = [
-    { role: 'system', content: buildSystemPrompt(cwd) },
-    { role: 'user', content: promptText },
-  ]
+  const messages: any[] = [...initMsgs, { role: 'user', content: promptText }]
   const gen = runLoop(messages, {
     client: opts.client,
     tools: [...allTools, todoWriteTool, makeAgentTool({ client: opts.client, onUsage: (u, _model) => addUsage(u), getModel: () => model }), makeWebFetchTool({ client: opts.client, onUsage: (u, _model) => addUsage(u) }), taskListTool, taskOutputTool, taskStopTool],

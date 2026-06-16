@@ -284,16 +284,32 @@ export function createChatCore(opts: {
     return loaded.messages.filter(m => m.role === 'user').length
   }
 
+  // —— SessionStart：会话开始事件。构造同步 → fire-and-forget；additionalContext 缓冲到下一轮 runTurn 起始 flush。 ——
+  let pendingSessionContext: string | null = null
+  const fireSessionStart = (source: 'startup' | 'resume' | 'clear'): void => {
+    if (!settings.hooks) return
+    void runHooks('SessionStart', {
+      hook_event_name: 'SessionStart', cwd, session_id: ctx.sessionId?.(), source,
+    }, settings.hooks).then(out => {
+      if (out.additionalContext) {
+        pendingSessionContext = pendingSessionContext ? `${pendingSessionContext}\n\n${out.additionalContext}` : out.additionalContext
+      }
+      if (out.systemMessage) notice('info', out.systemMessage)
+    }).catch(() => { /* SessionStart hook 失败不影响会话启动 */ })
+  }
+
   // 恢复（--continue）或新建会话
   const sessionDir = opts.sessionDir  // undefined → newSession/listSessions 使用默认路径
   const recovered = opts.continueSession ? listSessions(cwd, sessionDir)[0] : undefined
   if (recovered) {
     const turns = restoreSession(recovered.file)
     notice('info', `已恢复会话（${turns} 轮对话），继续写入 ${recovered.file}`)
+    fireSessionStart('resume')
   } else {
     session = newSession({ cwd, model, thinking, permMode }, sessionDir)
     session.appendMessage(messages[0]) // 持久化 system 消息
     checkpointer = createCheckpointer(checkpointStoreFor(session.file))
+    fireSessionStart('startup')
   }
 
   // AskUserQuestion 桥：挂起 Promise + pendingQuestion 状态，UI 用 resolveQuestion 回答
@@ -372,6 +388,11 @@ export function createChatCore(opts: {
         return
       }
       if (ups.additionalContext) userText = `${userText}\n\n<hook-context>\n${ups.additionalContext}\n</hook-context>`
+    }
+    // SessionStart 注入的上下文（若有）于本轮起始一次性并入用户文本（落在用户消息之前）。
+    if (pendingSessionContext) {
+      userText = `<hook-context>\n${pendingSessionContext}\n</hook-context>\n\n${userText}`
+      pendingSessionContext = null
     }
     busy = true
     turnStartAt = Date.now()
@@ -579,6 +600,7 @@ export function createChatCore(opts: {
       nextTurnId = 1; currentTurnId = 0
       dispatch({ type: 'clear' })
       notice('info', '对话已清空，已开新会话文件（本会话花费累计保留）')
+      fireSessionStart('clear')
       return
     }
     if (line === '/context') {
@@ -686,6 +708,7 @@ export function createChatCore(opts: {
       const turns = restoreSession(file)
       dispatch({ type: 'clear' }) // 换了会话，旧 transcript 不再对应当前 messages
       notice('info', `已恢复会话（${turns} 轮对话）`)
+      fireSessionStart('resume')
     },
     customCommands,
     subscribe: (listener: () => void) => {
