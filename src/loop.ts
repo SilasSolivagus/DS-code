@@ -3,7 +3,7 @@ import type OpenAI from 'openai'
 import { chatStream, type ChatResult, type ToolCall } from './api.js'
 import type { Tool, ToolContext } from './tools/types.js'
 import { toApiTools } from './tools/index.js'
-import { checkPermission, type PermissionContext } from './permissions.js'
+import { checkPermission, type PermissionContext, type PermissionHooks } from './permissions.js'
 import { sanitize } from './text.js'
 import { drainNotifications, formatNotification } from './tasks.js'
 import { runHooks, type HooksConfig } from './hooks.js'
@@ -93,7 +93,14 @@ async function execCall(call: ToolCall, deps: LoopDeps): Promise<{ ok: boolean; 
   }
 
   if (!preAllow) {
-    const perm = await checkPermission(tool, input, deps.permission)
+    const permHooks = deps.hooks ? {
+      onRequest: (name: string, d: string) =>
+        runHooks('PermissionRequest', { hook_event_name: 'PermissionRequest', cwd, tool_name: name, tool_desc: d }, deps.hooks),
+      onDenied: async (name: string, d: string, reason: string) => {
+        await runHooks('PermissionDenied', { hook_event_name: 'PermissionDenied', cwd, tool_name: name, tool_desc: d, reason }, deps.hooks)
+      },
+    } : undefined
+    const perm = await checkPermission(tool, input, deps.permission, permHooks)
     if (!perm.ok) return { ok: false, content: perm.reason, ms: 0 }
   }
 
