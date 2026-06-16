@@ -3,7 +3,7 @@
 // 单向依赖：本模块 import hooks.ts 纯函数 + tasks.ts；hooks.ts 不 import 本模块（经 deps.registerAsync 注入）。
 import type { ChildProcess } from 'node:child_process'
 import { generateTaskId, registerTask, getTask, updateTask, enqueueNotification, type BackgroundTask } from './tasks.js'
-import { isAsyncFirstLine, parseHookStdout, type CommandHook } from './hooks.js'
+import { isAsyncFirstLine, applyHookJson, type CommandHook } from './hooks.js'
 
 const DEFAULT_ASYNC_TIMEOUT_MS = 15000 // 对齐 CC AsyncHookRegistry 默认 15s
 
@@ -17,12 +17,18 @@ export interface RegisterAsyncArgs {
   initialStderr?: string
 }
 
-/** 普通 async 完成输出解析：剥首行 async marker，复用同步 hook 字段映射，
- *  把 additionalContext/systemMessage/blockingError 拼成可注入文本；无内容 → undefined。 */
-export function parseAsyncHookOutput(stdout: string, code: number, stderr: string): string | undefined {
+/** 普通 async 完成输出解析：剥首行 async marker，解析剩余 stdout JSON（**不按退出码门控**，对齐 CC
+ *  checkForAsyncHookResponses），把 additionalContext/systemMessage/(decision:block 时)blockingError
+ *  拼成可注入文本；非 JSON 体 → 原文当上下文；空 → undefined。 */
+export function parseAsyncHookOutput(stdout: string, _code: number, _stderr: string): string | undefined {
   const lines = stdout.split('\n')
   const body = (lines.length && isAsyncFirstLine(lines[0].trim())) ? lines.slice(1).join('\n') : stdout
-  const r = parseHookStdout(body, code, stderr)
+  const trimmed = body.trim()
+  if (!trimmed) return undefined
+  let json: any
+  try { json = JSON.parse(trimmed) } catch { return trimmed } // 非 JSON 体 → 整段当注入上下文
+  if (!json || typeof json !== 'object' || Array.isArray(json)) return trimmed
+  const r = applyHookJson(json, { outcome: 'success', label: '', durationMs: 0 })
   const parts: string[] = []
   if (r.additionalContext) parts.push(r.additionalContext)
   if (r.systemMessage) parts.push(r.systemMessage)
@@ -44,6 +50,7 @@ export function registerAsync(args: RegisterAsyncArgs): void {
     asyncRewake: hook.asyncRewake,
   }
   registerTask(task)
+  // 超时仅 kill；结算由随后的 close 事件触发（settled 守卫去重）。
   const timer = setTimeout(() => { try { child.kill('SIGKILL') } catch { /* 尽力 */ } }, timeoutMs)
   child.stdout?.on('data', (d: Buffer) => { stdout += d.toString() })
   child.stderr?.on('data', (d: Buffer) => { stderr += d.toString() })

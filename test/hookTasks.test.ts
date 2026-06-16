@@ -57,6 +57,26 @@ describe('registerAsync', () => {
     expect(drainNotifications()).toHaveLength(0)
   })
 
+  it('普通 async exit≠0 但有可注入内容 → 任务 failed 且入队', async () => {
+    const child = fakeChild()
+    registerAsync({ child, hook: { type: 'command', command: 'x' }, payload: {}, label: 'x' })
+    emit(child, JSON.stringify({ hookSpecificOutput: { additionalContext: '失败上下文' } }), 1)
+    await flush()
+    expect(listTasks()[0].status).toBe('failed')
+    const notes = drainNotifications()
+    expect(notes).toHaveLength(1)
+    expect(notes[0].result).toBe('失败上下文')
+  })
+
+  it('普通 async exit≠0 且无可注入内容 → 任务 failed 不入队', async () => {
+    const child = fakeChild()
+    registerAsync({ child, hook: { type: 'command', command: 'x' }, payload: {}, label: 'x' })
+    emit(child, '', 1)
+    await flush()
+    expect(listTasks()[0].status).toBe('failed')
+    expect(drainNotifications()).toHaveLength(0)
+  })
+
   it('asyncRewake exit 2 → 入通知队列，result=stderr', async () => {
     const child = fakeChild()
     registerAsync({ child, hook: { type: 'command', command: 'guard', asyncRewake: true }, payload: {}, label: 'guard' })
