@@ -93,6 +93,10 @@ describe('parseHookStdout', () => {
     expect(r.outcome).toBe('blocking')
     expect(r.blockingError).toBe('no')
   })
+  it('exit 0 JSON decision:approve → permissionDecision allow', () => {
+    const r = parseHookStdout(JSON.stringify({ decision: 'approve' }), 0, '')
+    expect(r.permissionDecision).toBe('allow')
+  })
   it('exit 0 JSON continue:false → stop', () => {
     expect(parseHookStdout(JSON.stringify({ continue: false }), 0, '').stop).toBe(true)
   })
@@ -127,6 +131,11 @@ describe('mergeResults', () => {
   it('preventContinuation / stop 任一为真', () => {
     expect(mergeResults([mk({}), mk({ preventContinuation: true })], 'Stop').preventContinuation).toBe(true)
     expect(mergeResults([mk({ stop: true })], 'Stop').stop).toBe(true)
+  })
+  it('一个 hook decision:block(blocking) + 另一个 ask → block 为真且 permission 为 ask', () => {
+    const o = mergeResults([mk({ outcome: 'blocking', blockingError: 'no', preventContinuation: true }), mk({ permissionDecision: 'ask' })], 'PreToolUse')
+    expect(o.block).toBe(true)
+    expect(o.permission).toBe('ask')
   })
 })
 
