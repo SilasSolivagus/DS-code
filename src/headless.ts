@@ -1,4 +1,5 @@
 // src/headless.ts
+import crypto from 'node:crypto'
 import type OpenAI from 'openai'
 import { runLoop } from './loop.js'
 import { allTools } from './tools/index.js'
@@ -30,6 +31,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
   const model = 'deepseek-v4-flash'
   let cwd = process.cwd()
   const todos = new TodoStore()
+  const sessionId = 'headless-' + crypto.randomBytes(4).toString('hex')
   const ctx: ToolContext = {
     cwd: () => cwd,
     setCwd: d => { cwd = d },
@@ -37,6 +39,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     fileState: new Map(),
     todos,
     hookDispatch: (event, payload) => runHooks(event, payload, settings.hooks),
+    sessionId: () => sessionId,
   }
   const total: Usage = { prompt_tokens: 0, completion_tokens: 0, prompt_cache_hit_tokens: 0 }
   let turns = 0

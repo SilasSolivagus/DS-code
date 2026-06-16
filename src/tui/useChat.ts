@@ -23,7 +23,7 @@ import { loadSettings, saveSettings } from '../config.js'
 import { runHooks } from '../hooks.js'
 import { isDangerous, type Decision, type PermissionMode } from '../permissions.js'
 import type { ToolContext } from '../tools/types.js'
-import { newSession, openSession, listSessions, loadSession, type SessionHandle, type UsageRecord } from '../session.js'
+import { newSession, openSession, listSessions, loadSession, sessionIdFromFile, type SessionHandle, type UsageRecord } from '../session.js'
 import { costUSD } from '../pricing.js'
 import { summarize, rebuildMessages } from '../compact.js'
 import { TodoStore } from '../todo.js'
@@ -208,6 +208,7 @@ export function createChatCore(opts: {
     todos,
     recordBeforeImage: (absPath: string) => { if (currentTurnId > 0) checkpointer.capture(absPath, currentTurnId) },
     hookDispatch: (event, payload) => runHooks(event, payload, settings.hooks),
+    sessionId: () => (session ? sessionIdFromFile(session.file) : undefined),
   }
   const messages: any[] = [{ role: 'system', content: buildSystemPrompt(cwd) }]
   const usageLog: UsageRecord[] = []
