@@ -36,6 +36,11 @@ vi.mock('../src/config.js', async orig => {
   }
 })
 
+vi.mock('../src/compact.js', async orig => ({
+  ...(await orig() as any),
+  summarize: vi.fn(async () => ({ summary: '历史总结', usage: { prompt_tokens: 10, completion_tokens: 5, prompt_cache_hit_tokens: 0 }, truncated: false })),
+}))
+
 import { createChatCore } from '../src/tui/useChat.js'
 
 const usage = { prompt_tokens: 10, completion_tokens: 5, prompt_cache_hit_tokens: 0 }
@@ -67,5 +72,22 @@ describe('useChat UserPromptSubmit hook', () => {
     await core.send('泄密内容')
     // 未发起 API：script 未被消费
     expect(script.length).toBe(1)
+  })
+})
+
+describe('useChat PreCompact/PostCompact hook', () => {
+  it('手动 /compact → PreCompact(trigger=manual) 与 PostCompact 依次触发', async () => {
+    // 先发一轮普通消息，让 messages 有内容
+    script.push({ result: { content: '答', toolCalls: [], usage, finishReason: 'stop' } })
+    const core = createChatCore({ client: {} as any, yolo: true, cwd: process.cwd(), sessionDir, onState: () => {} })
+    await core.send('问题')
+    hookCalls.length = 0
+    await core.send('/compact')
+    const pre = hookCalls.find(c => c.event === 'PreCompact')
+    const post = hookCalls.find(c => c.event === 'PostCompact')
+    expect(pre).toBeTruthy()
+    expect(pre!.payload.trigger).toBe('manual')
+    expect(post).toBeTruthy()
+    expect(post!.payload.summary).toBe('历史总结')
   })
 })

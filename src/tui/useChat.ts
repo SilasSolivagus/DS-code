@@ -321,19 +321,31 @@ export function createChatCore(opts: {
   ]
 
   /** compact：总结→重建消息→落盘 compact 记录与新前缀。失败不破坏现场（messages 仅在成功后替换）。 */
-  const doCompact = async (): Promise<void> => {
+  const doCompact = async (trigger: 'auto' | 'manual' = 'auto'): Promise<void> => {
     notice('info', '[compact 总结中…]')
     const ac = new AbortController()
+    if (settings.hooks) {
+      await runHooks('PreCompact', {
+        hook_event_name: 'PreCompact', cwd, trigger, messages_count: messages.length,
+      }, settings.hooks)
+    }
     const { summary, usage: u, truncated } = await summarize(opts.client, messages, ac.signal)
     usageLog.push({ usage: u, model: 'deepseek-v4-flash' })
     session.appendUsage(u, 'deepseek-v4-flash')
     const rebuilt = rebuildMessages(messages, summary)
+    const before = messages.length
     messages.length = 0
     messages.push(...rebuilt)
     session.appendCompact()
     for (const m of messages) session.appendMessage(m)
     compacted = true
     lastPromptTokens = 0
+    if (settings.hooks) {
+      await runHooks('PostCompact', {
+        hook_event_name: 'PostCompact', cwd, trigger, summary, truncated,
+        messages_before: before, messages_after: messages.length,
+      }, settings.hooks)
+    }
     notice('info', 'compact 完成：历史已压缩为总结 + 最近 8 条（fileState 保留）')
     if (truncated) notice('warn', '[compact 警告] 总结被长度截断，信息可能有损')
   }
@@ -460,7 +472,7 @@ export function createChatCore(opts: {
 
     // 自动 compact（落盘之后；busy 保持 true 直到 compact 结束）
     if (lastPromptTokens > settings.compactTokens) {
-      try { await doCompact() } catch (e: any) { notice('error', `[自动 compact 失败，将在下轮重试] ${e?.message ?? e}`) }
+      try { await doCompact('auto') } catch (e: any) { notice('error', `[自动 compact 失败，将在下轮重试] ${e?.message ?? e}`) }
     }
     busy = false
     turnStartAt = null
@@ -549,7 +561,7 @@ export function createChatCore(opts: {
     if (line === '/compact') {
       busy = true
       setState()
-      try { await doCompact() } catch (e: any) { notice('error', `[compact 失败] ${e?.message ?? e}`) }
+      try { await doCompact('manual') } catch (e: any) { notice('error', `[compact 失败] ${e?.message ?? e}`) }
       busy = false
       setState()
       return
