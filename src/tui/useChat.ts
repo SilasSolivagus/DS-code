@@ -347,6 +347,19 @@ export function createChatCore(opts: {
 
   /** 非斜杠输入：边界 reminders → user 消息落盘 → runLoop 驱动 →落盘 + 自动 compact */
   const runTurn = async (displayLine: string, userText: string): Promise<void> => {
+    // UserPromptSubmit hook：用户输入提交前。block/preventContinuation→拦截不发；additionalContext→附到 user 文本。
+    // 守卫与 loop.ts 的 `if (deps.hooks)` 一致：未配 hooks 时不引入额外 await（保持 idle 唤醒时序）。
+    if (settings.hooks) {
+      const ups = await runHooks('UserPromptSubmit', {
+        hook_event_name: 'UserPromptSubmit', cwd, prompt: userText,
+      }, settings.hooks)
+      if (ups.block || ups.preventContinuation) {
+        dispatch({ type: 'push', item: { kind: 'user', text: displayLine } })
+        notice('warn', `输入被 hook 拦截：${ups.blockReason ?? '（无原因）'}`)
+        return
+      }
+      if (ups.additionalContext) userText = `${userText}\n\n<hook-context>\n${ups.additionalContext}\n</hook-context>`
+    }
     busy = true
     turnStartAt = Date.now()
     turnOutTokens = 0
