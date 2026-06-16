@@ -105,6 +105,8 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
               stop_hook_active: subStopFired,
               last_assistant_message: final?.content ?? '',
             })
+            // continue:false（硬停）优先于 block 续跑：即便另一 hook 要续跑，continue:false 也压倒之。
+            if (stopOut.stop) return final?.content
             if (stopOut.preventContinuation && !subStopFired) {
               subStopFired = true
               messages.push({ role: 'user', content: stopOut.blockReason ?? '（SubagentStop 要求继续未尽事项）' })

@@ -537,6 +537,19 @@ describe('runLoop + Stop hook', () => {
     expect(ret).toBe('done')
   })
 
+  it('Stop hook continue:false 与 block 并存 → 硬停优先，不续跑', async () => {
+    // 一个 hook continue:false（stop），一个 decision:block（preventContinuation）；合并后 stop 压倒续跑。
+    // 仅一幕：若硬停失效会续跑→第二次 shift 空 script 抛 exhausted。
+    script.push({ result: { content: 'a', toolCalls: [], usage, finishReason: 'stop' } })
+    const deps = makeDeps([readTool])
+    deps.hooks = { Stop: [{ hooks: [
+      { type: 'command', command: `printf '%s' '{"continue":false}'` },
+      { type: 'command', command: `printf '%s' '{"decision":"block","reason":"想续跑"}'` },
+    ] }] }
+    const { ret } = await drain(runLoop([{ role: 'user', content: 'go' }], deps))
+    expect(ret).toBe('done')
+  })
+
   it('未配置 Stop hook → 正常 done，不续跑', async () => {
     script.push({ result: { content: '完成', toolCalls: [], usage, finishReason: 'stop' } })
     const { ret } = await drain(runLoop([{ role: 'user', content: 'go' }], makeDeps([readTool])))

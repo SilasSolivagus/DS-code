@@ -211,6 +211,8 @@ export async function* runLoop(
           stop_hook_active: stopHookFired,
           last_assistant_message: typeof lastAssistant?.content === 'string' ? lastAssistant.content : '',
         }, deps.hooks)
+        // continue:false（硬停）优先于 block 续跑：即便另一 hook 要续跑，continue:false 也压倒之，直接结束。
+        if (stop.stop) return 'done'
         if (stop.preventContinuation && !stopHookFired) {
           stopHookFired = true
           messages.push({ role: 'user', content: stop.blockReason ?? '（Stop hook 要求继续未尽事项）' })
