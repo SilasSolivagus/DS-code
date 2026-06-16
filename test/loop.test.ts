@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { z } from 'zod'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -424,5 +425,87 @@ describe('runLoop', () => {
     expect(ret).toBe('max_turns')
     // 不无限：调用次数受 maxTurns 约束
     expect((chatStream as any).mock.calls.length).toBe(3)
+  })
+})
+
+// 记录收到入参、固定返回 ORIGINAL 的非只读工具
+function recTool() {
+  const calls: any[] = []
+  const tool = {
+    name: 'Rec', description: 'rec',
+    inputSchema: z.object({ v: z.string() }),
+    isReadOnly: false,
+    needsPermission: () => 'rec-desc',
+    call: async (input: any) => { calls.push(input); return 'ORIGINAL' },
+  }
+  return { tool, calls }
+}
+
+// 驱动一轮 Rec 工具调用 + 收尾；返回回灌的 tool 消息 content。
+async function runOneToolCall(deps: LoopDeps, args = { v: 'orig' }) {
+  script.push(
+    { result: { content: '', toolCalls: [{ id: 't1', name: 'Rec', args: JSON.stringify(args) }], usage, finishReason: 'tool_calls' } },
+    { result: { content: '完', toolCalls: [], usage, finishReason: 'stop' } },
+  )
+  const messages: any[] = [{ role: 'system', content: 's' }, { role: 'user', content: 'go' }]
+  await drain(runLoop(messages, deps))
+  return messages.find(m => m.role === 'tool')?.content as string
+}
+
+describe('execCall + hooks', () => {
+  it('PreToolUse exit 2 → 工具不执行，结果含阻止文案', async () => {
+    const { tool, calls } = recTool()
+    const deps = makeDeps([tool])
+    deps.hooks = { PreToolUse: [{ hooks: [{ type: 'command', command: 'echo 拒绝 1>&2; exit 2' }] }] }
+    const content = await runOneToolCall(deps)
+    expect(calls.length).toBe(0)
+    expect(content).toContain('PreToolUse hook 阻止')
+    expect(content).toContain('拒绝')
+  })
+
+  it('PreToolUse updatedInput 合法 → 工具收到改写后入参', async () => {
+    const { tool, calls } = recTool()
+    const deps = makeDeps([tool])
+    deps.hooks = { PreToolUse: [{ hooks: [{ type: 'command', command: `printf '%s' '{"hookSpecificOutput":{"updatedInput":{"v":"CHANGED"}}}'` }] }] }
+    await runOneToolCall(deps, { v: 'orig' })
+    expect(calls[0].v).toBe('CHANGED')
+  })
+
+  it('PreToolUse updatedInput 不符合 schema → 拒绝执行', async () => {
+    const { tool, calls } = recTool()
+    const deps = makeDeps([tool])
+    deps.hooks = { PreToolUse: [{ hooks: [{ type: 'command', command: `printf '%s' '{"hookSpecificOutput":{"updatedInput":{"v":123}}}'` }] }] }
+    const content = await runOneToolCall(deps)
+    expect(calls.length).toBe(0)
+    expect(content).toContain('不符合工具 schema')
+  })
+
+  it('PreToolUse permission allow → 跳过 ask，工具执行', async () => {
+    const { tool, calls } = recTool()
+    const ask = vi.fn(async () => 'yes' as const)
+    const deps = makeDeps([tool])
+    deps.permission = { mode: 'default', rules: [], saveRule: () => {}, ask }
+    deps.hooks = { PreToolUse: [{ hooks: [{ type: 'command', command: `printf '%s' '{"hookSpecificOutput":{"permissionDecision":"allow"}}'` }] }] }
+    await runOneToolCall(deps)
+    expect(ask).not.toHaveBeenCalled()
+    expect(calls.length).toBe(1)
+  })
+
+  it('PostToolUse updatedOutput → 替换工具结果', async () => {
+    const { tool } = recTool()
+    const deps = makeDeps([tool])
+    deps.hooks = { PostToolUse: [{ hooks: [{ type: 'command', command: `printf '%s' '{"hookSpecificOutput":{"updatedOutput":"REPLACED"}}'` }] }] }
+    const content = await runOneToolCall(deps)
+    expect(content).toBe('REPLACED')
+  })
+
+  it('PostToolUse additionalContext → 追加 <hook-context>', async () => {
+    const { tool } = recTool()
+    const deps = makeDeps([tool])
+    deps.hooks = { PostToolUse: [{ hooks: [{ type: 'command', command: `printf '%s' '{"hookSpecificOutput":{"additionalContext":"NOTE"}}'` }] }] }
+    const content = await runOneToolCall(deps)
+    expect(content).toContain('ORIGINAL')
+    expect(content).toContain('<hook-context>')
+    expect(content).toContain('NOTE')
   })
 })
