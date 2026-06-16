@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events'
 import { mkdtempSync, readFileSync, existsSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { matchesMatcher, matchQueryFor, evalIfCondition, parseHookStdout, mergeResults, runHooks } from '../src/hooks.js'
+import { matchesMatcher, matchQueryFor, evalIfCondition, parseHookStdout, mergeResults, runHooks, substituteArguments, parseHookEvalResult, interpolateEnvVars } from '../src/hooks.js'
 import type { HookResult, HooksConfig } from '../src/hooks.js'
 
 describe('matchesMatcher', () => {
@@ -232,5 +232,99 @@ describe('runHooks 注入 DEEPCODE_ENV_FILE', () => {
     await runHooks('Setup', { hook_event_name: 'Setup', trigger: 'init' }, config, { sessionEnvBase: base })
     expect(existsSync(base)).toBe(true)
     expect(readdirSync(base)).toEqual([])
+  })
+})
+
+describe('substituteArguments', () => {
+  it('$ARGUMENTS → payload JSON；多处都替换', () => {
+    const out = substituteArguments('判断 $ARGUMENTS 是否安全；再看 $ARGUMENTS', { a: 1 })
+    expect(out).toBe('判断 {"a":1} 是否安全；再看 {"a":1}')
+  })
+  it('无占位符 → 追加 ARGUMENTS 段', () => {
+    expect(substituteArguments('请评估', { a: 1 })).toBe('请评估\n\nARGUMENTS: {"a":1}')
+  })
+})
+
+describe('parseHookEvalResult', () => {
+  const base = { outcome: 'success', label: '', durationMs: 0 } as any
+  it('{ok:true} → success', () => {
+    expect(parseHookEvalResult('{"ok":true}', base).outcome).toBe('success')
+  })
+  it('{ok:false,reason} → blocking + preventContinuation + reason', () => {
+    const r = parseHookEvalResult('{"ok":false,"reason":"危险"}', base)
+    expect(r.outcome).toBe('blocking'); expect(r.preventContinuation).toBe(true); expect(r.blockingError).toBe('危险')
+  })
+  it('非 JSON / 缺 ok → non_blocking_error', () => {
+    expect(parseHookEvalResult('not json', base).outcome).toBe('non_blocking_error')
+    expect(parseHookEvalResult('{"x":1}', base).outcome).toBe('non_blocking_error')
+  })
+})
+
+describe('runHooks prompt 类型', () => {
+  it('prompt hook 调 llm，{ok:false} → block；llm 收到含 $ARGUMENTS 替换的 prompt', async () => {
+    const seen: string[] = []
+    const llm = async (p: string) => { seen.push(p); return '{"ok":false,"reason":"判定不通过"}' }
+    const config = { PreToolUse: [{ matcher: '*', hooks: [{ type: 'prompt', prompt: '评估 $ARGUMENTS' }] }] } as any
+    const out = await runHooks('PreToolUse', { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'rm -rf /' } }, config, { llm })
+    expect(out.block).toBe(true)
+    expect(seen[0]).toContain('rm -rf /')
+  })
+  it('未配置 llm → prompt hook 记 non_blocking_error，不 block', async () => {
+    const config = { Stop: [{ hooks: [{ type: 'prompt', prompt: 'x' }] }] } as any
+    const out = await runHooks('Stop', { hook_event_name: 'Stop' }, config, {})
+    expect(out.block).toBe(false)
+    expect(out.results[0].outcome).toBe('non_blocking_error')
+  })
+})
+
+describe('runHooks agent 类型', () => {
+  it('agent hook 调 runAgent；{ok:false} → block；prompt 含 payload', async () => {
+    const seen: string[] = []
+    const runAgent = async (p: string) => { seen.push(p); return '好的\n{"ok":false,"reason":"子代理判定不完整"}'.split('\n').pop()! }
+    const config = { SubagentStop: [{ hooks: [{ type: 'agent', prompt: '核查 $ARGUMENTS' }] }] } as any
+    const out = await runHooks('SubagentStop', { hook_event_name: 'SubagentStop', last_assistant_message: 'done' }, config, { runAgent })
+    expect(out.block).toBe(true)
+    expect(seen[0]).toContain('done')
+  })
+  it('未配置 runAgent → non_blocking_error，不 block', async () => {
+    const config = { SubagentStop: [{ hooks: [{ type: 'agent', prompt: 'x' }] }] } as any
+    const out = await runHooks('SubagentStop', { hook_event_name: 'SubagentStop' }, config, {})
+    expect(out.block).toBe(false)
+    expect(out.results[0].outcome).toBe('non_blocking_error')
+  })
+})
+
+describe('interpolateEnvVars', () => {
+  it('白名单内插值，白名单外→空串；消毒 CRLF/NUL', () => {
+    process.env.DC_HOOK_TOK = 'secret'
+    process.env.DC_HOOK_EVIL = 'a\r\nX-Evil: 1'
+    const allowed = new Set(['DC_HOOK_TOK', 'DC_HOOK_EVIL'])
+    expect(interpolateEnvVars('Bearer $DC_HOOK_TOK', allowed)).toBe('Bearer secret')
+    expect(interpolateEnvVars('Bearer ${DC_HOOK_TOK}', allowed)).toBe('Bearer secret')
+    expect(interpolateEnvVars('$DC_NOT_ALLOWED', new Set())).toBe('')
+    expect(interpolateEnvVars('$DC_HOOK_EVIL', allowed)).toBe('aX-Evil: 1')
+    delete process.env.DC_HOOK_TOK; delete process.env.DC_HOOK_EVIL
+  })
+})
+
+describe('runHooks http 类型', () => {
+  it('POST payload JSON + 插值 header；2xx + decision:block → block', async () => {
+    let captured: any
+    const fakeFetch = (async (url: string, init: any) => { captured = { url, init }; return { status: 200, text: async () => '{"decision":"block","reason":"webhook 拒绝"}' } }) as any
+    const config = { PreToolUse: [{ matcher: '*', hooks: [{ type: 'http', url: 'https://hook.test/x', headers: { 'X-Tok': '$DC_T' } }] }] } as any
+    process.env.DC_T = 'tok1'
+    const out = await runHooks('PreToolUse', { hook_event_name: 'PreToolUse', tool_name: 'Bash' }, config, { fetch: fakeFetch })
+    expect(out.block).toBe(true)
+    expect(captured.url).toBe('https://hook.test/x')
+    expect(captured.init.method).toBe('POST')
+    expect(JSON.parse(captured.init.body).tool_name).toBe('Bash')
+    expect(captured.init.headers['X-Tok']).toBe('') // 未配 allowedEnvVars → 空串
+    delete process.env.DC_T
+  })
+  it('非 2xx → blocking', async () => {
+    const fakeFetch = (async () => ({ status: 500, text: async () => '' })) as any
+    const config = { Stop: [{ hooks: [{ type: 'http', url: 'https://hook.test/y' }] }] } as any
+    const out = await runHooks('Stop', { hook_event_name: 'Stop' }, config, { fetch: fakeFetch })
+    expect(out.results[0].outcome).toBe('blocking')
   })
 })

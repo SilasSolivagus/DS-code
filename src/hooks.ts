@@ -30,7 +30,7 @@ interface HookCommon {
 export interface CommandHook extends HookCommon { type: 'command'; command: string; async?: boolean; asyncRewake?: boolean }
 export interface PromptHook extends HookCommon { type: 'prompt'; prompt: string; model?: string }
 export interface AgentHook extends HookCommon { type: 'agent'; prompt: string; model?: string }
-export interface HttpHook extends HookCommon { type: 'http'; url: string; headers?: Record<string, string> }
+export interface HttpHook extends HookCommon { type: 'http'; url: string; headers?: Record<string, string>; allowedEnvVars?: string[] }
 export type HookCommand = CommandHook | PromptHook | AgentHook | HttpHook
 export interface HookMatcher { matcher?: string; hooks: HookCommand[] }
 export type HooksConfig = Partial<Record<HookEvent, HookMatcher[]>>
@@ -113,6 +113,11 @@ export function parseHookStdout(stdout: string, exitCode: number, stderr: string
   let json: any
   try { json = JSON.parse(trimmed) } catch { return { ...base, additionalContext: trimmed } }
   if (json === null || Array.isArray(json) || typeof json !== 'object') return { ...base, additionalContext: trimmed }
+  return applyHookJson(json, base)
+}
+
+/** 把 hook 输出的 JSON 对象映射到 HookResult 字段（command stdout / http 响应共用）。 */
+export function applyHookJson(json: any, base: HookResult): HookResult {
   const r: HookResult = { ...base }
   if (json.continue === false) r.stop = true
   if (json.decision === 'block') { r.outcome = 'blocking'; r.blockingError = typeof json.reason === 'string' ? json.reason : undefined; r.preventContinuation = true }
@@ -162,6 +167,21 @@ export interface HookEngineDeps {
   spawn?: typeof nodeSpawn
   now?: () => number
   sessionEnvBase?: string
+  /** prompt hook：单轮 LLM 判定。返回模型文本（引擎解析 {ok,reason}）。 */
+  llm?: (prompt: string, model: string | undefined, signal: AbortSignal) => Promise<string>
+  /** agent hook：多轮核查子代理。返回末条 assistant 文本（引擎解析 {ok,reason}）。 */
+  runAgent?: (prompt: string, model: string | undefined, signal: AbortSignal) => Promise<string>
+  /** http hook：默认全局 fetch。 */
+  fetch?: typeof fetch
+}
+
+interface ResolvedHookDeps {
+  spawn: typeof nodeSpawn
+  now: () => number
+  sessionEnvBase: string
+  fetch: typeof fetch
+  llm?: HookEngineDeps['llm']
+  runAgent?: HookEngineDeps['runAgent']
 }
 
 /** 单 command hook：spawn bash -c，payload JSON 写 stdin，超时 SIGKILL，close→parseHookStdout。 */
@@ -190,14 +210,114 @@ function execCommandHook(hook: CommandHook, payload: Record<string, unknown>, sp
   })
 }
 
-/** 单 hook 分派：①a 仅 command；其余类型占位（①c 接）。 */
-async function execOneHook(hook: HookCommand, payload: Record<string, unknown>, deps: Required<HookEngineDeps>, envFilePath?: string): Promise<HookResult> {
+/** $ARGUMENTS → payload JSON；无占位符则追加 ARGUMENTS 段（对齐 CC argumentSubstitution）。 */
+export function substituteArguments(template: string, payload: Record<string, unknown>): string {
+  const json = JSON.stringify(payload)
+  if (template.includes('$ARGUMENTS')) return template.split('$ARGUMENTS').join(json)
+  return `${template}\n\nARGUMENTS: ${json}`
+}
+
+/** prompt/agent hook 的 {ok,reason} 结果解析。ok:true→success；ok:false→blocking(reason)；否则 non_blocking_error。 */
+export function parseHookEvalResult(text: string, base: HookResult): HookResult {
+  let json: any
+  try { json = JSON.parse(text.trim()) } catch { return { ...base, outcome: 'non_blocking_error', blockingError: 'hook 输出无法解析为 JSON {ok,reason}' } }
+  if (!json || typeof json.ok !== 'boolean') return { ...base, outcome: 'non_blocking_error', blockingError: 'hook 输出缺少 boolean ok 字段' }
+  if (json.ok) return { ...base }
+  return { ...base, outcome: 'blocking', blockingError: typeof json.reason === 'string' ? json.reason : 'hook 判定不通过', preventContinuation: true }
+}
+
+const HOOK_EVAL_SYSTEM = `你正在评估 deepcode 的一个 hook。\n你的回复必须是且仅是一个 JSON 对象，匹配下列之一：\n1. 条件满足：{"ok": true}\n2. 条件不满足：{"ok": false, "reason": "未满足的原因"}\n不要输出任何其他文字。`
+
+const evalBase = (): HookResult => ({ outcome: 'success', label: '', durationMs: 0 })
+
+/** 单轮 LLM 判定。无 llm → non_blocking_error。超时→cancelled。 */
+async function execPromptHook(hook: PromptHook, payload: Record<string, unknown>, deps: ResolvedHookDeps): Promise<HookResult> {
+  if (!deps.llm) return { ...evalBase(), outcome: 'non_blocking_error', blockingError: '未配置 llm（prompt hook 不可用）' }
+  const prompt = `${HOOK_EVAL_SYSTEM}\n\n${substituteArguments(hook.prompt, payload)}`
+  const ac = new AbortController()
+  const timer = setTimeout(() => ac.abort(), (hook.timeout ?? 30) * 1000)
+  try {
+    const text = await deps.llm(prompt, hook.model, ac.signal)
+    return parseHookEvalResult(text, evalBase())
+  } catch (e) {
+    if (ac.signal.aborted) return { ...evalBase(), outcome: 'cancelled' }
+    return { ...evalBase(), outcome: 'non_blocking_error', blockingError: String((e as any)?.message ?? e) }
+  } finally { clearTimeout(timer) }
+}
+
+const truncLabel = (s: string): string => (s.length > 60 ? s.slice(0, 60) + '…' : s)
+
+const AGENT_HOOK_SYSTEM = `你正在作为 deepcode 的 agent hook 运行一个核查子代理。完成核查后，你的最后一条消息必须是且仅是一个 JSON 对象：\n- 通过：{"ok": true}\n- 不通过：{"ok": false, "reason": "原因"}\n不要输出任何其他文字。`
+
+/** 多轮核查子代理（复用注入的 runAgent，返回末条文本）。无 runAgent → non_blocking_error。 */
+async function execAgentHook(hook: AgentHook, payload: Record<string, unknown>, deps: ResolvedHookDeps): Promise<HookResult> {
+  if (!deps.runAgent) return { ...evalBase(), outcome: 'non_blocking_error', blockingError: '未配置 runAgent（agent hook 不可用）' }
+  const prompt = `${AGENT_HOOK_SYSTEM}\n\n${substituteArguments(hook.prompt, payload)}`
+  const ac = new AbortController()
+  const timer = setTimeout(() => ac.abort(), (hook.timeout ?? 60) * 1000)
+  try {
+    const text = await deps.runAgent(prompt, hook.model, ac.signal)
+    return parseHookEvalResult(text ?? '', evalBase())
+  } catch (e) {
+    if (ac.signal.aborted) return { ...evalBase(), outcome: 'cancelled' }
+    return { ...evalBase(), outcome: 'non_blocking_error', blockingError: String((e as any)?.message ?? e) }
+  } finally { clearTimeout(timer) }
+}
+
+/** header 值 env 插值（仅白名单内变量），随后消毒去 \r\n\x00（防 CRLF 注入）。对齐 CC。 */
+export function interpolateEnvVars(value: string, allowed: Set<string>): string {
+  const replaced = value.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g, (_m, braced, plain) => {
+    const name = braced ?? plain
+    return allowed.has(name) ? (process.env[name] ?? '') : ''
+  })
+  // eslint-disable-next-line no-control-regex
+  return replaced.replace(/[\r\n\x00]/g, '')
+}
+
+/** webhook：POST payload JSON，响应体按 hook JSON 解析；非 2xx→blocking。 */
+async function execHttpHook(hook: HttpHook, payload: Record<string, unknown>, deps: ResolvedHookDeps): Promise<HookResult> {
+  const allowed = new Set(hook.allowedEnvVars ?? [])
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  for (const [k, v] of Object.entries(hook.headers ?? {})) headers[k] = interpolateEnvVars(v, allowed)
+  const ac = new AbortController()
+  const timer = setTimeout(() => ac.abort(), (hook.timeout ?? 30) * 1000)
+  const base: HookResult = { outcome: 'success', label: '', durationMs: 0 }
+  try {
+    const res = await deps.fetch(hook.url, { method: 'POST', headers, body: JSON.stringify(payload), signal: ac.signal })
+    const bodyText = (await res.text()).trim()
+    let json: any
+    if (bodyText) { try { json = JSON.parse(bodyText) } catch { /* 非 JSON 体 */ } }
+    let r = (json && typeof json === 'object' && !Array.isArray(json)) ? applyHookJson(json, base) : { ...base }
+    if (res.status < 200 || res.status >= 300) {
+      r = { ...r, outcome: 'blocking', preventContinuation: true, blockingError: r.blockingError ?? `HTTP ${res.status}` }
+    }
+    return r
+  } catch (e) {
+    if (ac.signal.aborted) return { ...base, outcome: 'cancelled' }
+    return { ...base, outcome: 'non_blocking_error', blockingError: String((e as any)?.message ?? e) }
+  } finally { clearTimeout(timer) }
+}
+
+/** 单 hook 分派：command/prompt/agent/http 四类型；未知 type → non_blocking_error 兜底。 */
+async function execOneHook(hook: HookCommand, payload: Record<string, unknown>, deps: ResolvedHookDeps, envFilePath?: string): Promise<HookResult> {
   const start = deps.now()
   if (hook.type === 'command') {
     const r = await execCommandHook(hook, payload, deps.spawn, envFilePath)
     return { ...r, label: hook.command, durationMs: deps.now() - start }
   }
-  return { outcome: 'non_blocking_error', label: `(${hook.type} 未支持)`, durationMs: deps.now() - start }
+  if (hook.type === 'prompt') {
+    const r = await execPromptHook(hook, payload, deps)
+    return { ...r, label: truncLabel(hook.prompt), durationMs: deps.now() - start }
+  }
+  if (hook.type === 'agent') {
+    const r = await execAgentHook(hook, payload, deps)
+    return { ...r, label: truncLabel(hook.prompt), durationMs: deps.now() - start }
+  }
+  if (hook.type === 'http') {
+    const r = await execHttpHook(hook, payload, deps)
+    return { ...r, label: hook.url, durationMs: deps.now() - start }
+  }
+  return { outcome: 'non_blocking_error', label: `(${(hook as any).type} 未支持)`, durationMs: deps.now() - start }
 }
 
 /** 引擎入口：选 matcher → 过 if → 并行执行 → 合并。未配置该事件→零开销空结果。 */
@@ -224,10 +344,13 @@ export async function runHooks(
   }
   if (selected.length === 0) return empty
 
-  const full: Required<HookEngineDeps> = {
+  const full: ResolvedHookDeps = {
     spawn: deps.spawn ?? nodeSpawn,
     now: deps.now ?? Date.now,
     sessionEnvBase: deps.sessionEnvBase ?? DEFAULT_SESSION_ENV_BASE,
+    fetch: deps.fetch ?? (globalThis.fetch as typeof fetch),
+    llm: deps.llm,
+    runAgent: deps.runAgent,
   }
 
   // env-file 机制：Setup/SessionStart/CwdChanged/FileChanged 的 command hook 注入 DEEPCODE_ENV_FILE。

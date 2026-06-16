@@ -33,6 +33,8 @@ export interface LoopDeps {
   injectTaskNotifications?: boolean
   /** hooks 生命周期配置（会话启动快照）。仅主会话传入；子代理/webfetch 内部 loop 不传（①a）。 */
   hooks?: HooksConfig
+  /** prompt/agent/http hook 运行时（llm/runAgent/fetch）。仅主会话传入；与 hooks 配对。 */
+  hookDeps?: import('./hooks.js').HookEngineDeps
 }
 
 const CONCURRENCY = 5
@@ -82,7 +84,7 @@ async function execCall(call: ToolCall, deps: LoopDeps): Promise<{ ok: boolean; 
     const pre = await runHooks('PreToolUse', {
       hook_event_name: 'PreToolUse', cwd, tool_name: tool.name, tool_input: input,
       tool_desc: typeof descMaybe === 'string' ? descMaybe : '',
-    }, deps.hooks)
+    }, deps.hooks, deps.hookDeps)
     if (pre.block) return { ok: false, content: `PreToolUse hook 阻止本次调用：${pre.blockReason ?? ''}`, ms: 0 }
     if (pre.updatedInput !== undefined) {
       const re = tool.inputSchema.safeParse(pre.updatedInput)
@@ -95,9 +97,9 @@ async function execCall(call: ToolCall, deps: LoopDeps): Promise<{ ok: boolean; 
   if (!preAllow) {
     const permHooks = deps.hooks ? {
       onRequest: (name: string, d: string) =>
-        runHooks('PermissionRequest', { hook_event_name: 'PermissionRequest', cwd, tool_name: name, tool_desc: d }, deps.hooks),
+        runHooks('PermissionRequest', { hook_event_name: 'PermissionRequest', cwd, tool_name: name, tool_desc: d }, deps.hooks, deps.hookDeps),
       onDenied: async (name: string, d: string, reason: string) => {
-        await runHooks('PermissionDenied', { hook_event_name: 'PermissionDenied', cwd, tool_name: name, tool_desc: d, reason }, deps.hooks)
+        await runHooks('PermissionDenied', { hook_event_name: 'PermissionDenied', cwd, tool_name: name, tool_desc: d, reason }, deps.hooks, deps.hookDeps)
       },
     } : undefined
     const perm = await checkPermission(tool, input, deps.permission, permHooks)
@@ -110,7 +112,7 @@ async function execCall(call: ToolCall, deps: LoopDeps): Promise<{ ok: boolean; 
     if (deps.hooks) {
       const post = await runHooks('PostToolUse', {
         hook_event_name: 'PostToolUse', cwd, tool_name: tool.name, tool_input: input, tool_output: content,
-      }, deps.hooks)
+      }, deps.hooks, deps.hookDeps)
       if (post.updatedOutput !== undefined) content = post.updatedOutput
       if (post.additionalContext) content += `\n\n<hook-context>\n${post.additionalContext}\n</hook-context>`
     }
@@ -120,7 +122,7 @@ async function execCall(call: ToolCall, deps: LoopDeps): Promise<{ ok: boolean; 
     if (deps.hooks) {
       const fail = await runHooks('PostToolUseFailure', {
         hook_event_name: 'PostToolUseFailure', cwd, tool_name: tool.name, tool_input: input, error: content,
-      }, deps.hooks)
+      }, deps.hooks, deps.hookDeps)
       if (fail.additionalContext) content += `\n\n<hook-context>\n${fail.additionalContext}\n</hook-context>`
     }
     return { ok: false, content, ms: Date.now() - t0 }
@@ -166,7 +168,7 @@ export async function* runLoop(
           hook_event_name: 'StopFailure',
           cwd: deps.ctx.cwd(),
           error: (e as any)?.message ?? String(e),
-        }, deps.hooks)
+        }, deps.hooks, deps.hookDeps)
       }
       throw e
     }
@@ -210,7 +212,7 @@ export async function* runLoop(
           // 首次触发时 stopHookFired=false；续跑后重入本路径时已为 true → hook 据此知「本轮系上次续跑触发」（对齐 CC）。
           stop_hook_active: stopHookFired,
           last_assistant_message: typeof lastAssistant?.content === 'string' ? lastAssistant.content : '',
-        }, deps.hooks)
+        }, deps.hooks, deps.hookDeps)
         // continue:false（硬停）优先于 block 续跑：即便另一 hook 要续跑，continue:false 也压倒之，直接结束。
         if (stop.stop) return 'done'
         if (stop.preventContinuation && !stopHookFired) {
