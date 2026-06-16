@@ -144,12 +144,34 @@ export function formatTaskList(tasks: BackgroundTask[]): string {
 
 // ── 退出清理 / 旧日志清理 ───────────────────────────────────────────────
 
-/** 同步 kill 所有 running 后台任务：bash SIGKILL、agent abort。 */
+/** kill 整个进程组。bash 后台进程 spawn 时带 detached:true，其 pid 即进程组 id，
+ *  `process.kill(-pid, …)` 一并干掉 `npm run dev` fork 出的子进程（修孤儿）。
+ *  退化：拿不到 pid（如测试假 child）或进程组已不存在 → 直接 child.kill。
+ *  kill 可注入便于测（不真动系统进程）。 */
+export function killProcessTree(
+  child: ChildProcess | undefined,
+  signal: NodeJS.Signals = 'SIGTERM',
+  kill: (pid: number, sig: NodeJS.Signals) => void = process.kill,
+): void {
+  if (!child) return
+  const pid = child.pid
+  if (pid === undefined) {
+    try { child.kill(signal) } catch { /* 尽力而为 */ }
+    return
+  }
+  try {
+    kill(-pid, signal) // 负 pid = 整个进程组
+  } catch {
+    try { child.kill(signal) } catch { /* 尽力而为 */ }
+  }
+}
+
+/** 同步 kill 所有 running 后台任务：bash 杀整个进程组、agent abort。 */
 function killRunningTasks(): void {
   for (const t of listTasks()) {
     if (t.status !== 'running') continue
     try {
-      if (t.type === 'local_bash') t.child?.kill('SIGKILL')
+      if (t.type === 'local_bash') killProcessTree(t.child, 'SIGKILL')
       else t.abortController?.abort()
     } catch { /* 尽力而为 */ }
   }

@@ -18,6 +18,7 @@ import {
   formatTaskList,
   installTaskCleanup,
   cleanupOldTaskLogs,
+  killProcessTree,
   type BackgroundTask,
   type TaskNotification,
 } from '../src/tasks.js'
@@ -193,6 +194,37 @@ describe('formatTaskList', () => {
 
   it('空列表 → 文案', () => {
     expect(formatTaskList([])).toBe('（无后台任务）')
+  })
+})
+
+describe('killProcessTree', () => {
+  it('有 pid → kill 负 pid（整个进程组），不直接调 child.kill', () => {
+    const kill = vi.fn()
+    const childKill = vi.fn()
+    killProcessTree({ pid: 123, kill: childKill } as any, 'SIGTERM', kill)
+    expect(kill).toHaveBeenCalledWith(-123, 'SIGTERM')
+    expect(childKill).not.toHaveBeenCalled()
+  })
+
+  it('kill 进程组抛错（组已退/无权限）→ 退化为 child.kill', () => {
+    const kill = vi.fn(() => { throw new Error('ESRCH') })
+    const childKill = vi.fn()
+    killProcessTree({ pid: 123, kill: childKill } as any, 'SIGKILL', kill)
+    expect(childKill).toHaveBeenCalledWith('SIGKILL')
+  })
+
+  it('无 pid（如测试假 child）→ 退化为 child.kill，不调进程组 kill', () => {
+    const kill = vi.fn()
+    const childKill = vi.fn()
+    killProcessTree({ kill: childKill } as any, 'SIGTERM', kill)
+    expect(kill).not.toHaveBeenCalled()
+    expect(childKill).toHaveBeenCalledWith('SIGTERM')
+  })
+
+  it('child 为 undefined → no-op', () => {
+    const kill = vi.fn()
+    expect(() => killProcessTree(undefined, 'SIGTERM', kill)).not.toThrow()
+    expect(kill).not.toHaveBeenCalled()
   })
 })
 

@@ -35,7 +35,8 @@ export const bashTool: Tool<typeof schema> = {
       const outputFile = taskOutputPath(id)
       fs.mkdirSync(TASKS_DIR, { recursive: true })
       const ws = fs.createWriteStream(outputFile)
-      const child = spawn('/bin/bash', ['-c', input.command], { cwd: ctx.cwd() })
+      // detached:true → 子进程成进程组长，便于 kill 整组（杀 npm run dev 等 fork 的孙进程，修孤儿）
+      const child = spawn('/bin/bash', ['-c', input.command], { cwd: ctx.cwd(), detached: true })
       // 两路都写同一文件：用 end:false，避免先结束的流提前关闭 ws 截断另一路；exit 时统一 ws.end()
       child.stdout.pipe(ws, { end: false })
       child.stderr.pipe(ws, { end: false })

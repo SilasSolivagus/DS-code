@@ -7,6 +7,7 @@ import {
   getTask,
   updateTask,
   formatTaskList,
+  killProcessTree,
   type TaskStatus,
 } from '../tasks.js'
 
@@ -62,7 +63,7 @@ export const taskStopTool: Tool<typeof stopSchema> = {
     const t = getTask(input.task_id)
     if (!t) return `任务 ${input.task_id} 不存在`
     if (t.status !== 'running') return `任务 ${input.task_id} 非运行中（${t.status}）`
-    if (t.type === 'local_bash') t.child?.kill('SIGTERM')
+    if (t.type === 'local_bash') killProcessTree(t.child, 'SIGTERM')
     else t.abortController?.abort()
     updateTask(t.id, { status: 'killed', notified: true, endTime: Date.now() })
     return `已停止任务 ${input.task_id}`
