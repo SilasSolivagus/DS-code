@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { z } from 'zod'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, existsSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -541,5 +541,18 @@ describe('runLoop + Stop hook', () => {
     script.push({ result: { content: '完成', toolCalls: [], usage, finishReason: 'stop' } })
     const { ret } = await drain(runLoop([{ role: 'user', content: 'go' }], makeDeps([readTool])))
     expect(ret).toBe('done')
+  })
+})
+
+describe('runLoop + StopFailure hook', () => {
+  it('API 抛错（非中断）→ StopFailure hook 触发后继续抛', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'dc-sf-'))
+    const flag = path.join(dir, 'fired.txt')
+    // 不 push script → mock chatStream 抛 'script exhausted'，进 catch（signal 未 abort）
+    const deps = makeDeps([readTool])
+    deps.hooks = { StopFailure: [{ hooks: [{ type: 'command', command: `printf fired > ${flag}` }] }] }
+    await expect(drain(runLoop([{ role: 'user', content: 'go' }], deps))).rejects.toThrow()
+    expect(existsSync(flag)).toBe(true)
+    rmSync(dir, { recursive: true, force: true })
   })
 })

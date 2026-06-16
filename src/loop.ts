@@ -153,6 +153,14 @@ export async function* runLoop(
         sealMessages(messages, '（本轮已被用户中断。）')
         return 'aborted'
       }
+      // StopFailure hook：API 调用异常（非用户中断）。记录/通知用途，await 完成后继续抛（不改变控制流）。
+      if (deps.hooks) {
+        await runHooks('StopFailure', {
+          hook_event_name: 'StopFailure',
+          cwd: deps.ctx.cwd(),
+          error: (e as any)?.message ?? String(e),
+        }, deps.hooks)
+      }
       throw e
     }
 
