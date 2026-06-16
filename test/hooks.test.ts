@@ -25,6 +25,9 @@ describe('matchesMatcher', () => {
   it('非法正则 → false（不抛）', () => {
     expect(matchesMatcher('[invalid(', 'Write')).toBe(false)
   })
+  it('超长 matcher → false（ReDoS 护栏）', () => {
+    expect(matchesMatcher('a'.repeat(201), 'a')).toBe(false)
+  })
 })
 
 describe('matchQueryFor', () => {
@@ -92,6 +95,11 @@ describe('parseHookStdout', () => {
   })
   it('exit 0 JSON continue:false → stop', () => {
     expect(parseHookStdout(JSON.stringify({ continue: false }), 0, '').stop).toBe(true)
+  })
+  it('exit 0 JSON 数组 → 当作 additionalContext，不丢数据', () => {
+    const r = parseHookStdout('["w1","w2"]', 0, '')
+    expect(r.outcome).toBe('success')
+    expect(r.additionalContext).toBe('["w1","w2"]')
   })
 })
 

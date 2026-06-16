@@ -60,6 +60,8 @@ export function matchesMatcher(matcher: string | undefined, query: string): bool
   if (matcher === undefined || matcher === '' || matcher === '*') return true
   if (matcher.includes('|')) return matcher.split('|').map(s => s.trim()).includes(query)
   if (/^[A-Za-z0-9_]+$/.test(matcher)) return matcher === query
+  // matcher 来自本地受信 settings.json（启动快照）；长度护栏防御性兜底超长病态正则（ReDoS）
+  if (matcher.length > 200) return false
   try { return new RegExp(matcher).test(query) } catch { return false }
 }
 
@@ -101,7 +103,7 @@ export function parseHookStdout(stdout: string, exitCode: number, stderr: string
   if (!trimmed) return base
   let json: any
   try { json = JSON.parse(trimmed) } catch { return { ...base, additionalContext: trimmed } }
-  if (json === null || typeof json !== 'object') return { ...base, additionalContext: trimmed }
+  if (json === null || Array.isArray(json) || typeof json !== 'object') return { ...base, additionalContext: trimmed }
   const r: HookResult = { ...base }
   if (json.continue === false) r.stop = true
   if (json.decision === 'block') { r.outcome = 'blocking'; r.blockingError = typeof json.reason === 'string' ? json.reason : undefined; r.preventContinuation = true }
