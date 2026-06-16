@@ -2,6 +2,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
+import { HOOK_EVENTS, type HooksConfig, type HookEvent } from './hooks.js'
 
 export interface Settings {
   permissions: { allow: string[] }
@@ -17,6 +18,8 @@ export interface Settings {
   apiKey?: string
   /** 启动用内联模式（退回非全屏 TUI；env DEEPCODE_INLINE=1 / CLI --inline 优先） */
   inline?: boolean
+  /** hooks 生命周期配置（会话启动快照；见 src/hooks.ts） */
+  hooks?: HooksConfig
 }
 
 const DIR = path.join(os.homedir(), '.deepcode')
@@ -45,7 +48,25 @@ export function loadSettings(): Settings {
     baseURL: raw?.baseURL,
     apiKey: raw?.apiKey,
     inline: raw?.inline,
+    hooks: parseHooksConfig(raw?.hooks),
   }
+}
+
+/** 宽松解析 settings.hooks：只留已知事件键、matcher 为对象数组、hooks 为对象数组的条目。非对象→undefined。 */
+export function parseHooksConfig(raw: unknown): HooksConfig | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const out: HooksConfig = {}
+  const known = new Set<string>(HOOK_EVENTS)
+  for (const [event, matchers] of Object.entries(raw as Record<string, unknown>)) {
+    if (!known.has(event) || !Array.isArray(matchers)) continue
+    const valid = matchers.filter(
+      (m): m is { matcher?: string; hooks: unknown[] } =>
+        !!m && typeof m === 'object' && Array.isArray((m as any).hooks) &&
+        (m as any).hooks.every((h: any) => h && typeof h === 'object' && typeof h.type === 'string'),
+    )
+    if (valid.length) (out as any)[event as HookEvent] = valid
+  }
+  return Object.keys(out).length ? out : undefined
 }
 
 export function saveSettings(s: Settings): void {
