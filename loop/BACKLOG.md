@@ -41,7 +41,7 @@
 |---|---|---|---|---|---|---|
 | ~~L-040~~ | **子代理类型化** ✅ **已合 main** | M | 高 | **merged** | — | 见下「已合并」。L-041/L-020/L-044/L-045 的挂载点已就位 |
 | ~~L-041~~ | **后台任务 + 完成通知** ✅ **已合 main** | L | 高 | **merged** | — | 见下「已合并」。L-043/L-045 的挂载点已就位。~~遗留 follow-up（opus nit）：进程树 kill~~ ✅ **2026-06-16 已修**：bash 后台 spawn `detached:true` + `killProcessTree(child, sig)` 杀整个进程组（`process.kill(-pid)`，无 pid 退化 child.kill），三处 kill 点（spawn/TaskStop/退出清理）统一走它，杀 `npm run dev` fork 的孙进程修孤儿。+4 测试（393 绿） |
-| **L-042** | Hooks 生命周期（全保真对齐 CC，27 事件/4 类型/async/UI） | L | 中 | **doing** | — | **用户钦定全保真、排序做**。spec `docs/specs/2026-06-16-deepcode-hooks-design.md`；子阶段 ①a~①e。当前做 **①a 引擎地基**：plan `docs/plans/2026-06-16-deepcode-l042a-hooks-engine.md`（8 任务，subagent-driven+opus 终审）。是 L-044 底座 |
+| **L-042** | Hooks 生命周期（全保真对齐 CC，27 事件/4 类型/async/UI） | L | 中 | **doing（①a 已合）** | — | **用户钦定全保真、排序做**。spec `docs/specs/2026-06-16-deepcode-hooks-design.md`。**①a 引擎地基 ✅ 已合 main `e560712`**（plan `…l042a…`，436 测试，三门过）。**下一步 ①b**：其余 18 事件 dispatch（Stop/SubagentStop 续跑、SessionStart 写 env、子代理 SubagentStart/Stop、compact/permission/task/notification/cwd 等）。①b 首件先处理终审 I-1（Stop 类读 preventContinuation 而非 block）。再 ①c 三类型→①d async→①e TUI(需冒烟)。是 L-044 底座 |
 | **L-043** | 子代理 steering / 续聊（SendMessage 式注入 + 可恢复） | L | 中-高 | needs-human | L-041 | 当前子代理是一次性纯函数、不可寻址；主 loop 也 busy 拒输入（仅 Esc 全中断）。建在后台任务句柄上 |
 | **L-044** | 结构化输出强约束（子代理结果按 schema 校验回传） | M | 中 | needs-human | L-042 | CC 用 Stop hook + SyntheticOutputTool 强制子代理产出符合 schema 的 JSON。让父代理拿机器可解析结果而非自由文本。服务于 fan-out 聚合 |
 | **L-045** | 多 agent 工作流原语（team/fan-out/pipeline + 任务依赖图） | L | 中（长期高） | needs-human | G1+L-041+L-043 | 编排终态，强依赖前述地基，**最后做** |
