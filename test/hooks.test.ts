@@ -378,6 +378,36 @@ describe('runHooks async', () => {
     expect(o.results[0].outcome).toBe('backgrounded')
   })
 
+  it('配置 async 无显式 timeout → registerAsync 收到 600s（对齐 CC 工具 hook 预算）', async () => {
+    const registerAsync = vi.fn()
+    const spawn = vi.fn(() => fakeChild('', 0))
+    const cfg: HooksConfig = { PreToolUse: [{ hooks: [{ type: 'command', command: 'bg', async: true }] }] }
+    await runHooks('PreToolUse', { tool_name: 'Write' }, cfg, { spawn, registerAsync })
+    expect(registerAsync.mock.calls[0][0].asyncTimeout).toBe(600000)
+  })
+
+  it('配置 async 带显式 timeout=5（秒）→ registerAsync 收到 5000ms', async () => {
+    const registerAsync = vi.fn()
+    const spawn = vi.fn(() => fakeChild('', 0))
+    const cfg: HooksConfig = { PreToolUse: [{ hooks: [{ type: 'command', command: 'bg', async: true, timeout: 5 }] }] }
+    await runHooks('PreToolUse', { tool_name: 'Write' }, cfg, { spawn, registerAsync })
+    expect(registerAsync.mock.calls[0][0].asyncTimeout).toBe(5000)
+  })
+
+  it('stdout marker 无 asyncTimeout → registerAsync 收到 undefined（registerAsync 内部落 15s 默认）', async () => {
+    const registerAsync = vi.fn()
+    const child: any = new EventEmitter()
+    child.stdin = { write: vi.fn(), end: vi.fn() }
+    child.stdout = new EventEmitter()
+    child.stderr = new EventEmitter()
+    child.kill = vi.fn()
+    queueMicrotask(() => child.stdout.emit('data', Buffer.from('{"async":true}\n')))
+    const spawn = vi.fn(() => child)
+    const cfg: HooksConfig = { PreToolUse: [{ hooks: [{ type: 'command', command: 'maybe' }] }] }
+    await runHooks('PreToolUse', { tool_name: 'Write' }, cfg, { spawn, registerAsync })
+    expect(registerAsync.mock.calls[0][0].asyncTimeout).toBeUndefined()
+  })
+
   it('fail-safe：配置 async 但无 registerAsync dep → 同步阻塞执行', async () => {
     const spawn = vi.fn(() => fakeChild(JSON.stringify({ hookSpecificOutput: { additionalContext: 'sync' } }), 0))
     const cfg: HooksConfig = { PreToolUse: [{ hooks: [{ type: 'command', command: 'bg', async: true }] }] }

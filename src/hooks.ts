@@ -248,9 +248,10 @@ function execCommandHook(hook: CommandHook, payload: Record<string, unknown>, de
     child.on('error', onError)
     child.on('close', onClose)
     try { child.stdin?.write(JSON.stringify(payload) + '\n'); child.stdin?.end() } catch { /* 尽力 */ }
-    // 配置级 async/asyncRewake：写完 stdin 立即 handoff（asyncTimeout 来自配置 timeout）。
+    // 配置级 async/asyncRewake：写完 stdin 立即 handoff。无显式 timeout 时取 600s（对齐 CC 工具 hook 预算
+    // TOOL_HOOK_EXECUTION_TIMEOUT_MS）——CC 的 15s 默认仅用于 stdout-marker 路径（见 onData 透传的 undefined）。
     // 同 tick 安全：Node 流 data/close/error 不会在本 tick 同步触发，故此刻 done 必为 false。
-    if (isAsyncConfig && canAsync) handOff(hook.timeout ? hook.timeout * 1000 : undefined)
+    if (isAsyncConfig && canAsync) handOff((hook.timeout ?? 600) * 1000)
   })
 }
 
