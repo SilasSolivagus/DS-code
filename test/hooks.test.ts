@@ -1,6 +1,6 @@
 // test/hooks.test.ts
 import { describe, it, expect, vi } from 'vitest'
-import { matchesMatcher, matchQueryFor, evalIfCondition } from '../src/hooks.js'
+import { matchesMatcher, matchQueryFor, evalIfCondition, parseHookStdout } from '../src/hooks.js'
 
 describe('matchesMatcher', () => {
   it('undefined / 空串 / * → 恒匹配', () => {
@@ -52,5 +52,43 @@ describe('evalIfCondition', () => {
   it('Tool(pat) → 复用 matchRule（:* 前缀）', () => {
     expect(evalIfCondition('Bash(npm test:*)', 'Bash', 'npm test -- foo')).toBe(true)
     expect(evalIfCondition('Bash(npm test:*)', 'Bash', 'rm -rf /')).toBe(false)
+  })
+})
+
+describe('parseHookStdout', () => {
+  it('exit 2 → blocking + preventContinuation + stderr 作 reason', () => {
+    const r = parseHookStdout('', 2, '安全审计失败')
+    expect(r.outcome).toBe('blocking')
+    expect(r.blockingError).toBe('安全审计失败')
+    expect(r.preventContinuation).toBe(true)
+  })
+  it('exit 非 0 非 2 → non_blocking_error', () => {
+    expect(parseHookStdout('', 1, 'boom').outcome).toBe('non_blocking_error')
+  })
+  it('exit 0 空输出 → success', () => {
+    expect(parseHookStdout('', 0, '').outcome).toBe('success')
+  })
+  it('exit 0 非 JSON → success + additionalContext', () => {
+    const r = parseHookStdout('hello world', 0, '')
+    expect(r.outcome).toBe('success')
+    expect(r.additionalContext).toBe('hello world')
+  })
+  it('exit 0 JSON permissionDecision deny', () => {
+    const r = parseHookStdout(JSON.stringify({ hookSpecificOutput: { permissionDecision: 'deny', permissionDecisionReason: '禁止' } }), 0, '')
+    expect(r.permissionDecision).toBe('deny')
+    expect(r.permissionReason).toBe('禁止')
+  })
+  it('exit 0 JSON updatedInput + additionalContext', () => {
+    const r = parseHookStdout(JSON.stringify({ hookSpecificOutput: { updatedInput: { path: '/safe' }, additionalContext: '已改写' } }), 0, '')
+    expect(r.updatedInput).toEqual({ path: '/safe' })
+    expect(r.additionalContext).toBe('已改写')
+  })
+  it('exit 0 JSON decision:block → blocking', () => {
+    const r = parseHookStdout(JSON.stringify({ decision: 'block', reason: 'no' }), 0, '')
+    expect(r.outcome).toBe('blocking')
+    expect(r.blockingError).toBe('no')
+  })
+  it('exit 0 JSON continue:false → stop', () => {
+    expect(parseHookStdout(JSON.stringify({ continue: false }), 0, '').stop).toBe(true)
   })
 })

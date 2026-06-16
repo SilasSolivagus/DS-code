@@ -87,3 +87,34 @@ export function evalIfCondition(ifExpr: string | undefined, toolName: string, de
   if (/^[A-Za-z0-9_]+$/.test(ifExpr)) return ifExpr === toolName
   return matchRule(ifExpr, toolName, desc)
 }
+
+/** 单 hook 的 stdout/exit 解析成 HookResult（label/durationMs 由调用方补）。 */
+export function parseHookStdout(stdout: string, exitCode: number, stderr: string): HookResult {
+  const base: HookResult = { outcome: 'success', label: '', durationMs: 0 }
+  if (exitCode === 2) {
+    return { ...base, outcome: 'blocking', blockingError: (stderr || stdout || '').trim(), preventContinuation: true }
+  }
+  if (exitCode !== 0) {
+    return { ...base, outcome: 'non_blocking_error', blockingError: (stderr || stdout || '').trim() || undefined }
+  }
+  const trimmed = stdout.trim()
+  if (!trimmed) return base
+  let json: any
+  try { json = JSON.parse(trimmed) } catch { return { ...base, additionalContext: trimmed } }
+  if (json === null || typeof json !== 'object') return { ...base, additionalContext: trimmed }
+  const r: HookResult = { ...base }
+  if (json.continue === false) r.stop = true
+  if (json.decision === 'block') { r.outcome = 'blocking'; r.blockingError = typeof json.reason === 'string' ? json.reason : undefined; r.preventContinuation = true }
+  if (json.decision === 'approve') r.permissionDecision = 'allow'
+  if (typeof json.systemMessage === 'string') r.systemMessage = json.systemMessage
+  const hso = json.hookSpecificOutput
+  if (hso && typeof hso === 'object') {
+    if (hso.permissionDecision === 'allow' || hso.permissionDecision === 'deny' || hso.permissionDecision === 'ask') r.permissionDecision = hso.permissionDecision
+    const pr = hso.permissionReason ?? hso.permissionDecisionReason
+    if (typeof pr === 'string') r.permissionReason = pr
+    if ('updatedInput' in hso) r.updatedInput = hso.updatedInput
+    if (typeof hso.updatedOutput === 'string') r.updatedOutput = hso.updatedOutput
+    if (typeof hso.additionalContext === 'string') r.additionalContext = hso.additionalContext
+  }
+  return r
+}
