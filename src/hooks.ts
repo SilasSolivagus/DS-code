@@ -249,6 +249,7 @@ function execCommandHook(hook: CommandHook, payload: Record<string, unknown>, de
     child.on('close', onClose)
     try { child.stdin?.write(JSON.stringify(payload) + '\n'); child.stdin?.end() } catch { /* 尽力 */ }
     // 配置级 async/asyncRewake：写完 stdin 立即 handoff（asyncTimeout 来自配置 timeout）。
+    // 同 tick 安全：Node 流 data/close/error 不会在本 tick 同步触发，故此刻 done 必为 false。
     if (isAsyncConfig && canAsync) handOff(hook.timeout ? hook.timeout * 1000 : undefined)
   })
 }

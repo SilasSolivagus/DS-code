@@ -356,6 +356,28 @@ describe('runHooks async', () => {
     expect(o.results[0].outcome).toBe('backgrounded')
   })
 
+  it('stdout 首行 marker 跨两个 chunk 分片 → 仍正确 handoff', async () => {
+    const registerAsync = vi.fn()
+    const child: any = new EventEmitter()
+    child.stdin = { write: vi.fn(), end: vi.fn() }
+    child.stdout = new EventEmitter()
+    child.stderr = new EventEmitter()
+    child.kill = vi.fn()
+    const spawn = vi.fn(() => child)
+    const cfg: HooksConfig = { PreToolUse: [{ hooks: [{ type: 'command', command: 'maybe' }] }] }
+    const p = runHooks('PreToolUse', { tool_name: 'Write' }, cfg, { spawn, registerAsync })
+    // chunk 1：不完整首行（无闭合括号）→ 不应 handoff
+    await new Promise(r => queueMicrotask(() => r(undefined)))
+    child.stdout.emit('data', Buffer.from('{"async":'))
+    await new Promise(r => setTimeout(r, 0))
+    expect(registerAsync).not.toHaveBeenCalled()
+    // chunk 2：补全首行 → handoff
+    child.stdout.emit('data', Buffer.from('true}\n'))
+    const o = await p
+    expect(registerAsync).toHaveBeenCalledTimes(1)
+    expect(o.results[0].outcome).toBe('backgrounded')
+  })
+
   it('fail-safe：配置 async 但无 registerAsync dep → 同步阻塞执行', async () => {
     const spawn = vi.fn(() => fakeChild(JSON.stringify({ hookSpecificOutput: { additionalContext: 'sync' } }), 0))
     const cfg: HooksConfig = { PreToolUse: [{ hooks: [{ type: 'command', command: 'bg', async: true }] }] }
