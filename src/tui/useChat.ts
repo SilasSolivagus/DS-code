@@ -298,6 +298,14 @@ export function createChatCore(opts: {
     }).catch(() => { /* SessionStart hook 失败不影响会话启动 */ })
   }
 
+  // —— SessionEnd：会话结束事件。fire-and-forget；失败不阻断退出/清空。 ——
+  const fireSessionEnd = (reason: 'clear' | 'exit'): void => {
+    if (!settings.hooks) return
+    void runHooks('SessionEnd', {
+      hook_event_name: 'SessionEnd', cwd, session_id: ctx.sessionId?.(), reason,
+    }, settings.hooks).catch(() => { /* SessionEnd hook 失败不阻断退出/清空 */ })
+  }
+
   // 恢复（--continue）或新建会话
   const sessionDir = opts.sessionDir  // undefined → newSession/listSessions 使用默认路径
   const recovered = opts.continueSession ? listSessions(cwd, sessionDir)[0] : undefined
@@ -589,6 +597,7 @@ export function createChatCore(opts: {
       return
     }
     if (line === '/clear') {
+      fireSessionEnd('clear') // 旧会话结束，先于新会话 SessionStart
       messages.length = 1 // 保留 system
       ctx.fileState.clear()
       todos.reset()
@@ -756,7 +765,7 @@ export function createChatCore(opts: {
         notice('info', `[rewind] 代码：${parts.join('、')}`)
       }
     },
-    dispose: () => { unsubNotification() },
+    dispose: () => { fireSessionEnd('exit'); unsubNotification() },
   }
 }
 

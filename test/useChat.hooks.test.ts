@@ -124,3 +124,29 @@ describe('useChat SessionStart hook', () => {
     expect(JSON.stringify(sent)).toContain('项目使用 pnpm')
   })
 })
+
+describe('useChat SessionEnd hook', () => {
+  it('/clear → SessionEnd(reason=clear) 在新会话 SessionStart 之前触发', async () => {
+    const core = createChatCore({ client: {} as any, yolo: true, cwd: process.cwd(), sessionDir, onState: () => {} })
+    await new Promise(r => setImmediate(r))
+    hookCalls.length = 0
+    await core.send('/clear')
+    await new Promise(r => setImmediate(r))
+    const end = hookCalls.find(c => c.event === 'SessionEnd')
+    const start = hookCalls.find(c => c.event === 'SessionStart')
+    expect(end).toBeTruthy()
+    expect(end!.payload.reason).toBe('clear')
+    expect(start!.payload.source).toBe('clear')
+  })
+
+  it('dispose() → SessionEnd(reason=exit) 触发', async () => {
+    const core = createChatCore({ client: {} as any, yolo: true, cwd: process.cwd(), sessionDir, onState: () => {} })
+    await new Promise(r => setImmediate(r))
+    hookCalls.length = 0
+    core.dispose()
+    await new Promise(r => setImmediate(r))
+    const end = hookCalls.find(c => c.event === 'SessionEnd')
+    expect(end).toBeTruthy()
+    expect(end!.payload.reason).toBe('exit')
+  })
+})
