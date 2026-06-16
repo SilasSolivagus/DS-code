@@ -378,6 +378,13 @@ export function createChatCore(opts: {
   // 权限确认桥：挂起 Promise + pendingAsk 状态，UI 用 resolveAsk 回答
   const ask = (toolName: string, desc: string): Promise<Decision> =>
     new Promise<Decision>(res => {
+      // Notification hook：权限弹窗浮现给用户时通知（桌面通知转发等）。fire-and-forget。
+      if (settings.hooks) {
+        void runHooks('Notification', {
+          hook_event_name: 'Notification', cwd, session_id: ctx.sessionId?.(),
+          notification_type: 'permission', title: 'deepcode 需要确认', message: `${toolName}: ${desc}`,
+        }, settings.hooks).catch(() => {})
+      }
       pendingAsk = { toolName, desc, dangerous: isDangerous(desc), resolve: res }
       setState()
     })

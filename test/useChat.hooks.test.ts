@@ -125,6 +125,22 @@ describe('useChat SessionStart hook', () => {
   })
 })
 
+describe('useChat Notification hook', () => {
+  it('权限弹窗浮现 → Notification(notification_type=permission) 触发', async () => {
+    // 非 yolo：未放行命令触发 ask；脚本让模型调一次 Bash
+    script.push({ result: { content: '', toolCalls: [{ id: 't1', name: 'Bash', args: JSON.stringify({ command: 'echo hi' }) }], usage, finishReason: 'tool_calls' } })
+    const core = createChatCore({ client: {} as any, yolo: false, cwd: process.cwd(), sessionDir, onState: () => {} })
+    await new Promise(r => setImmediate(r))
+    hookCalls.length = 0
+    const p = core.send('跑个命令')
+    await vi.waitFor(() => expect(hookCalls.find(c => c.event === 'Notification')).toBeTruthy())
+    const n = hookCalls.find(c => c.event === 'Notification')!
+    expect(n.payload.notification_type).toBe('permission')
+    core.resolveAsk('no')
+    await p
+  })
+})
+
 describe('useChat SessionEnd hook', () => {
   it('/clear → SessionEnd(reason=clear) 在新会话 SessionStart 之前触发', async () => {
     const core = createChatCore({ client: {} as any, yolo: true, cwd: process.cwd(), sessionDir, onState: () => {} })
