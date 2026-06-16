@@ -6,6 +6,7 @@ import { allTools } from './tools/index.js'
 import { SUB_MODEL } from './tools/constants.js'
 import { subagentPermissionDecision } from './tools/agent.js'
 import type { HookEngineDeps } from './hooks.js'
+import { registerAsync } from './hookTasks.js'
 import type { ToolContext } from './tools/types.js'
 
 // hook 子代理只用只读工具（防写，且无需审批 UI）。
@@ -23,7 +24,7 @@ export function makeHookRuntime(opts: {
   getModel: () => string
   onUsage?: (u: Usage, model: string) => void
   cwd: () => string
-}): Pick<HookEngineDeps, 'llm' | 'runAgent'> {
+}): Pick<HookEngineDeps, 'llm' | 'runAgent' | 'registerAsync'> {
   const llm: HookEngineDeps['llm'] = async (prompt, model, signal) => {
     const gen = chatStream(opts.client, {
       model: resolveModel(model, opts.getModel),
@@ -62,5 +63,5 @@ export function makeHookRuntime(opts: {
     return final?.content ?? ''
   }
 
-  return { llm, runAgent }
+  return { llm, runAgent, registerAsync }
 }
