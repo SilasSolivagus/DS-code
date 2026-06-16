@@ -198,7 +198,7 @@ export function createChatCore(opts: {
   const turnOf = new WeakMap<object, number>()  // user 消息对象 → turnId（跨 compact 存活：rebuildMessages 用 slice 保留引用）
   let checkpointer!: Checkpointer
   const checkpointStoreFor = (sessionFile: string) =>
-    path.join(os.homedir(), '.deepcode', 'checkpoints', path.basename(sessionFile).replace(/\.jsonl$/, ''))
+    path.join(os.homedir(), '.deepcode', 'checkpoints', sessionIdFromFile(sessionFile))
 
   const ctx: ToolContext = {
     cwd: () => cwd,
@@ -647,7 +647,7 @@ export function createChatCore(opts: {
     }
     if (line === '/export' || line.startsWith('/export ')) {
       const arg = line.slice('/export'.length).trim()
-      const base = path.basename(session.file ?? '').replace(/\.jsonl$/, '')
+      const base = sessionIdFromFile(session.file ?? '')
       const defaultName = base ? `deepcode-export-${base}.md` : 'deepcode-export.md'
       const dest = arg ? path.resolve(cwd, arg) : path.resolve(cwd, defaultName)
       const md = exportTranscript(messages, { model, cwd, exportedAt: new Date().toISOString() })
