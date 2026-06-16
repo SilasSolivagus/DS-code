@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events'
 import { mkdtempSync, readFileSync, existsSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { matchesMatcher, matchQueryFor, evalIfCondition, parseHookStdout, mergeResults, runHooks, substituteArguments, parseHookEvalResult, interpolateEnvVars } from '../src/hooks.js'
+import { matchesMatcher, matchQueryFor, evalIfCondition, parseHookStdout, mergeResults, runHooks, substituteArguments, parseHookEvalResult, interpolateEnvVars, isAsyncFirstLine } from '../src/hooks.js'
 import type { HookResult, HooksConfig } from '../src/hooks.js'
 
 describe('matchesMatcher', () => {
@@ -326,5 +326,29 @@ describe('runHooks http 类型', () => {
     const config = { Stop: [{ hooks: [{ type: 'http', url: 'https://hook.test/y' }] }] } as any
     const out = await runHooks('Stop', { hook_event_name: 'Stop' }, config, { fetch: fakeFetch })
     expect(out.results[0].outcome).toBe('blocking')
+  })
+})
+
+describe('isAsyncFirstLine', () => {
+  it('合法 async marker → 解析', () => {
+    expect(isAsyncFirstLine('{"async":true}')).toEqual({ async: true })
+  })
+  it('带 asyncTimeout（ms）', () => {
+    expect(isAsyncFirstLine('{"async":true,"asyncTimeout":5000}')).toEqual({ async: true, asyncTimeout: 5000 })
+  })
+  it('async 非 true → null', () => {
+    expect(isAsyncFirstLine('{"async":false}')).toBeNull()
+  })
+  it('无 async 字段 → null', () => {
+    expect(isAsyncFirstLine('{"foo":1}')).toBeNull()
+  })
+  it('行不完整（无闭合括号）→ null', () => {
+    expect(isAsyncFirstLine('{"async":tru')).toBeNull()
+  })
+  it('非 JSON → null', () => {
+    expect(isAsyncFirstLine('hello world')).toBeNull()
+  })
+  it('asyncTimeout 非数字 → 忽略该字段', () => {
+    expect(isAsyncFirstLine('{"async":true,"asyncTimeout":"x"}')).toEqual({ async: true })
   })
 })

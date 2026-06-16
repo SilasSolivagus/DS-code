@@ -226,6 +226,18 @@ export function parseHookEvalResult(text: string, base: HookResult): HookResult 
   return { ...base, outcome: 'blocking', blockingError: typeof json.reason === 'string' ? json.reason : 'hook 判定不通过', preventContinuation: true }
 }
 
+/** 检测 command hook stdout 首行是否为 async marker `{"async":true,asyncTimeout?}`。
+ *  对齐 CC firstLineOf + includes('}') 判完整；非 async/不完整/非 JSON → null。 */
+export function isAsyncFirstLine(line: string): { async: true; asyncTimeout?: number } | null {
+  if (!line.includes('}')) return null // 行尚不完整（对齐 CC：等更多数据）
+  let json: any
+  try { json = JSON.parse(line.trim()) } catch { return null }
+  if (!json || typeof json !== 'object' || json.async !== true) return null
+  const r: { async: true; asyncTimeout?: number } = { async: true }
+  if (typeof json.asyncTimeout === 'number') r.asyncTimeout = json.asyncTimeout
+  return r
+}
+
 const HOOK_EVAL_SYSTEM = `你正在评估 deepcode 的一个 hook。\n你的回复必须是且仅是一个 JSON 对象，匹配下列之一：\n1. 条件满足：{"ok": true}\n2. 条件不满足：{"ok": false, "reason": "未满足的原因"}\n不要输出任何其他文字。`
 
 const evalBase = (): HookResult => ({ outcome: 'success', label: '', durationMs: 0 })
