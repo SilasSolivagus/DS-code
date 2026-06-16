@@ -276,3 +276,20 @@ describe('runHooks prompt 类型', () => {
     expect(out.results[0].outcome).toBe('non_blocking_error')
   })
 })
+
+describe('runHooks agent 类型', () => {
+  it('agent hook 调 runAgent；{ok:false} → block；prompt 含 payload', async () => {
+    const seen: string[] = []
+    const runAgent = async (p: string) => { seen.push(p); return '好的\n{"ok":false,"reason":"子代理判定不完整"}'.split('\n').pop()! }
+    const config = { SubagentStop: [{ hooks: [{ type: 'agent', prompt: '核查 $ARGUMENTS' }] }] } as any
+    const out = await runHooks('SubagentStop', { hook_event_name: 'SubagentStop', last_assistant_message: 'done' }, config, { runAgent })
+    expect(out.block).toBe(true)
+    expect(seen[0]).toContain('done')
+  })
+  it('未配置 runAgent → non_blocking_error，不 block', async () => {
+    const config = { SubagentStop: [{ hooks: [{ type: 'agent', prompt: 'x' }] }] } as any
+    const out = await runHooks('SubagentStop', { hook_event_name: 'SubagentStop' }, config, {})
+    expect(out.block).toBe(false)
+    expect(out.results[0].outcome).toBe('non_blocking_error')
+  })
+})

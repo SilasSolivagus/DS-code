@@ -247,6 +247,23 @@ async function execPromptHook(hook: PromptHook, payload: Record<string, unknown>
 
 const truncLabel = (s: string): string => (s.length > 60 ? s.slice(0, 60) + '…' : s)
 
+const AGENT_HOOK_SYSTEM = `你正在作为 deepcode 的 agent hook 运行一个核查子代理。完成核查后，你的最后一条消息必须是且仅是一个 JSON 对象：\n- 通过：{"ok": true}\n- 不通过：{"ok": false, "reason": "原因"}\n不要输出任何其他文字。`
+
+/** 多轮核查子代理（复用注入的 runAgent，返回末条文本）。无 runAgent → non_blocking_error。 */
+async function execAgentHook(hook: AgentHook, payload: Record<string, unknown>, deps: ResolvedHookDeps): Promise<HookResult> {
+  if (!deps.runAgent) return { ...evalBase(), outcome: 'non_blocking_error', blockingError: '未配置 runAgent（agent hook 不可用）' }
+  const prompt = `${AGENT_HOOK_SYSTEM}\n\n${substituteArguments(hook.prompt, payload)}`
+  const ac = new AbortController()
+  const timer = setTimeout(() => ac.abort(), (hook.timeout ?? 60) * 1000)
+  try {
+    const text = await deps.runAgent(prompt, hook.model, ac.signal)
+    return parseHookEvalResult(text ?? '', evalBase())
+  } catch (e) {
+    if (ac.signal.aborted) return { ...evalBase(), outcome: 'cancelled' }
+    return { ...evalBase(), outcome: 'non_blocking_error', blockingError: String((e as any)?.message ?? e) }
+  } finally { clearTimeout(timer) }
+}
+
 /** 单 hook 分派：①a 仅 command；其余类型占位（①c 接）。 */
 async function execOneHook(hook: HookCommand, payload: Record<string, unknown>, deps: ResolvedHookDeps, envFilePath?: string): Promise<HookResult> {
   const start = deps.now()
@@ -256,6 +273,10 @@ async function execOneHook(hook: HookCommand, payload: Record<string, unknown>, 
   }
   if (hook.type === 'prompt') {
     const r = await execPromptHook(hook, payload, deps)
+    return { ...r, label: truncLabel(hook.prompt), durationMs: deps.now() - start }
+  }
+  if (hook.type === 'agent') {
+    const r = await execAgentHook(hook, payload, deps)
     return { ...r, label: truncLabel(hook.prompt), durationMs: deps.now() - start }
   }
   return { outcome: 'non_blocking_error', label: `(${hook.type} 未支持)`, durationMs: deps.now() - start }
