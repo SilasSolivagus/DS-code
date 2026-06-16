@@ -166,3 +166,75 @@ describe('Bash run_in_background', () => {
     expect(listTasks().length).toBe(0)
   })
 })
+
+describe('Bash TaskCreated/TaskCompleted hooks', () => {
+  beforeEach(() => {
+    clearAllTasks()
+    drainNotifications()
+    spawnMock.mockReset()
+  })
+
+  it('run_in_background → TaskCreated 立即发，命令结束后 TaskCompleted(completed)', async () => {
+    const child = makeFakeChild()
+    spawnMock.mockReturnValue(child)
+    const events: Array<{ event: string; payload: any }> = []
+    const dispatch = vi.fn(async (event: string, payload: any) => {
+      events.push({ event, payload })
+      return { block: false, preventContinuation: false, stop: false, results: [] }
+    })
+    let cwd = '/tmp'
+    const hookCtx = { cwd: () => cwd, setCwd: (d: string) => { cwd = d }, signal: new AbortController().signal, fileState: new Map(), hookDispatch: dispatch }
+
+    const r = await bashTool.call({ command: 'echo hi', run_in_background: true } as any, hookCtx as any)
+    expect(r).toContain('后台任务已启动')
+    expect(events.find(e => e.event === 'TaskCreated')).toBeTruthy()
+
+    // 触发 exit 完成
+    child.emit('exit', 0)
+
+    expect(events.find(e => e.event === 'TaskCompleted')).toBeTruthy()
+    expect(events.find(e => e.event === 'TaskCompleted')!.payload.status).toBe('completed')
+  })
+
+  it('exit(1) → TaskCompleted(failed)', async () => {
+    const child = makeFakeChild()
+    spawnMock.mockReturnValue(child)
+    const events: Array<{ event: string; payload: any }> = []
+    const dispatch = vi.fn(async (event: string, payload: any) => {
+      events.push({ event, payload })
+      return { block: false, preventContinuation: false, stop: false, results: [] }
+    })
+    let cwd = '/tmp'
+    const hookCtx = { cwd: () => cwd, setCwd: (d: string) => { cwd = d }, signal: new AbortController().signal, fileState: new Map(), hookDispatch: dispatch }
+
+    await bashTool.call({ command: 'false', run_in_background: true } as any, hookCtx as any)
+    child.emit('exit', 1)
+
+    expect(events.find(e => e.event === 'TaskCompleted')!.payload.status).toBe('failed')
+  })
+
+  it('已 killed → TaskCompleted(killed)', async () => {
+    const { updateTask } = await import('../src/tasks.js')
+    const child = makeFakeChild()
+    spawnMock.mockReturnValue(child)
+    const events: Array<{ event: string; payload: any }> = []
+    const dispatch = vi.fn(async (event: string, payload: any) => {
+      events.push({ event, payload })
+      return { block: false, preventContinuation: false, stop: false, results: [] }
+    })
+    let cwd = '/tmp'
+    const hookCtx = { cwd: () => cwd, setCwd: (d: string) => { cwd = d }, signal: new AbortController().signal, fileState: new Map(), hookDispatch: dispatch }
+
+    await bashTool.call({ command: 'sleep 30', run_in_background: true } as any, hookCtx as any)
+    const id = listTasks()[0].id
+    updateTask(id, { status: 'killed', notified: true })
+    child.emit('exit', 143)
+
+    expect(events.find(e => e.event === 'TaskCompleted')!.payload.status).toBe('killed')
+  })
+
+  it('无 hookDispatch（子代理 ctx）run_in_background 降级前台、不崩', async () => {
+    const subCtx = { ...makeCtx('/tmp'), isSubagent: true }
+    await expect(bashTool.call({ command: 'echo x', run_in_background: true } as any, subCtx as any)).resolves.toBeTruthy()
+  })
+})

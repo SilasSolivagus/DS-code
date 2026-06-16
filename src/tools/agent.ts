@@ -129,6 +129,7 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
           abortController: ac, outputFile, outputOffset: 0, notified: false,
           startTime: Date.now(),
         })
+        ctx.hookDispatch?.('TaskCreated', { hook_event_name: 'TaskCreated', task_id: id, task_description: input.description }).catch(() => {})
         void (async () => {
           await acquire() // 在脱钩 async 内等许可：句柄立即返回、不阻塞主 loop 只读批
           try {
@@ -145,6 +146,7 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
             updateTask(id, { status: ac.signal.aborted ? 'killed' : 'failed', endTime: Date.now() })
           } finally {
             enqueueNotification(getTask(id)!)
+            ctx.hookDispatch?.('TaskCompleted', { hook_event_name: 'TaskCompleted', task_id: id, status: getTask(id)!.status }).catch(() => {})
             release()
           }
         })()

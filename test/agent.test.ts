@@ -244,6 +244,60 @@ describe('Agent 后台化（run_in_background）', () => {
     expect(getTask(id)!.status).toBe('killed')
   })
 
+  it('run_in_background → TaskCreated 立即发，后台跑完后 TaskCompleted(completed)', async () => {
+    script.push({ result: { content: '后台完成', toolCalls: [], usage, finishReason: 'stop' } })
+    const events: Array<{ event: string; payload: any }> = []
+    const dispatch = vi.fn(async (event: string, payload: any) => {
+      events.push({ event, payload })
+      return emptyOutcome
+    })
+    const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
+    const out = await tool.call({ description: '后台钩子测试', prompt: 'p', run_in_background: true }, ctxWithHook(dispatch))
+    expect(out).toContain('后台子代理已启动')
+    expect(events.find(e => e.event === 'TaskCreated')).toBeTruthy()
+    const id = out.match(/id=(a[0-9a-z]{8})/)![1]
+    await waitForDone(id)
+    expect(events.find(e => e.event === 'TaskCompleted')).toBeTruthy()
+    expect(events.find(e => e.event === 'TaskCompleted')!.payload.status).toBe('completed')
+  })
+
+  it('后台子代理抛错 → TaskCompleted(failed)', async () => {
+    // 空脚本 → chatStream 抛错 → failed
+    const events: Array<{ event: string; payload: any }> = []
+    const dispatch = vi.fn(async (event: string, payload: any) => {
+      events.push({ event, payload })
+      return emptyOutcome
+    })
+    const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
+    const out = await tool.call({ description: '后台失败', prompt: 'p', run_in_background: true }, ctxWithHook(dispatch))
+    const id = out.match(/id=(a[0-9a-z]{8})/)![1]
+    await waitForDone(id)
+    expect(events.find(e => e.event === 'TaskCompleted')!.payload.status).toBe('failed')
+  })
+
+  it('后台子代理 abort → TaskCompleted(killed)', async () => {
+    const events: Array<{ event: string; payload: any }> = []
+    const dispatch = vi.fn(async (event: string, payload: any) => {
+      events.push({ event, payload })
+      return emptyOutcome
+    })
+    const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
+    const out = await tool.call({ description: '后台中止', prompt: 'p', run_in_background: true }, ctxWithHook(dispatch))
+    const id = out.match(/id=(a[0-9a-z]{8})/)![1]
+    getTask(id)!.abortController!.abort()
+    await waitForDone(id)
+    expect(events.find(e => e.event === 'TaskCompleted')!.payload.status).toBe('killed')
+  })
+
+  it('无 hookDispatch 的 ctx → 后台运行不崩', async () => {
+    script.push({ result: { content: '无钩正常', toolCalls: [], usage, finishReason: 'stop' } })
+    const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
+    const out = await tool.call({ description: 'x', prompt: 'p', run_in_background: true }, ctx())
+    const id = out.match(/id=(a[0-9a-z]{8})/)![1]
+    await waitForDone(id)
+    expect(getTask(id)!.status).toBe('completed')
+  })
+
   it('信号量不泄漏：多个后台任务串行跑完不卡', async () => {
     script.push(
       { result: { content: 'r1', toolCalls: [], usage, finishReason: 'stop' } },
