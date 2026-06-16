@@ -34,6 +34,7 @@ vi.mock('../src/config.js', async orig => {
   return {
     ...actual,
     loadSettings: () => ({ ...actual.loadSettings(), hooks: { UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'true' }] }] } }),
+    saveSettings: vi.fn(),
   }
 })
 
@@ -164,5 +165,23 @@ describe('useChat SessionEnd hook', () => {
     const end = hookCalls.find(c => c.event === 'SessionEnd')
     expect(end).toBeTruthy()
     expect(end!.payload.reason).toBe('exit')
+  })
+})
+
+describe('useChat ConfigChange hook', () => {
+  it('权限确认选"始终允许" → saveRule → ConfigChange(source=permissions) 触发', async () => {
+    script.push({ result: { content: '', toolCalls: [{ id: 't1', name: 'Bash', args: JSON.stringify({ command: 'echo hi' }) }], usage, finishReason: 'tool_calls' } })
+    // saveRule 放行后命令执行，loop 继续下一轮模型收尾
+    script.push({ result: { content: '完成', toolCalls: [], usage, finishReason: 'stop' } })
+    const core = createChatCore({ client: {} as any, yolo: false, cwd: process.cwd(), sessionDir, onState: () => {} })
+    await new Promise(r => setImmediate(r))
+    hookCalls.length = 0
+    const p = core.send('跑个命令')
+    await vi.waitFor(() => expect(core.state.pendingAsk).toBeTruthy())
+    core.resolveAsk('always') // Decision='always' 触发 saveRule → ConfigChange
+    await p
+    const cc = hookCalls.find(c => c.event === 'ConfigChange')
+    expect(cc).toBeTruthy()
+    expect(cc!.payload.source).toBe('permissions')
   })
 })

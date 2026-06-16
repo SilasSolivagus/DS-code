@@ -19,7 +19,7 @@ import { taskListTool, taskOutputTool, taskStopTool } from '../tools/taskTools.j
 import { onNotification, drainNotifications, formatNotification } from '../tasks.js'
 import { buildSystemPrompt, findMemoryFiles } from '../prompt.js'
 import { formatMemory } from '../memory.js'
-import { loadSettings, saveSettings } from '../config.js'
+import { loadSettings, saveSettings, SETTINGS_FILE } from '../config.js'
 import { runHooks } from '../hooks.js'
 import { isDangerous, type Decision, type PermissionMode } from '../permissions.js'
 import type { ToolContext } from '../tools/types.js'
@@ -306,6 +306,15 @@ export function createChatCore(opts: {
     }, settings.hooks).catch(() => { /* SessionEnd hook 失败不阻断退出/清空 */ })
   }
 
+  // —— ConfigChange：会话内配置（权限规则）变更事件。fire-and-forget；失败不阻断保存。 ——
+  const fireConfigChange = (): void => {
+    if (!settings.hooks) return
+    void runHooks('ConfigChange', {
+      hook_event_name: 'ConfigChange', cwd, session_id: ctx.sessionId?.(),
+      source: 'permissions', file_path: SETTINGS_FILE,
+    }, settings.hooks).catch(() => { /* ConfigChange hook 失败不阻断保存 */ })
+  }
+
   // 恢复（--continue）或新建会话
   const sessionDir = opts.sessionDir  // undefined → newSession/listSessions 使用默认路径
   const recovered = opts.continueSession ? listSessions(cwd, sessionDir)[0] : undefined
@@ -452,7 +461,7 @@ export function createChatCore(opts: {
         permission: {
           mode: permMode,
           rules: settings.permissions.allow,
-          saveRule: r => { settings.permissions.allow.push(r); saveSettings(settings) },
+          saveRule: r => { settings.permissions.allow.push(r); saveSettings(settings); fireConfigChange() },
           ask,
         },
         reminders: () => {
@@ -665,6 +674,7 @@ export function createChatCore(opts: {
         if (settings.permissions.allow[i] !== undefined) {
           notice('info', `已删除：${settings.permissions.allow.splice(i, 1)[0]}`)
           saveSettings(settings)
+          fireConfigChange()
         } else notice('warn', '编号无效')
       } else if (settings.permissions.allow.length) {
         notice('info', settings.permissions.allow.map((r, i) => `  ${i + 1}. ${r}`).join('\n') + '\n（/permissions rm <编号> 删除对应规则）')

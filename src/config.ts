@@ -25,6 +25,9 @@ export interface Settings {
 const DIR = path.join(os.homedir(), '.deepcode')
 const FILE = path.join(DIR, 'settings.json')
 
+/** settings.json 绝对路径（ConfigChange 等 payload 的 file_path）。 */
+export const SETTINGS_FILE = FILE
+
 /** 后台任务输出落盘目录（~/.deepcode/tasks） */
 export const TASKS_DIR = path.join(os.homedir(), '.deepcode', 'tasks')
 
