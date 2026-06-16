@@ -426,6 +426,24 @@ describe('runLoop', () => {
     // 不无限：调用次数受 maxTurns 约束
     expect((chatStream as any).mock.calls.length).toBe(3)
   })
+
+  it('PreToolUse 配 prompt hook：经 loop 触达 hookDeps.llm，{ok:false} 阻断工具', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'dc-hook-'))
+    const f = path.join(dir, 'a.txt'); writeFileSync(f, 'x')
+    let called = false
+    script.push(
+      { result: { content: '', toolCalls: [{ id: 't1', name: 'Read', args: JSON.stringify({ file_path: f }) }], usage, finishReason: 'tool_calls' } },
+      { result: { content: '好的', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    const deps = makeDeps([readTool])
+    deps.hooks = { PreToolUse: [{ matcher: '*', hooks: [{ type: 'prompt', prompt: '评估 $ARGUMENTS' }] }] } as any
+    deps.hookDeps = { llm: async () => { called = true; return '{"ok":false,"reason":"judge 拒绝"}' } }
+    const messages: any[] = [{ role: 'system', content: 's' }, { role: 'user', content: '读' }]
+    await drain(runLoop(messages, deps))
+    expect(called).toBe(true)
+    const toolMsg = messages.find(m => m.role === 'tool')
+    expect(toolMsg.content).toContain('PreToolUse hook 阻止')
+  })
 })
 
 // 记录收到入参、固定返回 ORIGINAL 的非只读工具

@@ -13,6 +13,7 @@ import { installTaskCleanup } from './tasks.js'
 import { buildSystemPrompt, findMemoryFiles } from './prompt.js'
 import { loadSettings } from './config.js'
 import { runHooks } from './hooks.js'
+import { makeHookRuntime } from './hookRuntime.js'
 import { TodoStore } from './todo.js'
 import { costUSD } from './pricing.js'
 import type { ToolContext } from './tools/types.js'
@@ -40,7 +41,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     signal: new AbortController().signal,
     fileState: new Map(),
     todos,
-    hookDispatch: (event, payload) => runHooks(event, payload, settings.hooks),
+    hookDispatch: (event, payload) => runHooks(event, payload, settings.hooks), // overwritten below after hookDeps is built
     sessionId: () => sessionId,
   }
   const total: Usage = { prompt_tokens: 0, completion_tokens: 0, prompt_cache_hit_tokens: 0 }
@@ -51,12 +52,14 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     total.completion_tokens += u.completion_tokens
     total.prompt_cache_hit_tokens += u.prompt_cache_hit_tokens
   }
+  const hookDeps = makeHookRuntime({ client: opts.client, getModel: () => model, onUsage: (u, _m) => addUsage(u), cwd: () => cwd })
+  ctx.hookDispatch = (event, payload) => runHooks(event, payload, settings.hooks, hookDeps)
   // SessionStart：会话开始（headless 恒 startup）。await 注入 additionalContext 到初始上下文。
   const initMsgs: any[] = [{ role: 'system', content: buildSystemPrompt(cwd) }]
   if (settings.hooks) {
     const ss = await runHooks('SessionStart', {
       hook_event_name: 'SessionStart', cwd, session_id: ctx.sessionId?.(), source: 'startup',
-    }, settings.hooks)
+    }, settings.hooks, hookDeps)
     if (ss.additionalContext) initMsgs.push({ role: 'user', content: `<hook-context>\n${ss.additionalContext}\n</hook-context>` })
     if (ss.systemMessage) process.stderr.write(ss.systemMessage + '\n')
     // InstructionsLoaded：记忆文件加载记录（DEEPCODE.md/CLAUDE.md/全局）。fire-and-forget。
@@ -66,14 +69,14 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
       void runHooks('InstructionsLoaded', {
         hook_event_name: 'InstructionsLoaded', cwd, session_id: ctx.sessionId?.(),
         file_path: f, memory_type: f === globalMem ? 'user' : 'project', load_reason: 'startup',
-      }, settings.hooks!).catch(() => {})
+      }, settings.hooks!, hookDeps).catch(() => {})
     }
   }
   let promptText = opts.prompt
   if (settings.hooks) {
     const ups = await runHooks('UserPromptSubmit', {
       hook_event_name: 'UserPromptSubmit', cwd, prompt: opts.prompt,
-    }, settings.hooks)
+    }, settings.hooks, hookDeps)
     if (ups.block || ups.preventContinuation) {
       return { text: `输入被 hook 拦截：${ups.blockReason ?? ''}`, status: 'aborted', turns: 0, usage: total, costUSD: 0 }
     }
@@ -99,6 +102,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     },
     injectTaskNotifications: true, // 运行中完成的后台任务在终止点注入续跑（单发模式无空闲订阅）
     hooks: settings.hooks,
+    hookDeps,
   })
   let step
   while (!(step = await gen.next()).done) {

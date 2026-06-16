@@ -21,6 +21,7 @@ import { buildSystemPrompt, findMemoryFiles } from '../prompt.js'
 import { formatMemory } from '../memory.js'
 import { loadSettings, saveSettings, SETTINGS_FILE } from '../config.js'
 import { runHooks } from '../hooks.js'
+import { makeHookRuntime } from '../hookRuntime.js'
 import { isDangerous, type Decision, type PermissionMode } from '../permissions.js'
 import type { ToolContext } from '../tools/types.js'
 import { newSession, openSession, listSessions, loadSession, sessionIdFromFile, type SessionHandle, type UsageRecord } from '../session.js'
@@ -207,12 +208,18 @@ export function createChatCore(opts: {
     fileState: new Map(),
     todos,
     recordBeforeImage: (absPath: string) => { if (currentTurnId > 0) checkpointer.capture(absPath, currentTurnId) },
-    hookDispatch: (event, payload) => runHooks(event, payload, settings.hooks),
+    hookDispatch: (event, payload) => runHooks(event, payload, settings.hooks, hookDeps),
     sessionId: () => (session ? sessionIdFromFile(session.file) : undefined),
   }
   const messages: any[] = [{ role: 'system', content: buildSystemPrompt(cwd) }]
   const usageLog: UsageRecord[] = []
   let session!: SessionHandle
+  const hookDeps = makeHookRuntime({
+    client: opts.client,
+    getModel: () => model,
+    onUsage: (u, m) => { usageLog.push({ usage: u, model: m }); session.appendUsage(u, m) },
+    cwd: () => cwd,
+  })
   let compacted = false       // compact 后首条用户消息的一次性提醒
   let lastPromptTokens = 0    // 自动 compact 触发依据
   let costWarned = false      // $阈值提醒只发一次
@@ -290,7 +297,7 @@ export function createChatCore(opts: {
     if (!settings.hooks) return
     void runHooks('SessionStart', {
       hook_event_name: 'SessionStart', cwd, session_id: ctx.sessionId?.(), source,
-    }, settings.hooks).then(out => {
+    }, settings.hooks, hookDeps).then(out => {
       if (out.additionalContext) {
         pendingSessionContext = pendingSessionContext ? `${pendingSessionContext}\n\n${out.additionalContext}` : out.additionalContext
       }
@@ -303,7 +310,7 @@ export function createChatCore(opts: {
     if (!settings.hooks) return
     void runHooks('SessionEnd', {
       hook_event_name: 'SessionEnd', cwd, session_id: ctx.sessionId?.(), reason,
-    }, settings.hooks).catch(() => { /* SessionEnd hook 失败不阻断退出/清空 */ })
+    }, settings.hooks, hookDeps).catch(() => { /* SessionEnd hook 失败不阻断退出/清空 */ })
   }
 
   // —— ConfigChange：会话内配置（权限规则）变更事件。fire-and-forget；失败不阻断保存。 ——
@@ -312,7 +319,7 @@ export function createChatCore(opts: {
     void runHooks('ConfigChange', {
       hook_event_name: 'ConfigChange', cwd, session_id: ctx.sessionId?.(),
       source: 'permissions', file_path: SETTINGS_FILE,
-    }, settings.hooks).catch(() => { /* ConfigChange hook 失败不阻断保存 */ })
+    }, settings.hooks, hookDeps).catch(() => { /* ConfigChange hook 失败不阻断保存 */ })
   }
 
   // 恢复（--continue）或新建会话
@@ -337,7 +344,7 @@ export function createChatCore(opts: {
       void runHooks('InstructionsLoaded', {
         hook_event_name: 'InstructionsLoaded', cwd, session_id: ctx.sessionId?.(),
         file_path: f, memory_type: f === globalMem ? 'user' : 'project', load_reason: 'startup',
-      }, settings.hooks).catch(() => {})
+      }, settings.hooks, hookDeps).catch(() => {})
     }
   }
 
@@ -373,7 +380,7 @@ export function createChatCore(opts: {
     if (settings.hooks) {
       await runHooks('PreCompact', {
         hook_event_name: 'PreCompact', cwd, trigger, messages_count: messages.length,
-      }, settings.hooks)
+      }, settings.hooks, hookDeps)
     }
     const { summary, usage: u, truncated } = await summarize(opts.client, messages, ac.signal)
     usageLog.push({ usage: u, model: 'deepseek-v4-flash' })
@@ -390,7 +397,7 @@ export function createChatCore(opts: {
       await runHooks('PostCompact', {
         hook_event_name: 'PostCompact', cwd, trigger, summary, truncated,
         messages_before: before, messages_after: messages.length,
-      }, settings.hooks)
+      }, settings.hooks, hookDeps)
     }
     notice('info', 'compact 完成：历史已压缩为总结 + 最近 8 条（fileState 保留）')
     if (truncated) notice('warn', '[compact 警告] 总结被长度截断，信息可能有损')
@@ -404,7 +411,7 @@ export function createChatCore(opts: {
         void runHooks('Notification', {
           hook_event_name: 'Notification', cwd, session_id: ctx.sessionId?.(),
           notification_type: 'permission', title: 'deepcode 需要确认', message: `${toolName}: ${desc}`,
-        }, settings.hooks).catch(() => {})
+        }, settings.hooks, hookDeps).catch(() => {})
       }
       pendingAsk = { toolName, desc, dangerous: isDangerous(desc), resolve: res }
       setState()
@@ -417,7 +424,7 @@ export function createChatCore(opts: {
     if (settings.hooks) {
       const ups = await runHooks('UserPromptSubmit', {
         hook_event_name: 'UserPromptSubmit', cwd, prompt: userText,
-      }, settings.hooks)
+      }, settings.hooks, hookDeps)
       if (ups.block || ups.preventContinuation) {
         dispatch({ type: 'push', item: { kind: 'user', text: displayLine } })
         notice('warn', `输入被 hook 拦截：${ups.blockReason ?? '（无原因）'}`)
@@ -483,6 +490,7 @@ export function createChatCore(opts: {
         },
         injectTaskNotifications: true, // 主会话：runLoop 终止点 drain 后台完成通知续跑
         hooks: settings.hooks,
+        hookDeps,
       }
       const gen = runLoop(messages, deps)
       let firstDeltaAt: number | null = null // 本 turn 首个流式分片时间戳（tok/s 计算）
