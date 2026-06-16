@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events'
 import { mkdtempSync, readFileSync, existsSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { matchesMatcher, matchQueryFor, evalIfCondition, parseHookStdout, mergeResults, runHooks } from '../src/hooks.js'
+import { matchesMatcher, matchQueryFor, evalIfCondition, parseHookStdout, mergeResults, runHooks, substituteArguments, parseHookEvalResult } from '../src/hooks.js'
 import type { HookResult, HooksConfig } from '../src/hooks.js'
 
 describe('matchesMatcher', () => {
@@ -232,5 +232,47 @@ describe('runHooks 注入 DEEPCODE_ENV_FILE', () => {
     await runHooks('Setup', { hook_event_name: 'Setup', trigger: 'init' }, config, { sessionEnvBase: base })
     expect(existsSync(base)).toBe(true)
     expect(readdirSync(base)).toEqual([])
+  })
+})
+
+describe('substituteArguments', () => {
+  it('$ARGUMENTS → payload JSON；多处都替换', () => {
+    const out = substituteArguments('判断 $ARGUMENTS 是否安全；再看 $ARGUMENTS', { a: 1 })
+    expect(out).toBe('判断 {"a":1} 是否安全；再看 {"a":1}')
+  })
+  it('无占位符 → 追加 ARGUMENTS 段', () => {
+    expect(substituteArguments('请评估', { a: 1 })).toBe('请评估\n\nARGUMENTS: {"a":1}')
+  })
+})
+
+describe('parseHookEvalResult', () => {
+  const base = { outcome: 'success', label: '', durationMs: 0 } as any
+  it('{ok:true} → success', () => {
+    expect(parseHookEvalResult('{"ok":true}', base).outcome).toBe('success')
+  })
+  it('{ok:false,reason} → blocking + preventContinuation + reason', () => {
+    const r = parseHookEvalResult('{"ok":false,"reason":"危险"}', base)
+    expect(r.outcome).toBe('blocking'); expect(r.preventContinuation).toBe(true); expect(r.blockingError).toBe('危险')
+  })
+  it('非 JSON / 缺 ok → non_blocking_error', () => {
+    expect(parseHookEvalResult('not json', base).outcome).toBe('non_blocking_error')
+    expect(parseHookEvalResult('{"x":1}', base).outcome).toBe('non_blocking_error')
+  })
+})
+
+describe('runHooks prompt 类型', () => {
+  it('prompt hook 调 llm，{ok:false} → block；llm 收到含 $ARGUMENTS 替换的 prompt', async () => {
+    const seen: string[] = []
+    const llm = async (p: string) => { seen.push(p); return '{"ok":false,"reason":"判定不通过"}' }
+    const config = { PreToolUse: [{ matcher: '*', hooks: [{ type: 'prompt', prompt: '评估 $ARGUMENTS' }] }] } as any
+    const out = await runHooks('PreToolUse', { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'rm -rf /' } }, config, { llm })
+    expect(out.block).toBe(true)
+    expect(seen[0]).toContain('rm -rf /')
+  })
+  it('未配置 llm → prompt hook 记 non_blocking_error，不 block', async () => {
+    const config = { Stop: [{ hooks: [{ type: 'prompt', prompt: 'x' }] }] } as any
+    const out = await runHooks('Stop', { hook_event_name: 'Stop' }, config, {})
+    expect(out.block).toBe(false)
+    expect(out.results[0].outcome).toBe('non_blocking_error')
   })
 })
