@@ -60,12 +60,21 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
       const subModel =
         !def.model || def.model === 'inherit' ? deps.getModel() : def.model === 'flash' ? SUB_MODEL : def.model
 
-      // 跑一遍子代理子循环，返回最后一条 assistant 文本（前后台共用）。
-      const runSub = async (signal: AbortSignal): Promise<string | undefined> => {
+      // 跑子代理子循环，返回最后一条 assistant 文本（前后台共用）。
+      // SubagentStart：开头注入 additionalContext；SubagentStop：结束后 preventContinuation→续跑一轮（守卫限一次）。
+      const runSub = async (signal: AbortSignal, agentId: string): Promise<string | undefined> => {
         const messages: any[] = [
           { role: 'system', content: def.getSystemPrompt() },
           { role: 'user', content: input.prompt },
         ]
+        if (ctx.hookDispatch) {
+          const startOut = await ctx.hookDispatch('SubagentStart', {
+            hook_event_name: 'SubagentStart', agent_id: agentId, agent_type: type, cwd: ctx.cwd(),
+          })
+          if (startOut.additionalContext) {
+            messages.push({ role: 'user', content: `<hook-context>\n${startOut.additionalContext}\n</hook-context>` })
+          }
+        }
         const subCtx: ToolContext = {
           cwd: ctx.cwd,
           setCwd: () => { /* 子代理只读，不许漂移主 cwd */ },
@@ -73,22 +82,37 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
           fileState: new Map(), // 独立 fileState，不污染主会话 read-before-edit 状态
           isSubagent: true, // 子代理纯执行：禁止起后台任务（防污染主会话通知队列）
         }
-        const gen = runLoop(messages, {
-          client: deps.client,
-          tools,
-          model: subModel,
-          thinking: false,
-          // 子代理无审批 UI：安全命令自动放行、危险命令拒绝（yolo+钳制，见 subagentPermissionDecision）。
-          permission: { mode: 'default', rules: [], saveRule: () => {}, ask: async (_n, desc) => subagentPermissionDecision(desc) },
-          ctx: subCtx,
-          maxTurns: 30,
-        })
-        let step
-        while (!(step = await gen.next()).done) {
-          if (step.value.type === 'turn_end') deps.onUsage(step.value.usage, subModel)
+        let subStopFired = false
+        while (true) {
+          const gen = runLoop(messages, {
+            client: deps.client,
+            tools,
+            model: subModel,
+            thinking: false,
+            // 子代理无审批 UI：安全命令自动放行、危险命令拒绝（yolo+钳制，见 subagentPermissionDecision）。
+            permission: { mode: 'default', rules: [], saveRule: () => {}, ask: async (_n, desc) => subagentPermissionDecision(desc) },
+            ctx: subCtx,
+            maxTurns: 30,
+          })
+          let step
+          while (!(step = await gen.next()).done) {
+            if (step.value.type === 'turn_end') deps.onUsage(step.value.usage, subModel)
+          }
+          const final = [...messages].reverse().find(m => m.role === 'assistant' && typeof m.content === 'string' && m.content)
+          if (ctx.hookDispatch && !signal.aborted) {
+            const stopOut = await ctx.hookDispatch('SubagentStop', {
+              hook_event_name: 'SubagentStop', agent_id: agentId, agent_type: type, cwd: ctx.cwd(),
+              stop_hook_active: subStopFired,
+              last_assistant_message: final?.content ?? '',
+            })
+            if (stopOut.preventContinuation && !subStopFired) {
+              subStopFired = true
+              messages.push({ role: 'user', content: stopOut.blockReason ?? '（SubagentStop 要求继续未尽事项）' })
+              continue
+            }
+          }
+          return final?.content
         }
-        const final = [...messages].reverse().find(m => m.role === 'assistant' && typeof m.content === 'string' && m.content)
-        return final?.content
       }
 
       // 后台路径：脱钩跑、立即返句柄；信号量在脱钩 async 的 finally 释放（不能在 call 返回前 release）。
@@ -106,7 +130,7 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
         void (async () => {
           await acquire() // 在脱钩 async 内等许可：句柄立即返回、不阻塞主 loop 只读批
           try {
-            const final = await runSub(ac.signal)
+            const final = await runSub(ac.signal, id)
             // runLoop 在 abort 时是 return 'aborted'（不抛错），runSub 仍正常返回——
             // 必须显式查 ac.signal.aborted，否则被 TaskStop 中断的子代理会被误标 completed。
             if (ac.signal.aborted) {
@@ -128,7 +152,8 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
       // 前台路径（默认）：维持现有 acquire/try-finally-release。
       await acquire()
       try {
-        const final = await runSub(ctx.signal)
+        // 前台无 task 注册：生成一个 a-前缀 id 纯作 SubagentStart/Stop hook 的 agent_id 标签（不入 TaskRegistry）。
+        const final = await runSub(ctx.signal, generateTaskId('local_agent'))
         return final ?? '（子代理无输出）'
       } finally {
         release()
