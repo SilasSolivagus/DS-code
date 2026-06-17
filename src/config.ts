@@ -4,6 +4,12 @@ import path from 'node:path'
 import os from 'node:os'
 import { HOOK_EVENTS, type HooksConfig, type HookEvent, runHooks } from './hooks.js'
 
+export interface McpStdioServerConfig {
+  command: string
+  args?: string[]
+  env?: Record<string, string>
+}
+
 export interface Settings {
   permissions: { allow: string[] }
   /** 自动 compact 触发阈值（上次请求的 prompt_tokens 超过即触发） */
@@ -20,6 +26,8 @@ export interface Settings {
   inline?: boolean
   /** hooks 生命周期配置（会话启动快照；见 src/hooks.ts） */
   hooks?: HooksConfig
+  /** MCP server 配置（stdio）。键=server 名，值=启动方式。 */
+  mcpServers?: Record<string, McpStdioServerConfig>
 }
 
 const DIR = path.join(os.homedir(), '.deepcode')
@@ -52,6 +60,7 @@ export function loadSettings(): Settings {
     apiKey: raw?.apiKey,
     inline: raw?.inline,
     hooks: parseHooksConfig(raw?.hooks),
+    mcpServers: parseMcpServers(raw?.mcpServers),
   }
 }
 
@@ -68,6 +77,23 @@ export function parseHooksConfig(raw: unknown): HooksConfig | undefined {
         (m as any).hooks.every((h: any) => h && typeof h === 'object' && typeof h.type === 'string'),
     )
     if (valid.length) (out as any)[event as HookEvent] = valid
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
+/** 宽松解析 settings.mcpServers：只留 command 为非空字符串的条目；args 过滤非字符串；env 须为对象。 */
+export function parseMcpServers(raw: unknown): Record<string, McpStdioServerConfig> | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const out: Record<string, McpStdioServerConfig> = {}
+  for (const [name, cfg] of Object.entries(raw as Record<string, unknown>)) {
+    if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) continue
+    const c = cfg as Record<string, unknown>
+    if (typeof c.command !== 'string' || !c.command) continue
+    out[name] = {
+      command: c.command,
+      args: Array.isArray(c.args) ? (c.args.filter(a => typeof a === 'string') as string[]) : undefined,
+      env: c.env && typeof c.env === 'object' && !Array.isArray(c.env) ? (c.env as Record<string, string>) : undefined,
+    }
   }
   return Object.keys(out).length ? out : undefined
 }
