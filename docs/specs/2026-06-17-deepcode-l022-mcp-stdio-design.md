@@ -101,3 +101,10 @@ initMcpTools(settings, signal?): Promise<{ tools: Tool[], cleanup: () => Promise
 
 ## 5. 后续增量（不在本 MVP，记入 roadmap L-022 续）
 callTool 重连/session 重试 → 资源元工具 → http/sse + OAuth(McpAuth) → agent 级 mcpServers(闭合 L-040B frontmatter) → 整 server 通配权限规则 `mcp__server:*`。
+
+### opus 终审 follow-up（2026-06-17，实现后记录，均非阻塞，MVP 可接受）
+1. **TUI 退出未调 `core.dispose()`**（`src/tui/App.tsx` 在 useMemo 建 core 但无 `useEffect(() => () => core.dispose(), [core])`，ink `exit()`+`process.exit(0)` 不触发 dispose）→ MCP `client.close()` 与既有 `SessionEnd('exit')` hook 在 TUI 路径都不 fire。**这是既有潜伏 bug（SessionEnd 早已不 fire），MCP cleanup 搭便车**。有界：良性 server 随父进程 stdin EOF 自退；不规矩 server 可能成孤儿。headless 路径正确（try/finally）。修法：App.tsx 加 unmount cleanup + 可选 `process.on('exit'/'SIGINT')` best-effort kill。**建议作为独立 TUI 生命周期件处理（碰 TUI，需真机冒烟），一并闭合 SessionEnd 缺口。**
+2. **连接超时漏 transport/子进程**（`defaultConnect` 中 `withTimeout(client.connect)` 超时后 throw，子进程若在超时后才 spawn 则无 close 句柄）。低概率（30s）。修法：catch 里持有 transport/client 并 `await client.close().catch(()=>{})` 再 rethrow。
+3. **`expandEnvVars` 只展开 env，未展开 command/args**（CC 的 envExpansion 三者都展开）。用户拷 CC `.mcp.json` 里 `args:["${HOME}/x"]` 不会展开。低成本可补。
+4. **整 `process.env` 透传给 server 子进程**（含 `DEEPSEEK_API_KEY`，比 SDK `getDefaultEnvironment()` 允许列表更宽）。CC 对齐、trusted-user-config 可接受，已在 README 加安全提示；未来可加 env 作用域选项硬化。
+5. **归一化 server 名碰撞**（两 server 名归一后相同 → 同 `mcp__name__tool` 名，`loop.ts` find 取首个）。极边角，可加 dedupe-warn。
