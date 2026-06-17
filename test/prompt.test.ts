@@ -70,8 +70,8 @@ describe('buildSystemPrompt', () => {
     const cwd = process.cwd()
     expect(buildSystemPrompt(cwd, undefined, [])).not.toContain('可用技能')
     const skills: SkillDefinition[] = [
-      { name: 'a', description: '甲', context: 'inline', userInvocable: true, modelInvocable: true, skillDir: '/d', isLegacy: false, body: 'x' },
-      { name: 'b', description: '乙', context: 'inline', userInvocable: true, modelInvocable: false, skillDir: '/d', isLegacy: true, body: 'y' },
+      { name: 'a', description: '甲', context: 'inline', userInvocable: true, modelInvocable: true, skillDir: '/d', isLegacy: false, priority: 0, body: 'x' },
+      { name: 'b', description: '乙', context: 'inline', userInvocable: true, modelInvocable: false, skillDir: '/d', isLegacy: true, priority: 2, body: 'y' },
     ]
     const p = buildSystemPrompt(cwd, undefined, skills)
     expect(p).toContain('可用技能')

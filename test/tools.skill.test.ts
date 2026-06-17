@@ -11,7 +11,7 @@ const mkCtx = () => ({
 
 const inlineSkill: SkillDefinition = {
   name: 'greet', description: '打招呼', context: 'inline',
-  userInvocable: true, modelInvocable: true, skillDir: '/skills/greet', isLegacy: false,
+  userInvocable: true, modelInvocable: true, skillDir: '/skills/greet', isLegacy: false, priority: 0,
   body: '对 $ARG1 说你好（dir=${DEEPCODE_SKILL_DIR}）',
 }
 
@@ -76,7 +76,7 @@ describe('makeSkillTool — 未知 agent 类型回落 general-purpose', () => {
     }
     const forkSkill: SkillDefinition = {
       name: 'audit', description: '审查', context: 'fork' as const,
-      userInvocable: true, modelInvocable: true, skillDir: '/s', isLegacy: false, body: '审查',
+      userInvocable: true, modelInvocable: true, skillDir: '/s', isLegacy: false, priority: 0, body: '审查',
       agent: 'unknown-agent', // 不存在的类型 → 应回落 general-purpose
     }
     const tool = mk([forkSkill], depsWithGp)

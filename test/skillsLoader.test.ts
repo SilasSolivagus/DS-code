@@ -86,6 +86,56 @@ describe('loadSkills 发现 + 合并', () => {
   })
 })
 
+describe('loadSkills config（sources/deny/priority）', () => {
+  function setup() {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dc-home-'))
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'dc-cwd-'))
+    // home/.claude/skills/cso（模拟 gstack 灌入）
+    fs.mkdirSync(path.join(home, '.claude', 'skills', 'cso'), { recursive: true })
+    fs.writeFileSync(path.join(home, '.claude', 'skills', 'cso', 'SKILL.md'), '---\ndescription: 安全审计\n---\n审计')
+    // home/.deepcode/skills/hello（user 级 deepcode 源）
+    fs.mkdirSync(path.join(home, '.deepcode', 'skills', 'hello'), { recursive: true })
+    fs.writeFileSync(path.join(home, '.deepcode', 'skills', 'hello', 'SKILL.md'), '---\ndescription: 问好\n---\n你好')
+    // cwd/.deepcode/skills/proj（项目级）
+    fs.mkdirSync(path.join(cwd, '.deepcode', 'skills', 'proj'), { recursive: true })
+    fs.writeFileSync(path.join(cwd, '.deepcode', 'skills', 'proj', 'SKILL.md'), '---\ndescription: 项目技能\n---\n做事')
+    // cwd/.deepcode/commands/recap.md（legacy）
+    fs.mkdirSync(path.join(cwd, '.deepcode', 'commands'), { recursive: true })
+    fs.writeFileSync(path.join(cwd, '.deepcode', 'commands', 'recap.md'), '回顾')
+    return { home, cwd }
+  }
+
+  it('sources:["deepcode"] 跳过 .claude 源（干掉 cso 灌入）', () => {
+    const { home, cwd } = setup()
+    const names = loadSkills(cwd, home, { sources: ['deepcode'] }).map(s => s.name)
+    expect(names).not.toContain('cso')
+    expect(names).toEqual(expect.arrayContaining(['hello', 'proj', 'recap']))
+  })
+
+  it('deny 精确排除', () => {
+    const { home, cwd } = setup()
+    const names = loadSkills(cwd, home, { deny: ['cso', 'recap'] }).map(s => s.name)
+    expect(names).not.toContain('cso')
+    expect(names).not.toContain('recap')
+    expect(names).toEqual(expect.arrayContaining(['hello', 'proj']))
+  })
+
+  it('priority 赋值：项目 0 / user(home) 1 / legacy 2', () => {
+    const { home, cwd } = setup()
+    const byName = Object.fromEntries(loadSkills(cwd, home).map(s => [s.name, s.priority]))
+    expect(byName['proj']).toBe(0)   // 项目 skills
+    expect(byName['hello']).toBe(1)  // home/.deepcode/skills
+    expect(byName['cso']).toBe(1)    // home/.claude/skills
+    expect(byName['recap']).toBe(2)  // legacy commands
+  })
+
+  it('无 config：发现/合并语义同现状（仅多了 priority 字段）', () => {
+    const { home, cwd } = setup()
+    const names = loadSkills(cwd, home).map(s => s.name).sort()
+    expect(names).toEqual(['cso', 'hello', 'proj', 'recap'])
+  })
+})
+
 describe('substituteSkillArgs', () => {
   it('$ARGUMENTS 全文替换（legacy 向后兼容）', () => {
     expect(substituteSkillArgs('回顾 $ARGUMENTS', 'a b c', { skillDir: '/d' })).toBe('回顾 a b c')
