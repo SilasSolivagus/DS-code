@@ -7,6 +7,7 @@ import { runLoop } from './loop.js'
 import { allTools } from './tools/index.js'
 import { todoWriteTool } from './tools/todowrite.js'
 import { makeAgentTool } from './tools/agent.js'
+import { resolveAgents } from './agentsLoader.js'
 import { makeWebFetchTool } from './tools/webfetch.js'
 import { taskListTool, taskOutputTool, taskStopTool } from './tools/taskTools.js'
 import { installTaskCleanup } from './tasks.js'
@@ -33,6 +34,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
   const settings = loadSettings()
   const model = 'deepseek-v4-flash'
   let cwd = process.cwd()
+  const agents = resolveAgents(cwd)
   const todos = new TodoStore()
   const sessionId = 'headless-' + crypto.randomBytes(4).toString('hex')
   const ctx: ToolContext = {
@@ -86,7 +88,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
   const messages: any[] = [...initMsgs, { role: 'user', content: promptText }]
   const gen = runLoop(messages, {
     client: opts.client,
-    tools: [...allTools, todoWriteTool, makeAgentTool({ client: opts.client, onUsage: (u, _model) => addUsage(u), getModel: () => model }), makeWebFetchTool({ client: opts.client, onUsage: (u, _model) => addUsage(u) }), taskListTool, taskOutputTool, taskStopTool],
+    tools: [...allTools, todoWriteTool, makeAgentTool({ client: opts.client, onUsage: (u, _model) => addUsage(u), getModel: () => model, agents }), makeWebFetchTool({ client: opts.client, onUsage: (u, _model) => addUsage(u) }), taskListTool, taskOutputTool, taskStopTool],
     model,
     thinking: false,
     ctx,

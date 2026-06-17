@@ -134,4 +134,10 @@ describe('formatAgentLine / buildAgentDescription', () => {
     expect(d).toContain('(Tools:')
     expect(d).toContain('省略 subagent_type 则用 general-purpose')
   })
+
+  it('buildAgentDescription 接受 agents 参数，含自定义行', () => {
+    const custom = { agentType: 'x-agent', whenToUse: '干 X', disallowedTools: ['Edit', 'Write', 'Agent'], getSystemPrompt: () => 'p' }
+    const desc = buildAgentDescription([custom as any])
+    expect(desc).toContain('x-agent: 干 X')
+  })
 })

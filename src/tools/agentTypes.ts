@@ -86,9 +86,9 @@ export function formatAgentLine(def: AgentDefinition): string {
   return `- ${def.agentType}: ${def.whenToUse} (Tools: ${toolsDesc})`
 }
 
-/** 把 BUILTIN_AGENTS 拼成完整 Agent 工具 description。 */
-export function buildAgentDescription(): string {
-  const lines = BUILTIN_AGENTS.map(formatAgentLine).join('\n')
+/** 把 agents 列表拼成完整 Agent 工具 description（缺省内建，保后向兼容）。 */
+export function buildAgentDescription(agents: AgentDefinition[] = BUILTIN_AGENTS): string {
+  const lines = agents.map(formatAgentLine).join('\n')
   return `派出一个专才子代理执行任务。子代理看不到当前对话，prompt 必须自包含。返回子代理的最终结论。可用类型：
 ${lines}
 省略 subagent_type 则用 general-purpose。`
