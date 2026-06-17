@@ -100,3 +100,18 @@ export function loadSkills(cwd: string, home: string = os.homedir()): SkillDefin
   for (const s of ordered) m.set(s.name, s) // last-wins
   return [...m.values()]
 }
+
+/** skill 正文参数替换：$ARGUMENTS（全文）/ $ARG1.. （空白切分段）/ ${DEEPCODE_SKILL_DIR} / ${DEEPCODE_SESSION_ID}。 */
+export function substituteSkillArgs(
+  body: string,
+  args: string,
+  opts: { argNames?: string[]; skillDir: string; sessionId?: string },
+): string {
+  const parts = args.trim() ? args.trim().split(/\s+/) : []
+  let out = body
+    .replaceAll('${DEEPCODE_SKILL_DIR}', opts.skillDir)
+    .replaceAll('${DEEPCODE_SESSION_ID}', opts.sessionId ?? '')
+  out = out.replace(/\$ARG(\d+)/g, (_m, n) => parts[Number(n) - 1] ?? '')
+  out = out.replaceAll('$ARGUMENTS', args)
+  return out
+}

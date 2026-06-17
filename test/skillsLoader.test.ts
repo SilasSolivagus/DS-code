@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseSkillFile, loadSkills } from '../src/skillsLoader.js'
+import { parseSkillFile, loadSkills, substituteSkillArgs } from '../src/skillsLoader.js'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -83,5 +83,22 @@ describe('loadSkills 发现 + 合并', () => {
     expect(byName['greet'].isLegacy).toBe(false)     // skill 覆盖了 legacy
     expect(byName['greet'].body).toBe('说你好')
     expect(byName['recap'].isLegacy).toBe(true)      // 独有 legacy 保留
+  })
+})
+
+describe('substituteSkillArgs', () => {
+  it('$ARGUMENTS 全文替换（legacy 向后兼容）', () => {
+    expect(substituteSkillArgs('回顾 $ARGUMENTS', 'a b c', { skillDir: '/d' })).toBe('回顾 a b c')
+  })
+  it('$ARG1/$ARG2 按空白切分', () => {
+    expect(substituteSkillArgs('$ARG1 then $ARG2', 'foo bar', { skillDir: '/d' })).toBe('foo then bar')
+  })
+  it('${DEEPCODE_SKILL_DIR} / ${DEEPCODE_SESSION_ID}', () => {
+    expect(substituteSkillArgs('dir=${DEEPCODE_SKILL_DIR} sid=${DEEPCODE_SESSION_ID}', '', { skillDir: '/skills/x', sessionId: 'sess1' }))
+      .toBe('dir=/skills/x sid=sess1')
+  })
+  it('缺参数的 $ARGn 替换成空串；无 sessionId → 空串', () => {
+    expect(substituteSkillArgs('[$ARG1][$ARG2]', 'only', { skillDir: '/d' })).toBe('[only][]')
+    expect(substituteSkillArgs('${DEEPCODE_SESSION_ID}', '', { skillDir: '/d' })).toBe('')
   })
 })
