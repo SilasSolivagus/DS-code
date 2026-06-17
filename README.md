@@ -44,6 +44,28 @@ echo "<任务>" | deepcode     # 管道喂入走 headless
 
 `/` 浮出补全菜单，Esc 中断当前轮，Ctrl+C×2 退出。自定义命令放 `~/.deepcode/commands/*.md` 或 `<项目>/.deepcode/commands/*.md`（`$ARGUMENTS` 占位）。权限规则持久化在 `~/.deepcode/settings.json`。
 
+## MCP 服务器（stdio）
+
+在 `~/.deepcode/settings.json` 加 `mcpServers` 即可接入 [MCP](https://modelcontextprotocol.io) 生态的 stdio server，其工具自动进入工具池：
+
+```jsonc
+{
+  "mcpServers": {
+    "git": { "command": "uvx", "args": ["mcp-server-git", "--repository", "."] },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": { "GITHUB_TOKEN": "${GITHUB_TOKEN}" }
+    }
+  }
+}
+```
+
+- 工具以 `mcp__<server>__<tool>` 名出现；标了 `readOnlyHint` 的工具免权限确认，其余走正常权限弹窗。
+- `env` 值支持 `${VAR}` / `${VAR:-默认}` 展开。连接失败的 server 静默跳过，不影响启动。
+- **安全提示**：每个 server 子进程会继承当前环境变量（含 `DEEPSEEK_API_KEY`）；只配置你信任的 server。
+- 当前为 stdio MVP：暂不支持 http/SSE 传输、OAuth 认证、resources、项目级 `.mcp.json` 审批（见 `docs/specs/2026-06-17-deepcode-l022-mcp-stdio-design.md` §5 后续增量）。
+
 ## 模型
 
 默认 `deepseek-v4-flash`，`/model` 无参在 `deepseek-v4-flash`↔`deepseek-v4-pro` 间切换（`/model <模型名>` 指定具体模型），`/think` 开关 thinking。

@@ -16,7 +16,7 @@ export function toApiTools(tools: Tool<any>[]) {
     function: {
       name: t.name,
       description: t.description,
-      parameters: zodToJsonSchema(t.inputSchema, { $refStrategy: 'none' }),
+      parameters: t.rawJsonSchema ?? zodToJsonSchema(t.inputSchema, { $refStrategy: 'none' }),
     },
   }))
 }

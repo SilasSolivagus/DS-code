@@ -15,6 +15,7 @@ import { buildSystemPrompt, findMemoryFiles } from './prompt.js'
 import { loadSettings } from './config.js'
 import { runHooks } from './hooks.js'
 import { makeHookRuntime } from './hookRuntime.js'
+import { initMcpTools } from './mcp.js'
 import { TodoStore } from './todo.js'
 import { costUSD } from './pricing.js'
 import type { ToolContext } from './tools/types.js'
@@ -86,9 +87,12 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     if (ups.additionalContext) promptText = `${opts.prompt}\n\n<hook-context>\n${ups.additionalContext}\n</hook-context>`
   }
   const messages: any[] = [...initMsgs, { role: 'user', content: promptText }]
+  const { tools: mcpTools, cleanup: mcpCleanup } = await initMcpTools(settings.mcpServers, {
+    onWarn: msg => process.stderr.write(msg + '\n'),
+  })
   const gen = runLoop(messages, {
     client: opts.client,
-    tools: [...allTools, todoWriteTool, makeAgentTool({ client: opts.client, onUsage: (u, _model) => addUsage(u), getModel: () => model, agents }), makeWebFetchTool({ client: opts.client, onUsage: (u, _model) => addUsage(u) }), taskListTool, taskOutputTool, taskStopTool],
+    tools: [...allTools, todoWriteTool, makeAgentTool({ client: opts.client, onUsage: (u, _model) => addUsage(u), getModel: () => model, agents }), makeWebFetchTool({ client: opts.client, onUsage: (u, _model) => addUsage(u) }), taskListTool, taskOutputTool, taskStopTool, ...mcpTools],
     model,
     thinking: false,
     ctx,
@@ -108,15 +112,19 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     hookDeps,
   })
   let step
-  while (!(step = await gen.next()).done) {
-    const ev = step.value
-    if (ev.type === 'tool_start') process.stderr.write(`⏺ ${ev.name}(${ev.desc.slice(0, 100)})\n`)
-    if (ev.type === 'turn_end') { turns++; addUsage(ev.usage) }
+  try {
+    while (!(step = await gen.next()).done) {
+      const ev = step.value
+      if (ev.type === 'tool_start') process.stderr.write(`⏺ ${ev.name}(${ev.desc.slice(0, 100)})\n`)
+      if (ev.type === 'turn_end') { turns++; addUsage(ev.usage) }
+    }
+  } finally {
+    await mcpCleanup()
   }
   const final = [...messages].reverse().find(m => m.role === 'assistant' && typeof m.content === 'string' && m.content)
   return {
     text: final?.content ?? '',
-    status: step.value,
+    status: step!.value,
     turns,
     usage: total,
     costUSD: costUSD(model, total.prompt_tokens, total.prompt_cache_hit_tokens, total.completion_tokens),

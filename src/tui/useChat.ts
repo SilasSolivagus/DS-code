@@ -36,6 +36,7 @@ import { createCheckpointer, type Checkpointer } from '../checkpoint.js'
 import { lastAssistantText, copyToClipboard } from '../clipboard.js'
 import { sessionStats, formatStats } from '../stats.js'
 import { formatKeybindings } from '../keybindings.js'
+import { attachMcpTools } from '../mcp.js'
 
 /** ! 直跑：同步执行，30s 超时，stdout+stderr 合并，超 20k 截断 */
 export function runBang(cmd: string, cwd: string): { output: string; code: number } {
@@ -375,6 +376,13 @@ export function createChatCore(opts: {
     taskOutputTool,
     taskStopTool,
   ]
+
+  let mcpCleanup: (() => Promise<void>) | null = null
+  // MCP 工具异步注入：不阻断 TUI 启动；工具 push 进同一 tools 引用，后续 turn 自动可见。
+  void attachMcpTools(tools, settings.mcpServers, msg => notice('warn', msg)).then(cleanup => {
+    mcpCleanup = cleanup
+    setState()
+  }).catch(() => {})
 
   /** compact：总结→重建消息→落盘 compact 记录与新前缀。失败不破坏现场（messages 仅在成功后替换）。 */
   const doCompact = async (trigger: 'auto' | 'manual' = 'auto'): Promise<void> => {
@@ -805,7 +813,7 @@ export function createChatCore(opts: {
         notice('info', `[rewind] 代码：${parts.join('、')}`)
       }
     },
-    dispose: () => { fireSessionEnd('exit'); unsubNotification() },
+    dispose: () => { fireSessionEnd('exit'); unsubNotification(); void mcpCleanup?.() },
   }
 }
 
