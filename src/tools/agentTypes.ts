@@ -1,5 +1,6 @@
 // src/tools/agentTypes.ts
 // L-040 子代理类型化：AgentDefinition 接口 + 内建注册表 + 纯函数工具解析（对齐 CC）。
+import type { z } from 'zod'
 import type { Tool } from './types.js'
 
 export interface AgentDefinition {
@@ -8,6 +9,8 @@ export interface AgentDefinition {
   tools?: string[] // allow 列表；undefined 或 ['*'] = 通配（全池减 deny）
   disallowedTools?: string[] // deny 列表
   model?: 'inherit' | string // 省略 = 'inherit'（父当前模型）；可钉具体档（如 'flash'）
+  /** L-044：声明则强制子代理用 StructuredOutput 工具按此 schema 产出，结果取校验对象的 JSON（非自由文本）。 */
+  outputSchema?: z.ZodTypeAny
   getSystemPrompt(): string // 每类一段独立 prompt
 }
 
