@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { parseSkillFile, loadSkills, substituteSkillArgs } from '../src/skillsLoader.js'
+import {
+  parseSkillFile, loadSkills, substituteSkillArgs,
+  formatSkillListing, MAX_LISTING_DESC_CHARS,
+} from '../src/skillsLoader.js'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -150,6 +153,57 @@ describe('substituteSkillArgs', () => {
   it('缺参数的 $ARGn 替换成空串；无 sessionId → 空串', () => {
     expect(substituteSkillArgs('[$ARG1][$ARG2]', 'only', { skillDir: '/d' })).toBe('[only][]')
     expect(substituteSkillArgs('${DEEPCODE_SESSION_ID}', '', { skillDir: '/d' })).toBe('')
+  })
+})
+
+describe('formatSkillListing', () => {
+  const mk = (name: string, description: string, opts: Partial<{ whenToUse: string; priority: number }> = {}) => ({
+    name, description, whenToUse: opts.whenToUse, context: 'inline' as const,
+    userInvocable: true, modelInvocable: true, skillDir: '/x', isLegacy: false, body: 'b',
+    priority: opts.priority ?? 0,
+  })
+
+  it('空集合 → 空串、计数 0', () => {
+    expect(formatSkillListing([])).toEqual({ text: '', shown: 0, dropped: 0 })
+  })
+
+  it('预算够时全列、无省略行', () => {
+    const r = formatSkillListing([mk('a', '甲'), mk('b', '乙')])
+    expect(r.shown).toBe(2)
+    expect(r.dropped).toBe(0)
+    expect(r.text).toBe('- a：甲\n- b：乙')
+    expect(r.text).not.toContain('省略')
+  })
+
+  it('whenToUse 拼到行尾', () => {
+    const r = formatSkillListing([mk('a', '甲', { whenToUse: '用时' })])
+    expect(r.text).toBe('- a：甲 — 用时')
+  })
+
+  it('per-entry 250 字符截断（description 与 whenToUse 各截）', () => {
+    const long = 'x'.repeat(300)
+    const r = formatSkillListing([mk('a', long, { whenToUse: long })])
+    const descPart = 'x'.repeat(MAX_LISTING_DESC_CHARS) + '…'
+    expect(r.text).toBe(`- a：${descPart} — ${descPart}`)
+  })
+
+  it('超总预算丢尾部 + 末尾省略行（含 dropped 计数）', () => {
+    // 每行约 "- nN：" + 100 字符 ≈ 105；预算 250 只容得下约 2 行
+    const skills = [0, 1, 2, 3, 4].map(i => mk('n' + i, 'd'.repeat(100)))
+    const r = formatSkillListing(skills, { budgetChars: 250 })
+    expect(r.shown).toBeLessThan(5)
+    expect(r.dropped).toBe(5 - r.shown)
+    expect(r.text).toContain(`另有 ${r.dropped} 个`)
+  })
+
+  it('按 priority 升序排（项目 0 先于 user 1 先于 legacy 2），同级保持发现序', () => {
+    const skills = [
+      mk('legacy', 'L', { priority: 2 }),
+      mk('proj', 'P', { priority: 0 }),
+      mk('user', 'U', { priority: 1 }),
+    ]
+    const r = formatSkillListing(skills)
+    expect(r.text).toBe('- proj：P\n- user：U\n- legacy：L')
   })
 })
 

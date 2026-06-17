@@ -139,3 +139,37 @@ export function substituteSkillArgs(
   out = out.replaceAll('$ARGUMENTS', args)
   return out
 }
+
+export const MAX_LISTING_DESC_CHARS = 250
+export const DEFAULT_LISTING_BUDGET_CHARS = 8000
+
+const truncate = (s: string, max: number): string => (s.length > max ? s.slice(0, max) + '…' : s)
+
+/** 把要列的 skills 渲染成清单文本，对齐 CC formatCommandsWithinBudget：
+ *  per-entry description/whenToUse 各截 maxDescChars，总字符超 budgetChars 丢尾部并在末尾留省略行（不静默）。
+ *  调用方需先按 modelInvocable/userInvocable 过滤；本函数只负责排序 + 截断 + 渲染。 */
+export function formatSkillListing(
+  skills: SkillDefinition[],
+  opts?: { maxDescChars?: number; budgetChars?: number },
+): { text: string; shown: number; dropped: number } {
+  const maxDesc = opts?.maxDescChars ?? MAX_LISTING_DESC_CHARS
+  const budget = opts?.budgetChars ?? DEFAULT_LISTING_BUDGET_CHARS
+  // 稳定排序：priority 升序；同级保持原顺序（Array.prototype.sort 在 V8 是稳定的，但用 index 兜底显式稳定）
+  const sorted = skills.map((s, i) => ({ s, i })).sort((a, b) => a.s.priority - b.s.priority || a.i - b.i).map(x => x.s)
+  const lines: string[] = []
+  let used = 0
+  let shown = 0
+  for (const s of sorted) {
+    const line = `- ${s.name}：${truncate(s.description, maxDesc)}${s.whenToUse ? ` — ${truncate(s.whenToUse, maxDesc)}` : ''}`
+    const add = line.length + (lines.length > 0 ? 1 : 0) // +1 为 join 的换行
+    if (used + add > budget && shown > 0) break // 至少留一条（首条即使超预算也列，避免全空）
+    lines.push(line)
+    used += add
+    shown++
+  }
+  const dropped = sorted.length - shown
+  if (dropped > 0) {
+    lines.push(`…（另有 ${dropped} 个技能因清单预算省略；用 settings.skills 的 deny / sources 收窄，或写更短的 description）`)
+  }
+  return { text: lines.join('\n'), shown, dropped }
+}
