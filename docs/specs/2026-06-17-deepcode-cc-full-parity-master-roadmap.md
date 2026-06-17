@@ -20,7 +20,7 @@
 
 | # | 机制 | CC 源码 | deepcode | 状态 | TUI? | 工作量 | 依赖 |
 |---|---|---|---|---|---|---|---|
-| 1.1 | **MCP 客户端**（MCP/McpAuth/ListMcpResources/ReadMcpResource 工具 + `services/mcp/` + mcpServerApproval） | `tools/MCPTool` `services/mcp` | 无 | ⬜ | 否 | L | — |
+| 1.1 | **MCP 客户端（stdio MVP 已完成）** ✅ | `tools/MCPTool` `services/mcp` | `src/mcp.ts`（stdio + 工具发现注入 + 容错，真机冒烟过；http-sse/认证/资源/agent级 留 spec §5 增量） | ✅ | 否 | L | — |
 | 1.2 | **Skills**（SkillTool + 模型自主触发 + frontmatter description/allowed-tools + fork） | `tools/SkillTool` `skills/loadSkillsDir.ts` | 命令覆盖~80%(`commands.ts`) | 🟡 | 否 | M | — |
 | 1.3 | **Steering/续聊**（SendMessage 工具 + 子循环回合边界消费 pendingMessages） | `tools/SendMessageTool` `tasks/InProcessTeammateTask` | pendingMessages 字段在,工具/消费无 | 🟡 | 部分 | M | L-041✅ |
 | 1.4 | **Plan mode**（EnterPlanMode/ExitPlanMode + 只读门 + 审批弹窗） | `tools/EnterPlanModeTool` `tools/ExitPlanModeTool` | 权限三模式有,plan 门无 | 🟡 | 碰TUI | M | — |
