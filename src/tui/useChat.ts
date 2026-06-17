@@ -225,7 +225,7 @@ export function createChatCore(opts: {
   let lastPromptTokens = 0    // 自动 compact 触发依据
   let costWarned = false      // $阈值提醒只发一次
   const customCommands = loadCustomCommands(cwd)
-  const customAgents = resolveAgents(cwd)
+  const agents = resolveAgents(cwd) // 内建 + 自定义合并后的注册表
 
   // —— UI 状态 ——
   let transcript: TranscriptItem[] = []
@@ -364,7 +364,7 @@ export function createChatCore(opts: {
       client: opts.client,
       onUsage: (u, m) => { usageLog.push({ usage: u, model: m }); session.appendUsage(u, m) },
       getModel: () => model,
-      agents: customAgents,
+      agents,
     }),
     makeWebFetchTool({
       client: opts.client,
