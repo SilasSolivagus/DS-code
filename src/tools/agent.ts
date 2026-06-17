@@ -10,7 +10,7 @@ import { allTools } from './index.js'
 import { makeWebFetchTool } from './webfetch.js'
 import { SUB_MODEL } from './constants.js'
 import { isDangerous, type Decision } from '../permissions.js'
-import { BUILTIN_AGENTS, GLOBAL_SUBAGENT_DENY, resolveAgentTools, buildAgentDescription } from './agentTypes.js'
+import { BUILTIN_AGENTS, GLOBAL_SUBAGENT_DENY, resolveAgentTools, buildAgentDescription, type AgentDefinition } from './agentTypes.js'
 import { makeStructuredOutputTool, structuredOutputReminder, MAX_STRUCTURED_OUTPUT_RETRIES } from './structuredOutput.js'
 import { generateTaskId, registerTask, updateTask, getTask, enqueueNotification } from '../tasks.js'
 import { taskOutputPath } from '../config.js'
@@ -41,20 +41,21 @@ function release(): void {
   else active--
 }
 
-export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model: string) => void; getModel: () => string }): Tool<typeof schema> {
+export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model: string) => void; getModel: () => string; agents?: AgentDefinition[] }): Tool<typeof schema> {
   // 子代理工具池 = 主工具集 + WebFetch（resolveAgentTools 会按 deny/allow 裁剪）。
   const pool: Tool<any>[] = [...allTools, makeWebFetchTool({ client: deps.client, onUsage: deps.onUsage })]
+  const agents = deps.agents ?? BUILTIN_AGENTS
   return {
     name: 'Agent',
-    description: buildAgentDescription(),
+    description: buildAgentDescription(agents),
     inputSchema: schema,
     isReadOnly: true,
     needsPermission: () => false,
     async call(input, ctx) {
       const type = input.subagent_type ?? 'general-purpose'
-      const def = BUILTIN_AGENTS.find(a => a.agentType === type)
+      const def = agents.find(a => a.agentType === type)
       if (!def) {
-        const available = BUILTIN_AGENTS.map(a => a.agentType).join(', ')
+        const available = agents.map(a => a.agentType).join(', ')
         throw new Error(`Agent type '${type}' not found. Available: ${available}`)
       }
       const tools = resolveAgentTools(def, pool, GLOBAL_SUBAGENT_DENY)

@@ -19,6 +19,7 @@ vi.mock('../src/api.js', () => ({
 
 import { makeAgentTool, subagentPermissionDecision } from '../src/tools/agent.js'
 import { BUILTIN_AGENTS } from '../src/tools/agentTypes.js'
+import { parseAgentFile } from '../src/agentsLoader.js'
 import { STRUCTURED_OUTPUT_TOOL_NAME } from '../src/tools/structuredOutput.js'
 
 const usage = { prompt_tokens: 30, completion_tokens: 10, prompt_cache_hit_tokens: 0 }
@@ -317,6 +318,23 @@ describe('Agent 后台化（run_in_background）', () => {
     }
     for (const id of ids) await waitForDone(id)
     expect(ids.map(id => getTask(id)!.status)).toEqual(['completed', 'completed', 'completed', 'completed', 'completed'])
+  })
+})
+
+describe('Agent 自定义 agent 路由 (L-040 B)', () => {
+  it('deps.agents 含自定义 agent → 可路由', async () => {
+    const custom = parseAgentFile('---\nname: my-reviewer\ndescription: 审查\ntools: Read\n---\n你是审查员')!
+    script.push({ result: { content: '审查完毕', toolCalls: [], usage, finishReason: 'stop' } })
+    const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash', agents: [...BUILTIN_AGENTS, custom] })
+    const out = await tool.call({ description: 't', prompt: 'x', subagent_type: 'my-reviewer' }, ctx())
+    expect(out).toBe('审查完毕')
+  })
+
+  it('无 deps.agents → 退回 BUILTIN_AGENTS（零回归）', async () => {
+    script.push({ result: { content: 'ok', toolCalls: [], usage, finishReason: 'stop' } })
+    const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
+    const out = await tool.call({ description: 't', prompt: 'x', subagent_type: 'general-purpose' }, ctx())
+    expect(out).toBe('ok')
   })
 })
 
