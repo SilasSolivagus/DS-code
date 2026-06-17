@@ -10,6 +10,17 @@ export interface McpStdioServerConfig {
   env?: Record<string, string>
 }
 
+export interface SkillsConfig {
+  /** 扫哪些目录家族；缺省 = 两者都扫（对齐 CC 全扫）。
+   *  'claude' = <home|proj>/.claude/skills；'deepcode' = <home|proj>/.deepcode/{skills,commands}。
+   *  ['deepcode'] 一刀切跳过所有 .claude 源（干掉 ~/.claude 的 gstack 灌入）。 */
+  sources?: Array<'claude' | 'deepcode'>
+  /** 按精确 skill 名排除（不加载→不在任何清单、不可调用）。 */
+  deny?: string[]
+  /** 模型清单 + Skill 工具 description 的总字符预算；缺省 8000（对齐 CC）。 */
+  listingBudgetChars?: number
+}
+
 export interface Settings {
   permissions: { allow: string[] }
   /** 自动 compact 触发阈值（上次请求的 prompt_tokens 超过即触发） */
@@ -28,6 +39,8 @@ export interface Settings {
   hooks?: HooksConfig
   /** MCP server 配置（stdio）。键=server 名，值=启动方式。 */
   mcpServers?: Record<string, McpStdioServerConfig>
+  /** Skills 发现范围 + 清单预算配置（opt-in；缺省对齐 CC 全扫全可调用）。 */
+  skills?: SkillsConfig
 }
 
 const DIR = path.join(os.homedir(), '.deepcode')
@@ -61,6 +74,7 @@ export function loadSettings(): Settings {
     inline: raw?.inline,
     hooks: parseHooksConfig(raw?.hooks),
     mcpServers: parseMcpServers(raw?.mcpServers),
+    skills: parseSkillsConfig(raw?.skills),
   }
 }
 
@@ -96,6 +110,26 @@ export function parseMcpServers(raw: unknown): Record<string, McpStdioServerConf
     }
   }
   return Object.keys(out).length ? out : undefined
+}
+
+/** 宽松解析 settings.skills：sources 仅留 'claude'|'deepcode'；deny 留 trim 后非空 string；
+ *  listingBudgetChars 须正整数。任一字段非法即丢弃该字段（落默认）。非对象 → undefined。 */
+export function parseSkillsConfig(raw: unknown): SkillsConfig | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const r = raw as Record<string, unknown>
+  const out: SkillsConfig = {}
+  if (Array.isArray(r.sources)) {
+    const valid = r.sources.filter((s): s is 'claude' | 'deepcode' => s === 'claude' || s === 'deepcode')
+    if (valid.length) out.sources = valid
+  }
+  if (Array.isArray(r.deny)) {
+    const valid = r.deny.filter((d): d is string => typeof d === 'string').map(d => d.trim()).filter(d => d.length > 0)
+    if (valid.length) out.deny = valid
+  }
+  if (typeof r.listingBudgetChars === 'number' && Number.isInteger(r.listingBudgetChars) && r.listingBudgetChars > 0) {
+    out.listingBudgetChars = r.listingBudgetChars
+  }
+  return out
 }
 
 export function saveSettings(s: Settings): void {
