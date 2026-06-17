@@ -21,6 +21,9 @@ export interface ToolContext {
   /** 会话 ID（落盘文件 basename）。会话级事件 payload 的 session_id；①b-3 env-file 目录键。
    *  主会话/headless 顶层 ctx 注入；子代理子 ctx 不注入。getter 形式：resume/clear 换 session 后随之更新。 */
   sessionId?: () => string | undefined
+  /** inline skill 注入：工具调用时把内容排进待注入队列，loop 在本轮 tool 结果回灌后作为 user 消息 flush。
+   *  主会话/headless 顶层 ctx 注入；子代理子 ctx 不注入（forked skill 不嵌套注入）。 */
+  injectUserMessage?: (content: string) => void
 }
 
 export interface Tool<S extends z.ZodTypeAny = z.ZodTypeAny> {
