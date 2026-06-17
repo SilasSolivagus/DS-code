@@ -115,6 +115,8 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
             }
             // 超限：fail-safe 兜底返回末条文本（不死循环）。
           }
+          // L-044：结构化对象优先于自由文本（声明 schema 且已捕获→返回校验 JSON，否则末条文本）。
+          const result = captured !== undefined ? JSON.stringify(captured) : final?.content
           if (ctx.hookDispatch && !signal.aborted) {
             const stopOut = await ctx.hookDispatch('SubagentStop', {
               hook_event_name: 'SubagentStop', agent_id: agentId, agent_type: type, cwd: ctx.cwd(),
@@ -122,14 +124,14 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
               last_assistant_message: final?.content ?? '',
             })
             // continue:false（硬停）优先于 block 续跑：即便另一 hook 要续跑，continue:false 也压倒之。
-            if (stopOut.stop) return captured !== undefined ? JSON.stringify(captured) : final?.content
+            if (stopOut.stop) return result
             if (stopOut.preventContinuation && !subStopFired) {
               subStopFired = true
               messages.push({ role: 'user', content: stopOut.blockReason ?? '（SubagentStop 要求继续未尽事项）' })
               continue
             }
           }
-          return captured !== undefined ? JSON.stringify(captured) : final?.content
+          return result
         }
       }
 
