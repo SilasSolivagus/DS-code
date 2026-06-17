@@ -50,6 +50,11 @@ describe('resolveAgentModelAlias', () => {
     expect(resolveAgentModelAlias('Opus')).toBe('inherit')
   })
   it('未知 claude-* id → inherit 兜底', () => { expect(resolveAgentModelAlias('claude-opus-4-1')).toBe('inherit') })
+  it('其它 CC Anthropic 别名（best/opusplan/[1m]）→ inherit 兜底（不泄漏给 DeepSeek API）', () => {
+    for (const a of ['best', 'opusplan', 'sonnet[1m]', 'opus[1m]', 'Best', 'OpusPlan']) {
+      expect(resolveAgentModelAlias(a)).toBe('inherit')
+    }
+  })
   it('deepcode 原生透传', () => {
     expect(resolveAgentModelAlias('flash')).toBe('flash')
     expect(resolveAgentModelAlias('deepseek-v4-pro')).toBe('deepseek-v4-pro')

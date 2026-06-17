@@ -30,16 +30,18 @@ export function parseToolList(value: unknown): string[] | undefined {
   return arr
 }
 
-/** CC Anthropic 模型档 → deepcode 词汇（inherit/flash/字面）。加载时归一，agent.ts model 解析零改。 */
+/** CC 模型档 → deepcode 词汇（inherit/flash/deepseek-id）。加载时归一，agent.ts model 解析零改。
+ *  **白名单策略（安全兜底）**：只透传 deepcode 原生可跑的值，其余一律 inherit——
+ *  这样所有 CC Anthropic 别名（sonnet/opus/haiku/best/opusplan/sonnet[1m]/opus[1m]/claude-* 及未来新增）
+ *  都安全落父模型，**绝不把跑不了的外部 model id 透传给 DeepSeek API**（对齐"兼容 CC 生态不崩"目标）。 */
 export function resolveAgentModelAlias(model: unknown): string | undefined {
   if (typeof model !== 'string' || !model.trim()) return undefined
-  const t = model.trim()
-  const lower = t.toLowerCase()
+  const lower = model.trim().toLowerCase()
   if (lower === 'inherit') return 'inherit'
-  if (lower === 'haiku') return 'flash'                                    // 弱档 → deepcode cheap 档
-  if (lower === 'sonnet' || lower === 'opus') return 'inherit'             // 强档 deepcode 无对应 → 落父模型
-  if (lower.startsWith('claude-') || lower.startsWith('claude ')) return 'inherit' // 未知 Anthropic id → 兜底父模型
-  return t                                                                 // flash / deepseek-… / 其它 deepcode 原生透传
+  if (lower === 'flash') return 'flash'              // deepcode cheap 档别名
+  if (lower === 'haiku') return 'flash'              // CC 弱档 → deepcode cheap 档（唯一便利映射）
+  if (lower.startsWith('deepseek')) return model.trim() // deepcode 原生具体 id 透传
+  return 'inherit'                                   // 其它（含全部 CC Anthropic 别名/未知 id）→ 跑不了 → 落父模型
 }
 
 /** 单 agent markdown → AgentDefinition。缺 name/description → null（对齐 CC：静默/记错跳过）。
