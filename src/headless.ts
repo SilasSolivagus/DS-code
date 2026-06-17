@@ -38,7 +38,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
   const model = 'deepseek-v4-flash'
   let cwd = process.cwd()
   const agents = resolveAgents(cwd)
-  const skills = loadSkills(cwd)
+  const skills = loadSkills(cwd, undefined, settings.skills)
   const injectionBuffer: string[] = []
   const todos = new TodoStore()
   const sessionId = 'headless-' + crypto.randomBytes(4).toString('hex')
@@ -63,7 +63,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
   const hookDeps = makeHookRuntime({ client: opts.client, getModel: () => model, onUsage: (u, _m) => addUsage(u), cwd: () => cwd })
   ctx.hookDispatch = (event, payload) => runHooks(event, payload, settings.hooks, hookDeps)
   // SessionStart：会话开始（headless 恒 startup）。await 注入 additionalContext 到初始上下文。
-  const initMsgs: any[] = [{ role: 'system', content: buildSystemPrompt(cwd, undefined, skills) }]
+  const initMsgs: any[] = [{ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars) }]
   if (settings.hooks) {
     const ss = await runHooks('SessionStart', {
       hook_event_name: 'SessionStart', cwd, session_id: ctx.sessionId?.(), source: 'startup',
@@ -97,7 +97,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
   })
   const gen = runLoop(messages, {
     client: opts.client,
-    tools: [...allTools, todoWriteTool, makeAgentTool({ client: opts.client, onUsage: (u, _model) => addUsage(u), getModel: () => model, agents }), makeWebFetchTool({ client: opts.client, onUsage: (u, _model) => addUsage(u) }), taskListTool, taskOutputTool, taskStopTool, ...mcpTools, makeSkillTool(skills, { client: opts.client, onUsage: (u, _m) => addUsage(u), getModel: () => model, agents, skillPool: [...allTools, makeWebFetchTool({ client: opts.client, onUsage: (u, _m) => addUsage(u) })] })],
+    tools: [...allTools, todoWriteTool, makeAgentTool({ client: opts.client, onUsage: (u, _model) => addUsage(u), getModel: () => model, agents }), makeWebFetchTool({ client: opts.client, onUsage: (u, _model) => addUsage(u) }), taskListTool, taskOutputTool, taskStopTool, ...mcpTools, makeSkillTool(skills, { client: opts.client, onUsage: (u, _m) => addUsage(u), getModel: () => model, agents, skillPool: [...allTools, makeWebFetchTool({ client: opts.client, onUsage: (u, _m) => addUsage(u) })], listingBudgetChars: settings.skills?.listingBudgetChars })],
     model,
     thinking: false,
     ctx,

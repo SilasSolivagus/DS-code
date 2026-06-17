@@ -45,6 +45,7 @@ const fakeSkill = {
   modelInvocable: true,
   skillDir: '/fake/skills/test-skill',
   isLegacy: false,
+  priority: 0,
   body: '请按此指令执行：$ARGUMENTS',
 }
 
@@ -60,12 +61,16 @@ vi.mock('../src/skillsLoader.js', async (orig) => {
 
 import { runHeadless } from '../src/headless.js'
 import { chatStream } from '../src/api.js'
+import { loadSkills } from '../src/skillsLoader.js'
+import { loadSettings } from '../src/config.js'
 
 const usage = { prompt_tokens: 10, completion_tokens: 5, prompt_cache_hit_tokens: 0 }
 
 beforeEach(() => {
   script.length = 0
   vi.mocked(chatStream).mockClear()
+  vi.mocked(loadSkills).mockReset()
+  vi.mocked(loadSkills).mockImplementation(() => [fakeSkill])
 })
 
 describe('headless Skills 接线', () => {
@@ -78,6 +83,39 @@ describe('headless Skills 接线', () => {
     expect(tools).toBeDefined()
     const skillTool = tools.find((t: any) => t.name === 'Skill' || t.function?.name === 'Skill')
     expect(skillTool).toBeDefined()
+  })
+
+  it('settings.skills.deny 排除的 skill 不出现在 system prompt', async () => {
+    // 准备两个 skill：keep（保留）、drop（被 deny 排除）
+    const keepSkill = { ...fakeSkill, name: 'keep', description: '保留的 skill', modelInvocable: true }
+    const dropSkill = { ...fakeSkill, name: 'drop', description: '被排除的 skill', modelInvocable: true }
+
+    // loadSettings mock 返回 skills.deny=['drop']
+    vi.mocked(loadSettings).mockReturnValueOnce({
+      permissions: { allow: [] },
+      compactTokens: 200_000,
+      costWarnUSD: 2,
+      skills: { deny: ['drop'] },
+    })
+
+    // loadSkills mock：按 config.deny 过滤（模拟真实 loadSkills 的 deny 逻辑）
+    vi.mocked(loadSkills).mockImplementationOnce((_cwd, _home, config) => {
+      const all = [keepSkill, dropSkill]
+      if (!config?.deny?.length) return all
+      const deny = new Set(config.deny)
+      return all.filter(s => !deny.has(s.name))
+    })
+
+    script.push({ result: { content: '好的', toolCalls: [], usage, finishReason: 'stop' } })
+    await runHeadless({ client: {} as any, prompt: '你好', yolo: true })
+
+    // 第一轮 chatStream 的 system message 应含 'keep'，不含 'drop'
+    const firstCall = vi.mocked(chatStream).mock.calls[0]
+    const messages = firstCall[1].messages as any[]
+    const systemMsg = messages.find((m: any) => m.role === 'system')
+    expect(systemMsg).toBeDefined()
+    expect(systemMsg.content).toContain('keep')
+    expect(systemMsg.content).not.toContain('drop')
   })
 
   it('模型调用 Skill → inline 注入 → 正文以 user 消息出现在第二轮 messages 中', async () => {
