@@ -112,6 +112,14 @@ export function substituteSkillArgs(
     .replaceAll('${DEEPCODE_SKILL_DIR}', opts.skillDir)
     .replaceAll('${DEEPCODE_SESSION_ID}', opts.sessionId ?? '')
   out = out.replace(/\$ARG(\d+)/g, (_m, n) => parts[Number(n) - 1] ?? '')
+  // 命名参数：$<name>（spec §3.4）；在 $ARGUMENTS 替换前做，避免前缀冲突；用  防止前缀吃字（标识符安全）
+  if (opts.argNames && opts.argNames.length > 0) {
+    const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    for (let i = 0; i < opts.argNames.length; i++) {
+      const name = opts.argNames[i]
+      out = out.replace(new RegExp('\\$' + escapeRegex(name) + '\\b', 'g'), parts[i] ?? '')
+    }
+  }
   out = out.replaceAll('$ARGUMENTS', args)
   return out
 }

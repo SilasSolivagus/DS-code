@@ -49,3 +49,41 @@ describe('makeSkillTool', () => {
     vi.doUnmock('../src/subagentRunner.js')
   })
 })
+
+describe('makeSkillTool — 未知 agent 类型回落 general-purpose', () => {
+  it('skill.agent 指向不存在的类型 → 回落 general-purpose 的 def（含 disallowedTools）', async () => {
+    vi.resetModules()
+    let capturedTools: string[] | undefined
+    vi.doMock('../src/subagentRunner.js', () => ({
+      acquire: async () => {},
+      release: () => {},
+      runSubagent: async (opts: any) => { capturedTools = opts.tools?.map((t: any) => t.name); return '结果' },
+    }))
+    const { makeSkillTool: mk } = await import('../src/tools/skill.js')
+    // general-purpose 有 disallowedTools=['Bash']，用于区分：
+    //   空 def（tools=undefined→通配）包含 Bash；gp def（disallowedTools=['Bash']）不含 Bash
+    const gpDef = {
+      agentType: 'general-purpose', whenToUse: '',
+      disallowedTools: ['Bash'] as string[],
+      getSystemPrompt: () => 'gp-prompt',
+    }
+    const fakeRead = { name: 'Read', description: '', inputSchema: {} as any, isReadOnly: true, needsPermission: (): false => false, call: async () => '' }
+    const fakeBash = { name: 'Bash', description: '', inputSchema: {} as any, isReadOnly: false, needsPermission: (): false => false, call: async () => '' }
+    const depsWithGp = {
+      client: {} as any, onUsage: () => {}, getModel: () => 'm',
+      agents: [gpDef],
+      skillPool: [fakeRead, fakeBash],
+    }
+    const forkSkill: SkillDefinition = {
+      name: 'audit', description: '审查', context: 'fork' as const,
+      userInvocable: true, modelInvocable: true, skillDir: '/s', isLegacy: false, body: '审查',
+      agent: 'unknown-agent', // 不存在的类型 → 应回落 general-purpose
+    }
+    const tool = mk([forkSkill], depsWithGp)
+    await tool.call({ skill: 'audit', args: '' }, mkCtx())
+    // 回落 gp def 后 Bash 被 disallowedTools 排除；若用空 def（tools=undefined）则通配包含 Bash
+    expect(capturedTools).toContain('Read')
+    expect(capturedTools).not.toContain('Bash')
+    vi.doUnmock('../src/subagentRunner.js')
+  })
+})

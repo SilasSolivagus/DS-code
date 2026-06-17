@@ -38,9 +38,10 @@ export function makeSkillTool(
       if (skill.context === 'fork') {
         // forked：子代理工具集 = skillPool 经 agent def + skill.allowedTools 收窄（只能收窄不能提权）。
         const type = skill.agent ?? 'general-purpose'
-        const def: AgentDefinition = deps.agents.find(a => a.agentType === type) ?? {
-          agentType: type, whenToUse: '', getSystemPrompt: () => '',
-        }
+        // 未知 agent 类型回落 general-purpose，避免静默拿全池（空 def 的 tools=undefined → 通配）
+        const def: AgentDefinition = deps.agents.find(a => a.agentType === type)
+          ?? deps.agents.find(a => a.agentType === 'general-purpose')
+          ?? { agentType: type, whenToUse: '', getSystemPrompt: () => '' }
         const effectiveDef: AgentDefinition = skill.allowedTools ? { ...def, tools: skill.allowedTools } : def
         const tools = resolveAgentTools(effectiveDef, deps.skillPool, GLOBAL_SUBAGENT_DENY)
         const model = !skill.model || skill.model === 'inherit' ? deps.getModel() : skill.model === 'flash' ? SUB_MODEL : skill.model

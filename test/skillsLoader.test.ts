@@ -102,3 +102,35 @@ describe('substituteSkillArgs', () => {
     expect(substituteSkillArgs('${DEEPCODE_SESSION_ID}', '', { skillDir: '/d' })).toBe('')
   })
 })
+
+describe('substituteSkillArgs — 命名参数', () => {
+  it('argNames 有值时按名替换（spec §3.4）', () => {
+    // argNames[0]='target', argNames[1]='branch' → $target 对应 parts[0], $branch 对应 parts[1]
+    expect(substituteSkillArgs(
+      '审查 $target 的 $branch 分支',
+      'main feat/foo',
+      { skillDir: '/d', argNames: ['target', 'branch'] },
+    )).toBe('审查 main 的 feat/foo 分支')
+  })
+
+  it('缺参数时替换为空串', () => {
+    expect(substituteSkillArgs(
+      '[$target][$branch]',
+      'only-target',
+      { skillDir: '/d', argNames: ['target', 'branch'] },
+    )).toBe('[only-target][]')
+  })
+
+  it('不吃前缀：$foo 不替换 $foobar 的前缀部分', () => {
+    // 正文有 $foobar 和 $foo，argNames=['foobar','foo']，各自精确匹配
+    expect(substituteSkillArgs(
+      '$foobar $foo',
+      'val1 val2',
+      { skillDir: '/d', argNames: ['foobar', 'foo'] },
+    )).toBe('val1 val2')
+  })
+
+  it('argNames 为空 → 不做命名替换，不影响 $ARGn', () => {
+    expect(substituteSkillArgs('$ARG1 $name', 'hello', { skillDir: '/d', argNames: [] })).toBe('hello $name')
+  })
+})

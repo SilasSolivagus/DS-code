@@ -737,6 +737,9 @@ export function createChatCore(opts: {
       if (skill) {
         // skill 命中：填充参数后作为 user 指令发送（forked/inline 统一走 user 路径，无 tool_call 上下文）
         // forked 用户技能简化：斜杠路径无法注入 tool_call 上下文，inline 化（注偏离：forked 不隔离子 agent）
+        if (skill.context === 'fork') {
+          notice('info', `技能 /${name} 为 fork 类型，斜杠调用按 inline 处理（不隔离子代理）`)
+        }
         const args = rest.join(' ')
         const filled = substituteSkillArgs(skill.body, args, {
           argNames: skill.argNames, skillDir: skill.skillDir, sessionId: ctx.sessionId?.(),
