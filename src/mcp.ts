@@ -1,6 +1,9 @@
 // src/mcp.ts —— MCP 客户端（stdio-first，对齐 CC services/mcp）
 // 架构铁律：本模块不反向 import loop/useChat/headless。
 
+import { z } from 'zod'
+import type { Tool } from './tools/types.js'
+
 /** 非 [a-zA-Z0-9_-] 字符替换为 '_'（对齐 CC normalization.ts，满足 API name pattern）。 */
 export function normalizeNameForMCP(name: string): string {
   return name.replace(/[^a-zA-Z0-9_-]/g, '_')
@@ -30,4 +33,58 @@ export function serializeContent(content: unknown): string {
       return JSON.stringify(b)
     })
     .join('\n')
+}
+
+/** MCP server 经 tools/list 返回的单个工具描述（只取我们用到的字段）。 */
+export interface McpToolDef {
+  name: string
+  description?: string
+  inputSchema?: object
+  annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean }
+}
+
+/** 调 MCP 工具所需的最小 client 接口（便于测试 mock；真实为 SDK Client）。 */
+export interface McpCaller {
+  callTool(
+    args: { name: string; arguments: unknown },
+    resultSchema?: unknown,
+    opts?: { signal?: AbortSignal },
+  ): Promise<{ content?: unknown; isError?: boolean }>
+}
+
+const DEFAULT_TOOL_TIMEOUT_MS = 120_000
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} 超时（${ms}ms）`)), ms)
+    p.then(v => { clearTimeout(timer); resolve(v) }, e => { clearTimeout(timer); reject(e) })
+  })
+}
+
+/** 把 MCP tool 包装成 deepcode Tool。call 用原始 tool 名路由回 server，JSON Schema 透传，校验交 server。 */
+export function wrapMcpTool(
+  client: McpCaller,
+  serverName: string,
+  mcpTool: McpToolDef,
+  timeoutMs: number = DEFAULT_TOOL_TIMEOUT_MS,
+): Tool {
+  const isReadOnly = mcpTool.annotations?.readOnlyHint ?? false
+  return {
+    name: buildMcpToolName(serverName, mcpTool.name),
+    description: mcpTool.description ?? '',
+    inputSchema: z.object({}).passthrough(),
+    rawJsonSchema: mcpTool.inputSchema ?? { type: 'object', properties: {} },
+    isReadOnly,
+    needsPermission: () => (isReadOnly ? false : `${serverName}: ${mcpTool.name}`),
+    async call(input, ctx) {
+      const result = await withTimeout(
+        client.callTool({ name: mcpTool.name, arguments: input }, undefined, { signal: ctx.signal }),
+        timeoutMs,
+        `MCP ${serverName}.${mcpTool.name}`,
+      )
+      const text = serializeContent(result.content)
+      if (result.isError) throw new Error(text || 'MCP 工具返回错误')
+      return text
+    },
+  }
 }

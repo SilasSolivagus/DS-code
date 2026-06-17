@@ -35,6 +35,53 @@ describe('expandEnvVars', () => {
 })
 
 import { serializeContent } from '../src/mcp.js'
+import { z } from 'zod'
+import { wrapMcpTool } from '../src/mcp.js'
+import type { ToolContext } from '../src/tools/types.js'
+
+const ctx = { signal: new AbortController().signal } as unknown as ToolContext
+
+describe('wrapMcpTool', () => {
+  const mcpTool = {
+    name: 'create_issue',
+    description: '创建 issue',
+    inputSchema: { type: 'object', properties: { title: { type: 'string' } } },
+    annotations: { readOnlyHint: false },
+  }
+
+  it('名/描述/schema 透传，非只读需权限', () => {
+    const client = { callTool: async () => ({ content: [{ type: 'text', text: 'ok' }] }) }
+    const t = wrapMcpTool(client as any, 'github', mcpTool as any)
+    expect(t.name).toBe('mcp__github__create_issue')
+    expect(t.description).toBe('创建 issue')
+    expect(t.rawJsonSchema).toEqual(mcpTool.inputSchema)
+    expect(t.isReadOnly).toBe(false)
+    expect(t.needsPermission({})).toBe('github: create_issue')
+  })
+
+  it('readOnlyHint=true → 只读、免权限', () => {
+    const client = { callTool: async () => ({ content: [] }) }
+    const t = wrapMcpTool(client as any, 'github', { ...mcpTool, annotations: { readOnlyHint: true } } as any)
+    expect(t.isReadOnly).toBe(true)
+    expect(t.needsPermission({})).toBe(false)
+  })
+
+  it('call 用原始 tool 名路由，序列化 content', async () => {
+    let received: any
+    const client = { callTool: async (a: any) => { received = a; return { content: [{ type: 'text', text: 'done' }] } } }
+    const t = wrapMcpTool(client as any, 'github', mcpTool as any)
+    const out = await t.call({ title: 'x' }, ctx)
+    expect(received.name).toBe('create_issue')
+    expect(received.arguments).toEqual({ title: 'x' })
+    expect(out).toBe('done')
+  })
+
+  it('isError=true → 抛错', async () => {
+    const client = { callTool: async () => ({ isError: true, content: [{ type: 'text', text: 'boom' }] }) }
+    const t = wrapMcpTool(client as any, 'github', mcpTool as any)
+    await expect(t.call({}, ctx)).rejects.toThrow('boom')
+  })
+})
 
 describe('serializeContent', () => {
   it('text block 取 text', () => {
