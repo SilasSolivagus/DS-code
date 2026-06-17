@@ -11,6 +11,7 @@ vi.mock('../src/api.js', async (orig) => {
 })
 
 import { makeHookRuntime } from '../src/hookRuntime.js'
+import { STRUCTURED_OUTPUT_TOOL_NAME } from '../src/tools/structuredOutput.js'
 
 const usage = { prompt_tokens: 1, completion_tokens: 1, prompt_cache_hit_tokens: 0 }
 
@@ -21,6 +22,27 @@ describe('makeHookRuntime.llm', () => {
     const rt = makeHookRuntime({ client: {} as any, getModel: () => 'deepseek-v4-flash', cwd: () => process.cwd() })
     const text = await rt.llm!('评估这个', undefined, new AbortController().signal)
     expect(text).toBe('{"ok":true}')
+  })
+})
+
+describe('makeHookRuntime.runAgent 结构化输出 (L-044)', () => {
+  it('hook 子代理调 StructuredOutput({ok:false,reason}) → runAgent 返回该 JSON 串', async () => {
+    script.length = 0
+    script.push(
+      { result: { content: '', toolCalls: [{ id: 'so1', name: STRUCTURED_OUTPUT_TOOL_NAME, args: JSON.stringify({ ok: false, reason: '不达标' }) }], usage, finishReason: 'tool_calls' } },
+      { result: { content: 'done', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    const rt = makeHookRuntime({ client: {} as any, getModel: () => 'deepseek-v4-flash', cwd: () => process.cwd() })
+    const text = await rt.runAgent!('核查', undefined, new AbortController().signal)
+    expect(JSON.parse(text)).toEqual({ ok: false, reason: '不达标' })
+  })
+
+  it('hook 子代理始终不调 → 重试耗尽兜底返回末条文本（parseHookEvalResult 端 fail-safe）', async () => {
+    script.length = 0
+    for (let i = 0; i < 8; i++) script.push({ result: { content: '自由文本结论', toolCalls: [], usage, finishReason: 'stop' } })
+    const rt = makeHookRuntime({ client: {} as any, getModel: () => 'deepseek-v4-flash', cwd: () => process.cwd() })
+    const text = await rt.runAgent!('核查', undefined, new AbortController().signal)
+    expect(text).toBe('自由文本结论')
   })
 })
 
