@@ -50,6 +50,22 @@ describe('makeSkillTool', () => {
   })
 })
 
+describe('makeSkillTool 清单预算', () => {
+  const mkSkill = (name: string, description: string) => ({
+    name, description, context: 'inline' as const,
+    userInvocable: true, modelInvocable: true, skillDir: '/x', isLegacy: false, body: 'b', priority: 0,
+  })
+  const deps = () => ({
+    client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash',
+    agents: [], skillPool: [], listingBudgetChars: 250,
+  })
+  it('超预算 description 含省略行', () => {
+    const skills = [0, 1, 2, 3, 4].map(i => mkSkill('n' + i, 'd'.repeat(100)))
+    const tool = makeSkillTool(skills, deps())
+    expect(tool.description).toMatch(/另有 \d+ 个技能/)
+  })
+})
+
 describe('makeSkillTool — 未知 agent 类型回落 general-purpose', () => {
   it('skill.agent 指向不存在的类型 → 回落 general-purpose 的 def（含 disallowedTools）', async () => {
     vi.resetModules()

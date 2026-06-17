@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { findMemoryFiles, buildSystemPrompt } from '../src/prompt.js'
 import type { SkillDefinition } from '../src/skillsLoader.js'
+import { formatSkillListing } from '../src/skillsLoader.js'
 
 describe('findMemoryFiles', () => {
   it('从 cwd 向上收集 CLAUDE.md/AGENTS.md，再加全局 DEEPCODE.md', () => {
@@ -77,5 +78,22 @@ describe('buildSystemPrompt', () => {
     expect(p).toContain('可用技能')
     expect(p).toContain('a：甲')
     expect(p).not.toContain('乙') // b 不可由模型调用，不列
+  })
+})
+
+describe('buildSystemPrompt skill 清单预算', () => {
+  const mk = (name: string, description: string) => ({
+    name, description, context: 'inline' as const,
+    userInvocable: true, modelInvocable: true, skillDir: '/x', isLegacy: false, body: 'b', priority: 0,
+  })
+  it('小 budgetChars 触发截断 + 省略行进 system prompt', () => {
+    const skills = [0, 1, 2, 3, 4].map(i => mk('n' + i, 'd'.repeat(100)))
+    const p = buildSystemPrompt(process.cwd(), undefined, skills, 250)
+    expect(p).toContain('# 可用技能（Skills）')
+    expect(p).toMatch(/另有 \d+ 个技能/)
+  })
+  it('无 skills → 无技能节', () => {
+    const p = buildSystemPrompt(process.cwd(), undefined, [])
+    expect(p).not.toContain('# 可用技能（Skills）')
   })
 })
