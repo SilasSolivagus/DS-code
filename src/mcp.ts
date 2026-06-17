@@ -3,6 +3,9 @@
 
 import { z } from 'zod'
 import type { Tool } from './tools/types.js'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import type { McpStdioServerConfig } from './config.js'
 
 /** 非 [a-zA-Z0-9_-] 字符替换为 '_'（对齐 CC normalization.ts，满足 API name pattern）。 */
 export function normalizeNameForMCP(name: string): string {
@@ -59,6 +62,54 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
     const timer = setTimeout(() => reject(new Error(`${label} 超时（${ms}ms）`)), ms)
     p.then(v => { clearTimeout(timer); resolve(v) }, e => { clearTimeout(timer); reject(e) })
   })
+}
+
+const DEFAULT_CONNECT_TIMEOUT_MS = 30_000
+
+export interface McpConnection {
+  tools: Tool[]
+  close: () => Promise<void>
+}
+
+/** 连接器：连一个 server 并返回其工具 + close。可注入便于测试。 */
+export type McpConnector = (name: string, cfg: McpStdioServerConfig, timeoutMs: number) => Promise<McpConnection>
+
+/** 默认连接器：spawn stdio 子进程，握手，listTools，wrap。 */
+const defaultConnect: McpConnector = async (name, cfg, timeoutMs) => {
+  const env: Record<string, string> = {}
+  for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v
+  if (cfg.env) for (const [k, v] of Object.entries(cfg.env)) env[k] = expandEnvVars(v, process.env)
+  const transport = new StdioClientTransport({ command: cfg.command, args: cfg.args ?? [], env, stderr: 'pipe' })
+  const client = new Client({ name: 'deepcode', version: '0' }, { capabilities: {} })
+  await withTimeout(client.connect(transport), timeoutMs, `MCP ${name} 连接`)
+  const listed = await withTimeout(client.listTools(), timeoutMs, `MCP ${name} listTools`)
+  const tools = (listed.tools ?? []).map(t => wrapMcpTool(client as unknown as McpCaller, name, t as McpToolDef))
+  return { tools, close: () => client.close() }
+}
+
+/** 连所有配置的 MCP server，聚合工具池。单 server 失败吞掉（onWarn），绝不让启动崩。返回 tools + cleanup。 */
+export async function initMcpTools(
+  servers: Record<string, McpStdioServerConfig> | undefined,
+  opts: { connect?: McpConnector; connectTimeoutMs?: number; onWarn?: (msg: string) => void } = {},
+): Promise<{ tools: Tool[]; cleanup: () => Promise<void> }> {
+  const tools: Tool[] = []
+  const closers: Array<() => Promise<void>> = []
+  const connect = opts.connect ?? defaultConnect
+  if (servers) {
+    for (const [name, cfg] of Object.entries(servers)) {
+      try {
+        const conn = await connect(name, cfg, opts.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS)
+        tools.push(...conn.tools)
+        closers.push(conn.close)
+      } catch (e) {
+        opts.onWarn?.(`MCP server ${name} 连接失败，已跳过：${(e as Error).message}`)
+      }
+    }
+  }
+  return {
+    tools,
+    cleanup: async () => { for (const c of closers) { try { await c() } catch { /* 尽力关闭 */ } } },
+  }
 }
 
 /** 把 MCP tool 包装成 deepcode Tool。call 用原始 tool 名路由回 server，JSON Schema 透传，校验交 server。 */

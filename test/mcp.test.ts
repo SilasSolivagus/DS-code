@@ -101,3 +101,54 @@ describe('serializeContent', () => {
     expect(serializeContent({ a: 1 })).toBe('{"a":1}')
   })
 })
+
+import { initMcpTools } from '../src/mcp.js'
+
+describe('initMcpTools', () => {
+  const servers = {
+    good: { command: 'x' },
+    bad: { command: 'y' },
+  }
+
+  it('聚合成功 server 的工具，跳过失败 server，记录警告', async () => {
+    const warns: string[] = []
+    const fakeTool = { name: 'mcp__good__t' } as any
+    const { tools, cleanup } = await initMcpTools(servers, {
+      connect: async (name) => {
+        if (name === 'bad') throw new Error('spawn ENOENT')
+        return { tools: [fakeTool], close: async () => {} }
+      },
+      onWarn: m => warns.push(m),
+    })
+    expect(tools).toEqual([fakeTool])
+    expect(warns.some(w => w.includes('bad') && w.includes('spawn ENOENT'))).toBe(true)
+    await cleanup()
+  })
+
+  it('cleanup 调用每个成功连接的 close', async () => {
+    let closed = 0
+    const { cleanup } = await initMcpTools({ a: { command: 'x' }, b: { command: 'y' } }, {
+      connect: async () => ({ tools: [], close: async () => { closed++ } }),
+    })
+    await cleanup()
+    expect(closed).toBe(2)
+  })
+
+  it('无配置返回空工具与 no-op cleanup', async () => {
+    const { tools, cleanup } = await initMcpTools(undefined, {})
+    expect(tools).toEqual([])
+    await expect(cleanup()).resolves.toBeUndefined()
+  })
+
+  it('cleanup 单个 close 抛错不影响其它', async () => {
+    let closedB = false
+    const { cleanup } = await initMcpTools({ a: { command: 'x' }, b: { command: 'y' } }, {
+      connect: async (name) => ({
+        tools: [],
+        close: async () => { if (name === 'a') throw new Error('x'); closedB = true },
+      }),
+    })
+    await expect(cleanup()).resolves.toBeUndefined()
+    expect(closedB).toBe(true)
+  })
+})
