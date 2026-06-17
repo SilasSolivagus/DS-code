@@ -46,6 +46,17 @@ export interface McpToolDef {
   annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean }
 }
 
+/** 异步连接 MCP 并把工具 push 进既有 tools 数组（同一引用，后续 turn 的 deps.tools 自动可见）。返回 cleanup。 */
+export async function attachMcpTools(
+  tools: Tool[],
+  servers: Record<string, McpStdioServerConfig> | undefined,
+  onWarn?: (msg: string) => void,
+): Promise<() => Promise<void>> {
+  const { tools: mcpTools, cleanup } = await initMcpTools(servers, { onWarn })
+  tools.push(...mcpTools)
+  return cleanup
+}
+
 /** 调 MCP 工具所需的最小 client 接口（便于测试 mock；真实为 SDK Client）。 */
 export interface McpCaller {
   callTool(

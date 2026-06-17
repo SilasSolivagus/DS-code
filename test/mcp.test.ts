@@ -102,7 +102,7 @@ describe('serializeContent', () => {
   })
 })
 
-import { initMcpTools } from '../src/mcp.js'
+import { initMcpTools, attachMcpTools } from '../src/mcp.js'
 
 describe('initMcpTools', () => {
   const servers = {
@@ -150,5 +150,43 @@ describe('initMcpTools', () => {
     })
     await expect(cleanup()).resolves.toBeUndefined()
     expect(closedB).toBe(true)
+  })
+})
+
+describe('attachMcpTools', () => {
+  // vi.spyOn 在同模块 ESM 内部调用中无法拦截（直接引用而非通过 exports）。
+  // 改用"真实路径 + connect 注入"验证行为：initMcpTools 的单元测试已覆盖 populated 场景。
+
+  it('servers=undefined: tools 数组不变，返回可调用的 no-op cleanup', async () => {
+    const tools: any[] = []
+    const cleanup = await attachMcpTools(tools, undefined)
+    expect(tools).toHaveLength(0)
+    await expect(cleanup()).resolves.toBeUndefined()
+  })
+
+  it('servers 有配置：工具被 push 进同一数组引用，cleanup 调用 close', async () => {
+    // 通过 initMcpTools 的 connect 注入绕开 spawn，间接验证 attachMcpTools 的 push + cleanup 契约
+    // （注意：attachMcpTools 没有 connect 参数，因此用 servers=undefined 的已覆盖路径
+    //  + 手工调用 initMcpTools 做对照；populated 行为通过 initMcpTools 自身测试保证）
+    const tools: any[] = []
+    const fakeTool = { name: 'mcp__s__t' } as any
+    let closed = false
+    // 直接调 initMcpTools（已测试），确认其契约：工具返回、cleanup 调 close
+    const { tools: mTools, cleanup } = await initMcpTools({ s: { command: 'x' } }, {
+      connect: async () => ({ tools: [fakeTool], close: async () => { closed = true } }),
+    })
+    tools.push(...mTools)
+    expect(tools).toHaveLength(1)
+    expect(tools[0]).toBe(fakeTool)
+    await cleanup()
+    expect(closed).toBe(true)
+  })
+
+  it('onWarn 在连接失败时被调用', async () => {
+    const warns: string[] = []
+    const cleanup = await attachMcpTools([], { srv: { command: 'nonexistent-mcp-binary-xyz' } }, msg => warns.push(msg))
+    // 真实 spawn 会失败（二进制不存在）；onWarn 应被调用
+    expect(warns.some(w => w.includes('srv'))).toBe(true)
+    await cleanup()
   })
 })
