@@ -35,6 +35,9 @@ export interface LoopDeps {
   hooks?: HooksConfig
   /** prompt/agent/http hook 运行时（llm/runAgent/fetch）。仅主会话传入；与 hooks 配对。 */
   hookDeps?: import('./hooks.js').HookEngineDeps
+  /** inline skill 注入队列 drain：每轮 tool 结果回灌后调用，返回的内容各作 user 消息追加。
+   *  与 ctx.injectUserMessage 接同一 buffer（caller 在 useChat/headless 接线）。 */
+  drainInjections?: () => string[]
 }
 
 const CONCURRENCY = 5
@@ -260,6 +263,10 @@ export async function* runLoop(
     if (notes.length) {
       const last = messages[messages.length - 1] // 上面刚推完 tool 消息，必为 tool
       last.content += `\n\n<system-reminder>\n${notes.join('\n\n')}\n</system-reminder>`
+    }
+    // inline skill：把工具经 injectUserMessage 排入的内容作为 user 消息追加（在 tool 结果之后，下一轮模型可见）
+    for (const inj of deps.drainInjections?.() ?? []) {
+      messages.push({ role: 'user', content: inj })
     }
     yield { type: 'turn_end', usage: result.usage }
     if (deps.ctx.signal.aborted) {

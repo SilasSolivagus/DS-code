@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { findMemoryFiles, buildSystemPrompt } from '../src/prompt.js'
+import type { SkillDefinition } from '../src/skillsLoader.js'
 
 describe('findMemoryFiles', () => {
   it('从 cwd 向上收集 CLAUDE.md/AGENTS.md，再加全局 DEEPCODE.md', () => {
@@ -63,5 +64,18 @@ describe('buildSystemPrompt', () => {
     expect(p).toContain('HTML')        // 优先选可打开/可运行的介质
     expect(p).toContain('xdg-open')
     expect(p).toContain('如实汇报')    // 诚实性条款
+  })
+
+  it('清单注入：只列 modelInvocable 的 skill；空/无 skills 不加节', () => {
+    const cwd = process.cwd()
+    expect(buildSystemPrompt(cwd, undefined, [])).not.toContain('可用技能')
+    const skills: SkillDefinition[] = [
+      { name: 'a', description: '甲', context: 'inline', userInvocable: true, modelInvocable: true, skillDir: '/d', isLegacy: false, body: 'x' },
+      { name: 'b', description: '乙', context: 'inline', userInvocable: true, modelInvocable: false, skillDir: '/d', isLegacy: true, body: 'y' },
+    ]
+    const p = buildSystemPrompt(cwd, undefined, skills)
+    expect(p).toContain('可用技能')
+    expect(p).toContain('a：甲')
+    expect(p).not.toContain('乙') // b 不可由模型调用，不列
   })
 })

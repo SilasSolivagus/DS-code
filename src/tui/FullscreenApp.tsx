@@ -120,7 +120,7 @@ export function FullscreenApp(props: {
 
   const suggestions = useMemo(() => {
     if (justPickedRef.current !== null && draft === justPickedRef.current) return []
-    return computeSuggestions(draft, { cwd: props.cwd, customCommands: core.customCommands })
+    return computeSuggestions(draft, { cwd: props.cwd, customCommands: core.customCommands, skills: core.skills })
   }, [draft])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePick = (v: string) => {

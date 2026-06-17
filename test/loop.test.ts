@@ -593,6 +593,38 @@ describe('runLoop + Stop hook', () => {
   })
 })
 
+describe('drainInjections', () => {
+  it('工具经 injectUserMessage 注入的内容在 tool 结果后作为 user 消息入队', async () => {
+    const buffer: string[] = []
+    const injectTool: any = {
+      name: 'Inject', description: '', isReadOnly: true,
+      inputSchema: z.object({}),
+      needsPermission: () => false as const,
+      call: async (_i: any, c: any) => { c.injectUserMessage?.('注入的指令'); return '已激活' },
+    }
+    script.push(
+      {
+        result: {
+          content: '',
+          toolCalls: [{ id: 't1', name: 'Inject', args: '{}' }],
+          usage,
+          finishReason: 'tool_calls',
+        },
+      },
+      { result: { content: 'ok', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    const deps = makeDeps([injectTool])
+    deps.ctx.injectUserMessage = (c: string) => buffer.push(c)
+    deps.drainInjections = () => buffer.splice(0)
+    const messages: any[] = [{ role: 'user', content: 'go' }]
+    await drain(runLoop(messages, deps))
+    // tool 结果后应有一条 user 消息 = 注入内容
+    const toolIdx = messages.findIndex(m => m.role === 'tool')
+    expect(messages[toolIdx].content).toBe('已激活')
+    expect(messages[toolIdx + 1]).toEqual({ role: 'user', content: '注入的指令' })
+  })
+})
+
 describe('runLoop + StopFailure hook', () => {
   it('API 抛错（非中断）→ StopFailure hook 触发后继续抛', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'dc-sf-'))

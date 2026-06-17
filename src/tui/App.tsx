@@ -95,7 +95,7 @@ export function App(props: {
     () => {
       // 刚刚 pick 后不显示菜单（防止选 /model 后立刻再弹出）
       if (justPickedRef.current !== null && draft === justPickedRef.current) return []
-      return computeSuggestions(draft, { cwd: props.cwd, customCommands: core.customCommands })
+      return computeSuggestions(draft, { cwd: props.cwd, customCommands: core.customCommands, skills: core.skills })
     },
     [draft],  // eslint-disable-line react-hooks/exhaustive-deps
   )

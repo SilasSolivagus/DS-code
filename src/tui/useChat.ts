@@ -37,6 +37,8 @@ import { lastAssistantText, copyToClipboard } from '../clipboard.js'
 import { sessionStats, formatStats } from '../stats.js'
 import { formatKeybindings } from '../keybindings.js'
 import { attachMcpTools } from '../mcp.js'
+import { loadSkills, substituteSkillArgs } from '../skillsLoader.js'
+import { makeSkillTool } from '../tools/skill.js'
 
 /** ! 直跑：同步执行，30s 超时，stdout+stderr 合并，超 20k 截断 */
 export function runBang(cmd: string, cwd: string): { output: string; code: number } {
@@ -170,6 +172,7 @@ export interface ChatCore {
   resumeList(): { file: string; preview: string }[]
   resume(file: string): void
   customCommands: Map<string, string>
+  skills: import('../skillsLoader.js').SkillDefinition[]
   /** React useSyncExternalStore 订阅口（onState 仍保留给非 React 消费者） */
   subscribe(listener: () => void): () => void
   rewindList(): { turnId: number; preview: string; fileCount: number }[]
@@ -213,7 +216,13 @@ export function createChatCore(opts: {
     hookDispatch: (event, payload) => runHooks(event, payload, settings.hooks, hookDeps),
     sessionId: () => (session ? sessionIdFromFile(session.file) : undefined),
   }
-  const messages: any[] = [{ role: 'system', content: buildSystemPrompt(cwd) }]
+  const customCommands = loadCustomCommands(cwd)
+  const agents = resolveAgents(cwd) // 内建 + 自定义合并后的注册表
+  // Skills 接线：加载本地 skill 清单，建 injection buffer（inline skill 正文由此流入下一轮 user 消息）
+  const skills = loadSkills(cwd)
+  const injectionBuffer: string[] = []
+  ctx.injectUserMessage = (c: string) => injectionBuffer.push(c)
+  const messages: any[] = [{ role: 'system', content: buildSystemPrompt(cwd, undefined, skills) }]
   const usageLog: UsageRecord[] = []
   let session!: SessionHandle
   const hookDeps = makeHookRuntime({
@@ -225,8 +234,6 @@ export function createChatCore(opts: {
   let compacted = false       // compact 后首条用户消息的一次性提醒
   let lastPromptTokens = 0    // 自动 compact 触发依据
   let costWarned = false      // $阈值提醒只发一次
-  const customCommands = loadCustomCommands(cwd)
-  const agents = resolveAgents(cwd) // 内建 + 自定义合并后的注册表
 
   // —— UI 状态 ——
   let transcript: TranscriptItem[] = []
@@ -285,7 +292,7 @@ export function createChatCore(opts: {
     todos.reset(); compacted = false; lastPromptTokens = 0
     // doCompact 崩溃在 appendCompact 与首条 re-append 之间的兜底
     if (messages.length === 0 || messages[0]?.role !== 'system') {
-      messages.unshift({ role: 'system', content: buildSystemPrompt(cwd) })
+      messages.unshift({ role: 'system', content: buildSystemPrompt(cwd, undefined, skills) })
       session.appendMessage(messages[0])
     }
     nextTurnId = loaded.maxTurnId + 1
@@ -372,6 +379,12 @@ export function createChatCore(opts: {
       onUsage: (u, m) => { usageLog.push({ usage: u, model: m }); session.appendUsage(u, m) },
     }),
     makeAskUserQuestionTool({ ask: questionAsk }),
+    makeSkillTool(skills, {
+      client: opts.client,
+      onUsage: (u, m) => { usageLog.push({ usage: u, model: m }); session.appendUsage(u, m) },
+      getModel: () => model, agents,
+      skillPool: [...allTools, makeWebFetchTool({ client: opts.client, onUsage: (u, m) => { usageLog.push({ usage: u, model: m }); session.appendUsage(u, m) } })],
+    }),
     taskListTool,
     taskOutputTool,
     taskStopTool,
@@ -502,6 +515,7 @@ export function createChatCore(opts: {
         injectTaskNotifications: true, // 主会话：runLoop 终止点 drain 后台完成通知续跑
         hooks: settings.hooks,
         hookDeps,
+        drainInjections: () => injectionBuffer.splice(0),
       }
       const gen = runLoop(messages, deps)
       let firstDeltaAt: number | null = null // 本 turn 首个流式分片时间戳（tok/s 计算）
@@ -713,15 +727,29 @@ export function createChatCore(opts: {
       return
     }
 
-    // 斜杠命令：/init 和自定义命令；未知则报错
+    // 斜杠命令：/init、skill 命令、自定义命令；未知则报错
     let userText = line
     if (line === '/init') {
       userText = INIT_PROMPT
     } else if (line.startsWith('/')) {
       const [name, ...rest] = line.slice(1).split(' ')
-      const tpl = customCommands.get(name)
-      if (!tpl) { notice('warn', `未知命令 /${name}，/help 查看可用命令`); return }
-      userText = expandCommand(tpl, rest.join(' '))
+      const skill = skills.find(s => s.name === name && s.userInvocable)
+      if (skill) {
+        // skill 命中：填充参数后作为 user 指令发送（forked/inline 统一走 user 路径，无 tool_call 上下文）
+        // forked 用户技能简化：斜杠路径无法注入 tool_call 上下文，inline 化（注偏离：forked 不隔离子 agent）
+        if (skill.context === 'fork') {
+          notice('info', `技能 /${name} 为 fork 类型，斜杠调用按 inline 处理（不隔离子代理）`)
+        }
+        const args = rest.join(' ')
+        const filled = substituteSkillArgs(skill.body, args, {
+          argNames: skill.argNames, skillDir: skill.skillDir, sessionId: ctx.sessionId?.(),
+        })
+        userText = filled
+      } else {
+        const tpl = customCommands.get(name)
+        if (!tpl) { notice('warn', `未知命令 /${name}，/help 查看可用命令`); return }
+        userText = expandCommand(tpl, rest.join(' '))
+      }
     } else {
       // 非斜杠输入：展开 @文件引用再发送
       const { text: expanded, misses } = expandAtRefs(line, cwd)
@@ -769,6 +797,7 @@ export function createChatCore(opts: {
       fireSessionStart('resume')
     },
     customCommands,
+    skills,
     subscribe: (listener: () => void) => {
       listeners.add(listener)
       return () => { listeners.delete(listener) }
