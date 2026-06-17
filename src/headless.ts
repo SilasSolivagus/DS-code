@@ -16,6 +16,8 @@ import { loadSettings } from './config.js'
 import { runHooks } from './hooks.js'
 import { makeHookRuntime } from './hookRuntime.js'
 import { initMcpTools } from './mcp.js'
+import { loadSkills } from './skillsLoader.js'
+import { makeSkillTool } from './tools/skill.js'
 import { TodoStore } from './todo.js'
 import { costUSD } from './pricing.js'
 import type { ToolContext } from './tools/types.js'
@@ -36,6 +38,8 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
   const model = 'deepseek-v4-flash'
   let cwd = process.cwd()
   const agents = resolveAgents(cwd)
+  const skills = loadSkills(cwd)
+  const injectionBuffer: string[] = []
   const todos = new TodoStore()
   const sessionId = 'headless-' + crypto.randomBytes(4).toString('hex')
   const ctx: ToolContext = {
@@ -46,6 +50,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     todos,
     hookDispatch: (event, payload) => runHooks(event, payload, settings.hooks), // overwritten below after hookDeps is built
     sessionId: () => sessionId,
+    injectUserMessage: (c: string) => injectionBuffer.push(c),
   }
   const total: Usage = { prompt_tokens: 0, completion_tokens: 0, prompt_cache_hit_tokens: 0 }
   let turns = 0
@@ -58,7 +63,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
   const hookDeps = makeHookRuntime({ client: opts.client, getModel: () => model, onUsage: (u, _m) => addUsage(u), cwd: () => cwd })
   ctx.hookDispatch = (event, payload) => runHooks(event, payload, settings.hooks, hookDeps)
   // SessionStart：会话开始（headless 恒 startup）。await 注入 additionalContext 到初始上下文。
-  const initMsgs: any[] = [{ role: 'system', content: buildSystemPrompt(cwd) }]
+  const initMsgs: any[] = [{ role: 'system', content: buildSystemPrompt(cwd, undefined, skills) }]
   if (settings.hooks) {
     const ss = await runHooks('SessionStart', {
       hook_event_name: 'SessionStart', cwd, session_id: ctx.sessionId?.(), source: 'startup',
@@ -92,7 +97,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
   })
   const gen = runLoop(messages, {
     client: opts.client,
-    tools: [...allTools, todoWriteTool, makeAgentTool({ client: opts.client, onUsage: (u, _model) => addUsage(u), getModel: () => model, agents }), makeWebFetchTool({ client: opts.client, onUsage: (u, _model) => addUsage(u) }), taskListTool, taskOutputTool, taskStopTool, ...mcpTools],
+    tools: [...allTools, todoWriteTool, makeAgentTool({ client: opts.client, onUsage: (u, _model) => addUsage(u), getModel: () => model, agents }), makeWebFetchTool({ client: opts.client, onUsage: (u, _model) => addUsage(u) }), taskListTool, taskOutputTool, taskStopTool, ...mcpTools, makeSkillTool(skills, { client: opts.client, onUsage: (u, _m) => addUsage(u), getModel: () => model, agents, skillPool: [...allTools, makeWebFetchTool({ client: opts.client, onUsage: (u, _m) => addUsage(u) })] })],
     model,
     thinking: false,
     ctx,
@@ -107,6 +112,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
       const note = todos.staleReminder()
       return note ? [note] : []
     },
+    drainInjections: () => injectionBuffer.splice(0),
     injectTaskNotifications: true, // 运行中完成的后台任务在终止点注入续跑（单发模式无空闲订阅）
     hooks: settings.hooks,
     hookDeps,
