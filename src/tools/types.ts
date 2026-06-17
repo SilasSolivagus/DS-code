@@ -27,6 +27,8 @@ export interface Tool<S extends z.ZodTypeAny = z.ZodTypeAny> {
   name: string
   description: string
   inputSchema: S
+  /** MCP 工具：直接透传 server 给的 JSON Schema；toApiTools 优先用它，跳过 zodToJsonSchema。 */
+  rawJsonSchema?: object
   /** 只读工具：自动放行权限 + 可并发执行 */
   isReadOnly: boolean
   /** false=无需确认；string=展示给用户的操作描述（权限规则的匹配对象） */
