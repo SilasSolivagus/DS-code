@@ -19,3 +19,15 @@ export function expandEnvVars(value: string, env: Record<string, string | undefi
     return hasDefault !== undefined ? def : ''
   })
 }
+
+/** MCP CallToolResult.content（block 数组）拍平成字符串（deepcode tool.call 返回 string）。 */
+export function serializeContent(content: unknown): string {
+  if (!Array.isArray(content)) return typeof content === 'string' ? content : JSON.stringify(content)
+  return content
+    .map((b: any) => {
+      if (b?.type === 'text') return b.text ?? ''
+      if (b?.type === 'resource' && typeof b.resource?.text === 'string') return b.resource.text
+      return JSON.stringify(b)
+    })
+    .join('\n')
+}

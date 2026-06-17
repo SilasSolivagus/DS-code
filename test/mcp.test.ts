@@ -33,3 +33,24 @@ describe('expandEnvVars', () => {
     expect(expandEnvVars('plain text', env)).toBe('plain text')
   })
 })
+
+import { serializeContent } from '../src/mcp.js'
+
+describe('serializeContent', () => {
+  it('text block 取 text', () => {
+    expect(serializeContent([{ type: 'text', text: 'hello' }])).toBe('hello')
+  })
+  it('多 block 用换行连接', () => {
+    expect(serializeContent([{ type: 'text', text: 'a' }, { type: 'text', text: 'b' }])).toBe('a\nb')
+  })
+  it('resource block 取内嵌 text', () => {
+    expect(serializeContent([{ type: 'resource', resource: { uri: 'x', text: 'rt' } }])).toBe('rt')
+  })
+  it('未知 block 序列化为 JSON', () => {
+    expect(serializeContent([{ type: 'image', data: 'b64' }])).toBe('{"type":"image","data":"b64"}')
+  })
+  it('非数组兜底', () => {
+    expect(serializeContent('raw')).toBe('raw')
+    expect(serializeContent({ a: 1 })).toBe('{"a":1}')
+  })
+})
