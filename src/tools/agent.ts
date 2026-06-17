@@ -11,6 +11,7 @@ import { makeWebFetchTool } from './webfetch.js'
 import { SUB_MODEL } from './constants.js'
 import { isDangerous, type Decision } from '../permissions.js'
 import { BUILTIN_AGENTS, GLOBAL_SUBAGENT_DENY, resolveAgentTools, buildAgentDescription } from './agentTypes.js'
+import { makeStructuredOutputTool, structuredOutputReminder, MAX_STRUCTURED_OUTPUT_RETRIES } from './structuredOutput.js'
 import { generateTaskId, registerTask, updateTask, getTask, enqueueNotification } from '../tasks.js'
 import { taskOutputPath } from '../config.js'
 
@@ -83,10 +84,16 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
           isSubagent: true, // 子代理纯执行：禁止起后台任务（防污染主会话通知队列）
         }
         let subStopFired = false
+        // L-044：声明 outputSchema → 注入 StructuredOutput 工具，强制子代理产出校验对象。
+        let captured: unknown
+        let structuredRetries = 0
+        const subTools = def.outputSchema
+          ? [...tools, makeStructuredOutputTool(def.outputSchema, v => { captured = v })]
+          : tools
         while (true) {
           const gen = runLoop(messages, {
             client: deps.client,
-            tools,
+            tools: subTools,
             model: subModel,
             thinking: false,
             // 子代理无审批 UI：安全命令自动放行、危险命令拒绝（yolo+钳制，见 subagentPermissionDecision）。
@@ -99,6 +106,17 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
             if (step.value.type === 'turn_end') deps.onUsage(step.value.usage, subModel)
           }
           const final = [...messages].reverse().find(m => m.role === 'assistant' && typeof m.content === 'string' && m.content)
+          // L-044 强约束：声明了 schema 但本轮还没拿到校验对象 → 注入提醒续跑（≤MAX 次；独立于 subStopFired 配额）。
+          if (def.outputSchema && captured === undefined) {
+            if (structuredRetries < MAX_STRUCTURED_OUTPUT_RETRIES) {
+              structuredRetries++
+              messages.push({ role: 'user', content: structuredOutputReminder() })
+              continue
+            }
+            // 超限：fail-safe 兜底返回末条文本（不死循环）。
+          }
+          // L-044：结构化对象优先于自由文本（声明 schema 且已捕获→返回校验 JSON，否则末条文本）。
+          const result = captured !== undefined ? JSON.stringify(captured) : final?.content
           if (ctx.hookDispatch && !signal.aborted) {
             const stopOut = await ctx.hookDispatch('SubagentStop', {
               hook_event_name: 'SubagentStop', agent_id: agentId, agent_type: type, cwd: ctx.cwd(),
@@ -106,14 +124,14 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
               last_assistant_message: final?.content ?? '',
             })
             // continue:false（硬停）优先于 block 续跑：即便另一 hook 要续跑，continue:false 也压倒之。
-            if (stopOut.stop) return final?.content
+            if (stopOut.stop) return result
             if (stopOut.preventContinuation && !subStopFired) {
               subStopFired = true
               messages.push({ role: 'user', content: stopOut.blockReason ?? '（SubagentStop 要求继续未尽事项）' })
               continue
             }
           }
-          return final?.content
+          return result
         }
       }
 

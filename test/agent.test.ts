@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { z } from 'zod'
 import { mkdtempSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -17,6 +18,8 @@ vi.mock('../src/api.js', () => ({
 }))
 
 import { makeAgentTool, subagentPermissionDecision } from '../src/tools/agent.js'
+import { BUILTIN_AGENTS } from '../src/tools/agentTypes.js'
+import { STRUCTURED_OUTPUT_TOOL_NAME } from '../src/tools/structuredOutput.js'
 
 const usage = { prompt_tokens: 30, completion_tokens: 10, prompt_cache_hit_tokens: 0 }
 const ctx = (): any => ({
@@ -314,5 +317,52 @@ describe('Agent 后台化（run_in_background）', () => {
     }
     for (const id of ids) await waitForDone(id)
     expect(ids.map(id => getTask(id)!.status)).toEqual(['completed', 'completed', 'completed', 'completed', 'completed'])
+  })
+})
+
+describe('Agent 结构化输出强约束 (L-044)', () => {
+  const TEST_TYPE = '__l044_test__'
+  const testDef = {
+    agentType: TEST_TYPE, whenToUse: 'test',
+    disallowedTools: ['Edit', 'Write', 'Agent'], model: 'flash' as const,
+    outputSchema: z.object({ count: z.number(), note: z.string() }),
+    getSystemPrompt: () => '你是测试子代理。',
+  }
+  beforeEach(() => { BUILTIN_AGENTS.push(testDef) })
+  afterEach(() => { const i = BUILTIN_AGENTS.indexOf(testDef); if (i >= 0) BUILTIN_AGENTS.splice(i, 1) })
+
+  it('子代理调用 StructuredOutput → 返回校验后 JSON（非自由文本）', async () => {
+    script.push(
+      { result: { content: '', toolCalls: [{ id: 'so1', name: STRUCTURED_OUTPUT_TOOL_NAME, args: JSON.stringify({ count: 3, note: '三个' }) }], usage, finishReason: 'tool_calls' } },
+      { result: { content: '完成了', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
+    const out = await tool.call({ description: 't', prompt: '数一下', subagent_type: TEST_TYPE }, ctx())
+    expect(JSON.parse(out)).toEqual({ count: 3, note: '三个' })
+  })
+
+  it('首轮未调 StructuredOutput → 注入提醒续跑，次轮调了 → 成功', async () => {
+    script.push(
+      { result: { content: '我直接说答案：3 个', toolCalls: [], usage, finishReason: 'stop' } },
+      { result: { content: '', toolCalls: [{ id: 'so1', name: STRUCTURED_OUTPUT_TOOL_NAME, args: JSON.stringify({ count: 3, note: 'x' }) }], usage, finishReason: 'tool_calls' } },
+      { result: { content: 'done', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
+    const out = await tool.call({ description: 't', prompt: '数一下', subagent_type: TEST_TYPE }, ctx())
+    expect(JSON.parse(out)).toEqual({ count: 3, note: 'x' })
+  })
+
+  it('连续不调 → 重试耗尽后兜底返回末条文本（不死循环）', async () => {
+    for (let i = 0; i < 8; i++) script.push({ result: { content: '就是不调工具', toolCalls: [], usage, finishReason: 'stop' } })
+    const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
+    const out = await tool.call({ description: 't', prompt: '数一下', subagent_type: TEST_TYPE }, ctx())
+    expect(out).toBe('就是不调工具')
+  })
+
+  it('无 outputSchema 的内建 agent → 行为不变（返回末条文本）', async () => {
+    script.push({ result: { content: '普通文本结果', toolCalls: [], usage, finishReason: 'stop' } })
+    const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
+    const out = await tool.call({ description: 't', prompt: 'x', subagent_type: 'general-purpose' }, ctx())
+    expect(out).toBe('普通文本结果')
   })
 })

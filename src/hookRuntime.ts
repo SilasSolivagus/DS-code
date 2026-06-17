@@ -8,9 +8,14 @@ import { subagentPermissionDecision } from './tools/agent.js'
 import type { HookEngineDeps } from './hooks.js'
 import { registerAsync } from './hookTasks.js'
 import type { ToolContext } from './tools/types.js'
+import { z } from 'zod'
+import { makeStructuredOutputTool, structuredOutputReminder, MAX_STRUCTURED_OUTPUT_RETRIES } from './tools/structuredOutput.js'
 
 // hook 子代理只用只读工具（防写，且无需审批 UI）。
 const HOOK_AGENT_TOOLS = allTools.filter(t => t.isReadOnly)
+
+/** agent hook 的固定输出 schema（对齐 ①c {ok,reason} 契约）。 */
+const HOOK_EVAL_SCHEMA = z.object({ ok: z.boolean(), reason: z.string().optional() })
 
 /** 把 hook.model（'flash'/'inherit'/具体 id/undefined）解析成真实模型 id。 */
 function resolveModel(model: string | undefined, getModel: () => string): string {
@@ -46,21 +51,34 @@ export function makeHookRuntime(opts: {
       isSubagent: true, // 纯执行 + 不注入 hookDispatch → 子回路 hooks-free 防递归
     }
     const messages: any[] = [{ role: 'user', content: prompt }]
-    const gen = runLoop(messages, {
-      client: opts.client,
-      tools: HOOK_AGENT_TOOLS,
-      model: subModel,
-      thinking: false,
-      permission: { mode: 'default', rules: [], saveRule: () => {}, ask: async (_n, desc) => subagentPermissionDecision(desc) },
-      ctx: subCtx,
-      maxTurns: 10,
-    })
-    let step
-    while (!(step = await gen.next()).done) {
-      if (step.value.type === 'turn_end' && opts.onUsage) opts.onUsage(step.value.usage, subModel)
+    // L-044：注入 StructuredOutput 工具，强制 hook 子代理产出 {ok,reason}（替代 ①c 的自由文本解析近似）。
+    let captured: unknown
+    const tools = [...HOOK_AGENT_TOOLS, makeStructuredOutputTool(HOOK_EVAL_SCHEMA, v => { captured = v })]
+    let structuredRetries = 0
+    while (true) {
+      const gen = runLoop(messages, {
+        client: opts.client,
+        tools,
+        model: subModel,
+        thinking: false,
+        permission: { mode: 'default', rules: [], saveRule: () => {}, ask: async (_n, desc) => subagentPermissionDecision(desc) },
+        ctx: subCtx,
+        maxTurns: 10,
+      })
+      let step
+      while (!(step = await gen.next()).done) {
+        if (step.value.type === 'turn_end' && opts.onUsage) opts.onUsage(step.value.usage, subModel)
+      }
+      if (captured !== undefined) return JSON.stringify(captured)
+      if (structuredRetries < MAX_STRUCTURED_OUTPUT_RETRIES) {
+        structuredRetries++
+        messages.push({ role: 'user', content: structuredOutputReminder() })
+        continue
+      }
+      // fail-safe：重试耗尽 → 回退末条文本（parseHookEvalResult 解析失败 → non_blocking_error 不 block）。
+      const final = [...messages].reverse().find(m => m.role === 'assistant' && typeof m.content === 'string' && m.content)
+      return final?.content ?? ''
     }
-    const final = [...messages].reverse().find(m => m.role === 'assistant' && typeof m.content === 'string' && m.content)
-    return final?.content ?? ''
   }
 
   return { llm, runAgent, registerAsync }

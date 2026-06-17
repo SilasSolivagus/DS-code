@@ -4,6 +4,7 @@ import type { SpawnOptions } from 'node:child_process'
 import path from 'node:path'
 import { matchRule } from './permissions.js'
 import { ENV_FILE_EVENTS, ensureSessionEnvDir, hookEnvFileName, DEFAULT_SESSION_ENV_BASE } from './sessionEnv.js'
+import { STRUCTURED_OUTPUT_TOOL_NAME } from './tools/structuredOutput.js'
 
 export const HOOK_EVENTS = [
   'PreToolUse', 'PostToolUse', 'PostToolUseFailure',
@@ -304,7 +305,7 @@ async function execPromptHook(hook: PromptHook, payload: Record<string, unknown>
 
 const truncLabel = (s: string): string => (s.length > 60 ? s.slice(0, 60) + '…' : s)
 
-const AGENT_HOOK_SYSTEM = `你正在作为 deepcode 的 agent hook 运行一个核查子代理。完成核查后，你的最后一条消息必须是且仅是一个 JSON 对象：\n- 通过：{"ok": true}\n- 不通过：{"ok": false, "reason": "原因"}\n不要输出任何其他文字。`
+const AGENT_HOOK_SYSTEM = `你正在作为 deepcode 的 agent hook 运行一个核查子代理。完成核查后，你必须调用 ${STRUCTURED_OUTPUT_TOOL_NAME} 工具返回结论：\n- 通过：{"ok": true}\n- 不通过：{"ok": false, "reason": "原因"}\n不要把结论写成普通文本，必须经该工具返回。`
 
 /** 多轮核查子代理（复用注入的 runAgent，返回末条文本）。无 runAgent → non_blocking_error。 */
 async function execAgentHook(hook: AgentHook, payload: Record<string, unknown>, deps: ResolvedHookDeps): Promise<HookResult> {
