@@ -1,0 +1,87 @@
+import { describe, it, expect } from 'vitest'
+import { parseSkillFile, loadSkills } from '../src/skillsLoader.js'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+
+describe('parseSkillFile', () => {
+  it('解析 frontmatter 全字段', () => {
+    const raw = `---
+name: review-pr
+description: 审查 PR
+when-to-use: 用户要审查代码改动时
+context: fork
+agent: general-purpose
+allowed-tools: Read, Grep
+arguments: target
+disable-model-invocation: false
+---
+请审查 $ARG1 的改动。`
+    const s = parseSkillFile(raw, '/skills/review-pr', 'review-pr')!
+    expect(s.name).toBe('review-pr')
+    expect(s.description).toBe('审查 PR')
+    expect(s.whenToUse).toBe('用户要审查代码改动时')
+    expect(s.context).toBe('fork')
+    expect(s.agent).toBe('general-purpose')
+    expect(s.allowedTools).toEqual(['Read', 'Grep'])
+    expect(s.argNames).toEqual(['target'])
+    expect(s.userInvocable).toBe(true)
+    expect(s.modelInvocable).toBe(true)
+    expect(s.isLegacy).toBe(false)
+    expect(s.body).toBe('请审查 $ARG1 的改动。')
+  })
+
+  it('默认值：无 frontmatter context→inline，可见性双开，name 取 fallback，description 取正文首非空行', () => {
+    const s = parseSkillFile('\n做一件事\n更多内容', '/skills/x', 'do-thing')!
+    expect(s.name).toBe('do-thing')
+    expect(s.description).toBe('做一件事')
+    expect(s.context).toBe('inline')
+    expect(s.userInvocable).toBe(true)
+    expect(s.modelInvocable).toBe(true)
+  })
+
+  it('可见性字段：user-invocable:false 关用户路径；disable-model-invocation:true 关模型路径', () => {
+    const raw = `---
+description: x
+user-invocable: false
+disable-model-invocation: true
+---
+body`
+    const s = parseSkillFile(raw, '/d', 'x')!
+    expect(s.userInvocable).toBe(false)
+    expect(s.modelInvocable).toBe(false)
+  })
+
+  it('legacy 命令：isLegacy=true → user-only, inline, body=全文', () => {
+    const s = parseSkillFile('回顾 $ARGUMENTS', '/cmds', 'recap', true)!
+    expect(s.isLegacy).toBe(true)
+    expect(s.userInvocable).toBe(true)
+    expect(s.modelInvocable).toBe(false)
+    expect(s.context).toBe('inline')
+    expect(s.body).toBe('回顾 $ARGUMENTS')
+  })
+
+  it('正文为空 → null（无内容的 skill 无意义）', () => {
+    expect(parseSkillFile('---\ndescription: x\n---\n', '/d', 'x')).toBeNull()
+  })
+})
+
+describe('loadSkills 发现 + 合并', () => {
+  it('扫 skills 目录 + legacy commands；同名 skill 覆盖 legacy；缺目录跳过', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dc-home-'))
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'dc-cwd-'))
+    // 一个项目级 skill 目录
+    fs.mkdirSync(path.join(cwd, '.deepcode', 'skills', 'greet'), { recursive: true })
+    fs.writeFileSync(path.join(cwd, '.deepcode', 'skills', 'greet', 'SKILL.md'), '---\ndescription: 打招呼\n---\n说你好')
+    // 一个 legacy 命令同名 greet（应被 skill 覆盖）+ 一个独有 legacy recap
+    fs.mkdirSync(path.join(cwd, '.deepcode', 'commands'), { recursive: true })
+    fs.writeFileSync(path.join(cwd, '.deepcode', 'commands', 'greet.md'), '旧打招呼')
+    fs.writeFileSync(path.join(cwd, '.deepcode', 'commands', 'recap.md'), '回顾 $ARGUMENTS')
+
+    const skills = loadSkills(cwd, home)
+    const byName = Object.fromEntries(skills.map(s => [s.name, s]))
+    expect(byName['greet'].isLegacy).toBe(false)     // skill 覆盖了 legacy
+    expect(byName['greet'].body).toBe('说你好')
+    expect(byName['recap'].isLegacy).toBe(true)      // 独有 legacy 保留
+  })
+})
