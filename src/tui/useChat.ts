@@ -26,7 +26,7 @@ import { makeHookRuntime } from '../hookRuntime.js'
 import { isDangerous, type Decision, type PermissionMode } from '../permissions.js'
 import type { ToolContext } from '../tools/types.js'
 import { newSession, openSession, listSessions, loadSession, sessionIdFromFile, type SessionHandle, type UsageRecord } from '../session.js'
-import { costUSD } from '../pricing.js'
+import { costUSD, cacheSavingsUSD } from '../pricing.js'
 import { summarize, rebuildMessages } from '../compact.js'
 import { TaskListStore } from '../taskList.js'
 import { loadCustomCommands, expandCommand, INIT_PROMPT, formatContext } from '../commands.js'
@@ -161,6 +161,7 @@ export interface ChatState {
   turnOutTokens: number      // 当前轮累计输出 token（spinner 实时显示；流式估算，turn 边界用真实值校准）
   sessionCost(): number
   cacheHitRate(): number // usageLog 累计 hit/prompt，DeepSeek 状态行核心指标
+  cacheSavings(): number // usageLog 累计缓存省下金额（USD），DeepSeek 状态行
   contextPct(): number // 上下文占比：lastPromptTokens / compactTokens（0-100），用于状态栏上下文条
 }
 
@@ -251,13 +252,15 @@ export function createChatCore(opts: {
     const prompt = usageLog.reduce((s, u) => s + u.usage.prompt_tokens, 0)
     return prompt ? usageLog.reduce((s, u) => s + u.usage.prompt_cache_hit_tokens, 0) / prompt : 0
   }
+  const cacheSavings = () =>
+    usageLog.reduce((s, u) => s + cacheSavingsUSD(u.model, u.usage.prompt_cache_hit_tokens), 0)
   const contextPct = () =>
     settings.compactTokens ? Math.min(100, Math.round((lastPromptTokens / settings.compactTokens) * 100)) : 0
 
   // 所有状态变更走 setState：换新快照对象 → onState 回调 + 订阅者通知
   const listeners = new Set<() => void>()
   const snap = (): ChatState => ({
-    transcript, busy, model, thinking, permMode, pendingAsk, pendingQuestion, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, sessionCost, cacheHitRate, contextPct,
+    transcript, busy, model, thinking, permMode, pendingAsk, pendingQuestion, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, sessionCost, cacheHitRate, cacheSavings, contextPct,
   })
   let state = snap()
   const setState = (): void => {

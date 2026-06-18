@@ -12,6 +12,8 @@ const base = {
   memoryCount: 2,
   contextPct: 28,
   cost: 0.0042,
+  hitRate: 0,
+  cacheSavings: 0,
   toolCounts: [{ name: 'Read', n: 4 }, { name: 'Bash', n: 2 }],
 }
 
@@ -51,5 +53,18 @@ describe('StatusFooter', () => {
     expect(f).not.toContain('DEEPCODE.md')
     expect(f).toContain('Context')
     expect(f).toContain('看命令')
+  })
+
+  it('hitRate>0 时 Row 2 显示 cache N% 与省下金额', () => {
+    const f = render(<StatusFooter {...base} hitRate={0.87} cacheSavings={0.0089} />).lastFrame()!
+    expect(f).toContain('cache 87%')
+    expect(f).toContain('−$0.0089')
+  })
+
+  it('hitRate===0 时隐藏整个 cache 段（仍显示 Context 与花费）', () => {
+    const f = render(<StatusFooter {...base} hitRate={0} cacheSavings={0} />).lastFrame()!
+    expect(f).not.toContain('cache')
+    expect(f).toContain('Context')
+    expect(f).toContain('$0.0042')
   })
 })
