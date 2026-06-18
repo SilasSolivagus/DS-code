@@ -37,6 +37,7 @@ export async function runAutoDream(deps: AutoDreamDeps): Promise<void> {
     })
     if (!gate.pass) return
     const prior = tryAcquireConsolidationLock(deps.memdir, deps.now)
+    // null = 锁被占（其他存活进程）或写锁失败，均跳过本次 dream
     if (prior === null) return
     try {
       const runSub = deps.runSubagent ?? realRunSubagent

@@ -25,14 +25,17 @@ describe('runAutoDream', () => {
   })
 
   test('门控过 → 取锁 + fork + 成功更新 mtime', async () => {
+    const now = Date.now()
     const runSub = vi.fn(async () => 'done')
     await runAutoDream({
       client: {} as any, model: 'm', memdir: md, sessionsDir: sd, currentSessionFile: path.join(sd, 'c.jsonl'),
       cfg: DEFAULT_MEMORY_CONFIG.dream, ctx: { signal: new AbortController().signal } as any,
-      now: Date.now(), lastScanAt: 0, runSubagent: runSub, gate: () => ({ pass: true }), sessionCount: 5,
+      now, lastScanAt: 0, runSubagent: runSub, gate: () => ({ pass: true }), sessionCount: 5,
     })
     expect(runSub).toHaveBeenCalled()
     expect(fs.existsSync(path.join(md, '.consolidate-lock'))).toBe(true)
+    const lockStat = fs.statSync(path.join(md, '.consolidate-lock'))
+    expect(lockStat.mtimeMs).toBeGreaterThan(0)
   })
 
   test('fork 失败 → 回退锁（fail-safe，不抛）', async () => {
@@ -42,5 +45,6 @@ describe('runAutoDream', () => {
       cfg: DEFAULT_MEMORY_CONFIG.dream, ctx: { signal: new AbortController().signal } as any,
       now: Date.now(), lastScanAt: 0, runSubagent: runSub, gate: () => ({ pass: true }), sessionCount: 5,
     })).resolves.toBeUndefined()
+    expect(fs.existsSync(path.join(md, '.consolidate-lock'))).toBe(false)
   })
 })
