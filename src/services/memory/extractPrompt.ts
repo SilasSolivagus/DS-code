@@ -4,6 +4,7 @@ export function renderRecentMessages(messages: any[]): string {
   return messages.map(m => {
     const text = typeof m.content === 'string' ? m.content
       : Array.isArray(m.content) ? m.content.map((c: any) => c?.text ?? '').join('') : ''
+    if (!text.trim()) return ''
     return `[${m.role}] ${text}`.trim()
   }).filter(Boolean).join('\n\n')
 }
