@@ -33,12 +33,15 @@ export function makeMemdirTools(memdir: string): Tool<any>[] {
     inputSchema: wschema,
     isReadOnly: false,
     needsPermission: () => false, // forked 子代理无 UI；隔离靠路径断言
+    deniablePaths: (input) => [path.isAbsolute(input.file_path) ? input.file_path : path.join(memdir, input.file_path)],
     async call(input) {
       const p = resolve(input.file_path)
       const deny = assertInMemdir(memdir, p)
       if (deny) return deny
-      fs.mkdirSync(path.dirname(p), { recursive: true })
-      fs.writeFileSync(p, input.content)
+      try {
+        fs.mkdirSync(path.dirname(p), { recursive: true })
+        fs.writeFileSync(p, input.content)
+      } catch (e: any) { return `错误：写入失败 ${p}：${e?.message ?? e}` }
       return `已写入 ${p}（${input.content.length} 字符）。`
     },
   }
@@ -49,6 +52,7 @@ export function makeMemdirTools(memdir: string): Tool<any>[] {
     inputSchema: eschema,
     isReadOnly: false,
     needsPermission: () => false,
+    deniablePaths: (input) => [path.isAbsolute(input.file_path) ? input.file_path : path.join(memdir, input.file_path)],
     async call(input) {
       const p = resolve(input.file_path)
       const deny = assertInMemdir(memdir, p)
@@ -56,7 +60,8 @@ export function makeMemdirTools(memdir: string): Tool<any>[] {
       let cur: string
       try { cur = fs.readFileSync(p, 'utf8') } catch { return `错误：文件不存在 ${p}` }
       if (!cur.includes(input.old_string)) return `错误：old_string 未匹配到。`
-      fs.writeFileSync(p, cur.replace(input.old_string, input.new_string))
+      try { fs.writeFileSync(p, cur.replace(input.old_string, input.new_string)) }
+      catch (e: any) { return `错误：写入失败 ${p}：${e?.message ?? e}` }
       return `已编辑 ${p}。`
     },
   }

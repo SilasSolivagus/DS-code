@@ -37,3 +37,35 @@ describe('makeMemdirTools 写工具', () => {
     expect(makeMemdirTools(md).some(t => t.name === 'Read')).toBe(true)
   })
 })
+
+describe('makeMemdirTools MemEdit', () => {
+  let md: string
+  beforeEach(() => { md = fs.mkdtempSync(path.join(os.tmpdir(), 'dc-me-')) })
+  afterEach(() => { fs.rmSync(md, { recursive: true, force: true }) })
+  const ctx: any = { cwd: () => md, fileState: new Map(), signal: new AbortController().signal }
+
+  test('MemEdit 正常替换 memdir 内文件', async () => {
+    fs.writeFileSync(path.join(md, 'n.md'), 'A B C')
+    const e = makeMemdirTools(md).find(t => t.name === 'MemEdit')!
+    const r = await e.call({ file_path: 'n.md', old_string: 'B', new_string: 'X' }, ctx)
+    expect(r).toContain('已编辑')
+    expect(fs.readFileSync(path.join(md, 'n.md'), 'utf8')).toBe('A X C')
+  })
+  test('MemEdit 越界被拒、不改盘', async () => {
+    const other = path.join(os.tmpdir(), 'dc-me-evil.md'); fs.writeFileSync(other, 'Z')
+    const e = makeMemdirTools(md).find(t => t.name === 'MemEdit')!
+    const r = await e.call({ file_path: other, old_string: 'Z', new_string: 'Q' }, ctx)
+    expect(r).toMatch(/拒绝|越界|memory/)
+    expect(fs.readFileSync(other, 'utf8')).toBe('Z')
+    fs.rmSync(other, { force: true })
+  })
+  test('MemEdit 文件不存在 → 错误串', async () => {
+    const e = makeMemdirTools(md).find(t => t.name === 'MemEdit')!
+    expect(await e.call({ file_path: 'nope.md', old_string: 'x', new_string: 'y' }, ctx)).toMatch(/不存在/)
+  })
+  test('MemEdit old_string 未匹配 → 错误串', async () => {
+    fs.writeFileSync(path.join(md, 'n.md'), 'AAA')
+    const e = makeMemdirTools(md).find(t => t.name === 'MemEdit')!
+    expect(await e.call({ file_path: 'n.md', old_string: 'ZZZ', new_string: 'y' }, ctx)).toMatch(/未匹配/)
+  })
+})
