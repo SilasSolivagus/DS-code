@@ -1,10 +1,8 @@
 // 把 assistant 的 markdown 渲染成 ANSI 字符串（在 ink 之外渲染，作为 <Text> 内容插入）。
 // 原则：终端不是浏览器——标题用粗体+§，代码块用高亮+左竖线，表格用 │ 对齐。渲染失败降级原文。
-//
-// 已知限制：CJK 全角字符在 padEnd 下表格列宽计算有偏差（每个汉字占 2 个终端格但 JS length=1）。
-// 正确做法需引入 east-asian-width 之类依赖，v1 接受此偏差。
 import { marked, type Token, type Tokens } from 'marked'
 import { highlight, supportsLanguage } from 'cli-highlight'
+import stringWidth from 'string-width'
 
 const B = '\x1b[1m'    // 粗体
 const DIM = '\x1b[2m'  // 暗色
@@ -34,15 +32,17 @@ function table(tok: Tokens.Table): string {
   const dataRows = tok.rows.map(r => r.map(c => c.text))
   const allRows = [headerCells, ...dataRows]
 
-  // 计算每列最大宽度（注意：CJK 全角字符会导致对齐偏差，见文件顶部说明）
+  // 计算每列最大宽度（用 stringWidth 处理 CJK 全角字符）
   const widths = headerCells.map((_, i) =>
-    Math.max(...allRows.map(r => (r[i] ?? '').length))
+    Math.max(...allRows.map(r => stringWidth(r[i] ?? '')))
   )
+
+  const padToWidth = (s: string, w: number) => s + ' '.repeat(Math.max(0, w - stringWidth(s)))
 
   // 表格单元格故意跳过 inline 样式：ANSI 转义码会破坏 padEnd 宽度计算。
   const line = (cells: string[], bold = false) =>
     cells
-      .map((c, i) => (bold ? B : '') + (c ?? '').padEnd(widths[i]) + R)
+      .map((c, i) => (bold ? B : '') + padToWidth(c ?? '', widths[i]) + R)
       .join(` ${DIM}│${R} `)
 
   return [line(headerCells, true), ...dataRows.map(r => line(r))].join('\n')
