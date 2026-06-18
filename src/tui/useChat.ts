@@ -466,7 +466,7 @@ export function createChatCore(opts: {
     // SessionMemory 并入：若 summary.md 存在，将其内容作为 user 前置消息注入 summarize 输入，保留会话状态
     let messagesForSummarize = messages
     const sid = ctx.sessionId?.()
-    if (mem.sessionMemory.enabled && sid) {
+    if (mem.enabled && mem.sessionMemory.enabled && sid) {
       const smPath = sessionMemoryPathFor(cwd, sid, os.homedir())
       try {
         const smContent = fs.readFileSync(smPath, 'utf8')
@@ -605,9 +605,11 @@ export function createChatCore(opts: {
       }
       const gen = runLoop(messages, deps)
       let firstDeltaAt: number | null = null // 本 turn 首个流式分片时间戳（tok/s 计算）
-      let turnToolCalls = 0 // 本次 runTurn 内工具调用数（维护 smState.toolCallsSinceUpdate）
+      let turnToolCalls = 0 // 本次内层 turn 工具调用数（维护 smState.toolCallsSinceUpdate）
+      let atTurnStart = true // 每个内层 turn 开始时归零 turnToolCalls（防中断路径带入上轮脏值）
       let step
       while (!(step = await gen.next()).done) {
+        if (atTurnStart) { turnToolCalls = 0; atTurnStart = false }
         const ev = step.value
         if (ev.type === 'text') {
           if (firstDeltaAt === null) firstDeltaAt = Date.now()
@@ -653,6 +655,7 @@ export function createChatCore(opts: {
           smState.toolCallsSinceUpdate += turnToolCalls
           smState.lastTurnHadToolCalls = turnToolCalls > 0
           turnToolCalls = 0
+          atTurnStart = true // 内层 turn 结束，下一内层 turn 开始前归零
         }
       }
       if (step.value === 'aborted') notice('warn', '[已中断]')

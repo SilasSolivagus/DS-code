@@ -148,14 +148,11 @@ describe('doCompact 并入 summary.md', () => {
     await core.send('/compact')
     await new Promise(r => setTimeout(r, 50))
 
-    // 若 summary.md 存在，summarize 应收到含 <会话记忆> 的消息数组
-    if (summarizeSpy.mock.calls.length > 0) {
-      const msgs = summarizeSpy.mock.calls[0][1] as any[]
-      const hasSmMsg = msgs.some(m => typeof m.content === 'string' && m.content.includes('<会话记忆>'))
-      expect(hasSmMsg).toBe(true)
-    }
-    // 若 summarizeSpy 未被调用（chatStream 已耗尽时 compact 失败），测试宽松通过
-    // 核心断言已在第一个 describe 中覆盖
+    // summary.md 存在时，summarize 必被调用且入参含 <会话记忆> 前置消息
+    expect(summarizeSpy).toHaveBeenCalled()
+    const msgs = summarizeSpy.mock.calls[0][1] as any[]
+    const hasSmMsg = msgs.some(m => typeof m.content === 'string' && m.content.includes('<会话记忆>'))
+    expect(hasSmMsg).toBe(true)
 
     summarizeSpy.mockRestore()
     core.dispose()
@@ -188,12 +185,11 @@ describe('doCompact 并入 summary.md', () => {
     await core.send('/compact')
     await new Promise(r => setTimeout(r, 50))
 
-    // 若被调用，messages 不含 <会话记忆>
-    if (summarizeSpy.mock.calls.length > 0) {
-      const msgs = summarizeSpy.mock.calls[0][1] as any[]
-      const hasSmMsg = msgs.some(m => typeof m.content === 'string' && m.content.includes('<会话记忆>'))
-      expect(hasSmMsg).toBe(false)
-    }
+    // summary.md 不存在时，summarize 必被调用且入参不含 <会话记忆> 前置消息
+    expect(summarizeSpy).toHaveBeenCalled()
+    const msgs = summarizeSpy.mock.calls[0][1] as any[]
+    const hasSmMsg = msgs.some(m => typeof m.content === 'string' && m.content.includes('<会话记忆>'))
+    expect(hasSmMsg).toBe(false)
 
     summarizeSpy.mockRestore()
     core.dispose()
