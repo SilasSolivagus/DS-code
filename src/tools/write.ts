@@ -17,6 +17,7 @@ export const writeTool: Tool<typeof schema> = {
   inputSchema: schema,
   isReadOnly: false,
   needsPermission: input => `写入 ${input.file_path}`,
+  deniablePaths: (input, cwd) => [path.resolve(cwd, input.file_path)],
   async call(input, ctx) {
     const p = path.resolve(ctx.cwd(), input.file_path)
     if (fs.existsSync(p)) {

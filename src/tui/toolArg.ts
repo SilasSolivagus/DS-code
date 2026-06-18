@@ -5,7 +5,7 @@ const MAX = 60
 
 /** 折叠换行/控制字符为空格，截断到 60 字符（超出加 …）。*/
 function clean(s: string): string {
-  const collapsed = s.replace(/[\n\r\t]+/g, ' ').replace(/[\x00-\x1f]+/g, ' ').trim()
+  const collapsed = s.replace(/[\n\r\t]+/g, ' ').replace(/[\x00-\x1f\x7f-\x9f]+/g, ' ').trim()
   return collapsed.length > MAX ? collapsed.slice(0, MAX) + '…' : collapsed
 }
 

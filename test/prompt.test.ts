@@ -79,6 +79,13 @@ describe('buildSystemPrompt', () => {
     expect(p).toContain('a：甲')
     expect(p).not.toContain('乙') // b 不可由模型调用，不列
   })
+
+  it('含工具结果防注入两条守则', () => {
+    const p = buildSystemPrompt('/tmp')
+    expect(p).toContain('先告知用户再继续')
+    expect(p).toContain('<system-reminder>')
+    expect(p).toContain('无直接关系')
+  })
 })
 
 describe('buildSystemPrompt skill 清单预算', () => {

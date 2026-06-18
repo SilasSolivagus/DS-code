@@ -3,6 +3,7 @@ import { z } from 'zod'
 import fg from 'fast-glob'
 import path from 'node:path'
 import type { Tool } from './types.js'
+import { isDeniedPath } from '../deny.js'
 
 const schema = z.object({
   pattern: z.string().describe('glob 模式，如 src/**/*.ts'),
@@ -23,9 +24,19 @@ export const globTool: Tool<typeof schema> = {
       dot: false,
       ignore: ['**/node_modules/**', '**/.git/**'],
     })
-    if (!files.length) return '没有匹配的文件'
-    const shown = files.slice(0, 100)
-    const note = files.length > 100 ? `\n[共 ${files.length} 个，已截断只显示前 100 个]` : ''
-    return shown.join('\n') + note
+    const deny = ctx.denyPatterns?.() ?? []
+    let denied = 0
+    let kept = files
+    if (deny.length) {
+      kept = files.filter(f => {
+        if (isDeniedPath(path.resolve(cwd, f), deny)) { denied++; return false }
+        return true
+      })
+    }
+    if (!kept.length) return '没有匹配的文件'
+    const shown = kept.slice(0, 100)
+    const note = kept.length > 100 ? `\n[共 ${kept.length} 个，已截断只显示前 100 个]` : ''
+    const denyNote = denied ? `\n[${denied} 个结果被 deny 规则过滤]` : ''
+    return shown.join('\n') + note + denyNote
   },
 }

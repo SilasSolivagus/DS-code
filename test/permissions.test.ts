@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { matchRule, checkPermission, isDangerous, type PermissionContext, type Decision } from '../src/permissions.js'
+import { matchRule, checkPermission, isDangerous, splitBashCommand, bashCommandAllowed, hasUnquotedOperator, type PermissionContext, type Decision } from '../src/permissions.js'
 
 const fakeTool = (name: string, isReadOnly: boolean, desc: false | string = 'x'): any => ({
   name,
@@ -71,16 +71,16 @@ describe('checkPermission', () => {
     expect(asked).toBe(true)
   })
 
-  it('多行命令 always 后第一行前缀规则可命中', async () => {
+  it('多行命令（换行分隔）always 后存完整精确规则', async () => {
+    // 换行是命令分隔符（与 && 同级），复合命令存精确规则而非前缀
     const rules: string[] = []
     let asks = 0
     const ctx = pc({ rules, saveRule: r => rules.push(r), ask: async () => { asks++; return 'always' } })
     const tool = fakeTool('Bash', false, 'npm install\nnpm test')
     expect((await checkPermission(tool, {}, ctx)).ok).toBe(true)
-    expect(rules).toEqual(['Bash(npm install:*)'])
-    // 后续单行同前缀命令命中规则，不再询问
-    const tool2 = fakeTool('Bash', false, 'npm install lodash')
-    expect((await checkPermission(tool2, {}, ctx)).ok).toBe(true)
+    expect(rules).toEqual(['Bash(npm install npm test)']) // 精确规则（\n→空格），不做前缀放宽
+    // 完全相同的命令（\n→空格归一）第二次命中精确规则，不再询问
+    expect((await checkPermission(tool, {}, ctx)).ok).toBe(true)
     expect(asks).toBe(1)
   })
 })
@@ -130,6 +130,35 @@ describe('checkPermission 高危分支', () => {
     expect(rules).toEqual(['Bash(rm -rf /tmp/scratch echo done)'])
     expect((await checkPermission(tool, {}, ctx)).ok).toBe(true)
     expect(asks).toBe(1) // 第二次不再询问
+  })
+})
+
+describe('splitBashCommand', () => {
+  it('单命令不拆', () => {
+    expect(splitBashCommand('ls -la')).toEqual({ tooComplex: false, commands: ['ls -la'] })
+  })
+  it('按控制操作符拆分', () => {
+    expect(splitBashCommand('ls && rm -rf /').commands).toEqual(['ls', 'rm -rf /'])
+    expect(splitBashCommand('a ; b | c').commands).toEqual(['a', 'b', 'c'])
+  })
+  it('剥重定向目标', () => {
+    expect(splitBashCommand('ls > foo').commands).toEqual(['ls'])
+  })
+  it('引号内操作符不算分隔符', () => {
+    // shell-quote 剥除引号后 "a && b" 变为字符串 token "a && b"，是预期行为（非 bug）
+    expect(splitBashCommand('echo "a && b"').commands).toEqual(['echo a && b'])
+  })
+  it('动态构造判 too-complex', () => {
+    expect(splitBashCommand('$(cat ~/.ssh/id_rsa)').tooComplex).toBe(true)
+    expect(splitBashCommand('echo `whoami`').tooComplex).toBe(true)
+    expect(splitBashCommand('diff <(a) <(b)').tooComplex).toBe(true)
+  })
+  it('$VAR 参数保留为字面量，不被空对象展开丢失', () => {
+    // shell-quote 第二参传 {} 时 $HOME 被展开为 ''（丢失参数 token）
+    // 修复后传函数 v=>'$'+v，$HOME 应原样保留在 token 中
+    const r = splitBashCommand('cat $HOME/.ssh/id_rsa && echo $X')
+    expect(r.tooComplex).toBe(false)
+    expect(r.commands).toEqual(['cat $HOME/.ssh/id_rsa', 'echo $X'])
   })
 })
 
@@ -184,5 +213,104 @@ describe('checkPermission + hooks', () => {
     const r = await checkPermission(writeTool, {}, { mode: 'default', rules: [], saveRule: () => {}, ask }, hooks)
     expect(r.ok).toBe(true)
     expect(ask).toHaveBeenCalled() // 锁定 fail-safe：hook 未明确裁决时回落到用户审批
+  })
+})
+
+describe('复合命令前缀绕过修复', () => {
+  it('ls && rm 不被 Bash(ls:*) 放行', () => {
+    expect(bashCommandAllowed('ls && rm -rf /', ['Bash(ls:*)'])).toBe(false)
+  })
+  it('每段都被覆盖才放行', () => {
+    expect(bashCommandAllowed('ls && cat foo', ['Bash(ls:*)', 'Bash(cat:*)'])).toBe(true)
+    expect(bashCommandAllowed('ls && cat foo', ['Bash(ls:*)'])).toBe(false)
+  })
+  it('单命令照旧匹配', () => {
+    expect(bashCommandAllowed('ls -la', ['Bash(ls:*)'])).toBe(true)
+    expect(bashCommandAllowed('lsof -i', ['Bash(ls:*)'])).toBe(false)
+  })
+  it('too-complex 不放行', () => {
+    expect(bashCommandAllowed('$(cat ~/.ssh/id_rsa)', ['Bash(cat:*)'])).toBe(false)
+  })
+  it('backstop：matchRule 对含操作符的 Bash desc 不前缀匹配', () => {
+    expect(matchRule('Bash(ls:*)', 'Bash', 'ls && rm -rf /')).toBe(false)
+  })
+})
+
+describe('换行符命令分隔符绕过修复', () => {
+  it('splitBashCommand 把未引号换行拆成两段', () => {
+    expect(splitBashCommand('ls\nrm -rf /').commands).toEqual(['ls', 'rm -rf /'])
+  })
+  it('bashCommandAllowed: ls\\nrm -rf / 不被 Bash(ls:*) 放行（核心绕过断言）', () => {
+    expect(bashCommandAllowed('ls\nrm -rf /', ['Bash(ls:*)'])).toBe(false)
+  })
+  it('引号内换行不拆：echo "a\\nb" 是单命令', () => {
+    // shell-quote parse('echo "a\nb"') → ["echo","a\nb"]，引号内换行保留在 token
+    const r = splitBashCommand('echo "a\nb"')
+    expect(r.tooComplex).toBe(false)
+    expect(r.commands).toEqual(['echo a\nb'])
+  })
+})
+
+describe('转义感知引号扫描（假引号绕过修复）', () => {
+  // echo \' <真换行> rm -rf /：\' 不是引号开启，换行应被归一成 ;，命令应被拆成两段
+  it("bashCommandAllowed: echo \\' <真换行> rm -rf / 不被 Bash(echo:*) 放行（单引号假引号绕过）", () => {
+    expect(bashCommandAllowed("echo \\'\nrm -rf /", ['Bash(echo:*)'])).toBe(false)
+  })
+  it('bashCommandAllowed: echo \\" <真换行> rm -rf / 不被 Bash(echo:*) 放行（双引号假引号绕过）', () => {
+    expect(bashCommandAllowed('echo \\"\nrm -rf /', ['Bash(echo:*)'])).toBe(false)
+  })
+  it("hasUnquotedOperator: ls \\' && rm -rf / → true（backstop 不被假引号骗过）", () => {
+    expect(hasUnquotedOperator("ls \\' && rm -rf /")).toBe(true)
+  })
+  // 回归：真引号内的操作符仍不算
+  it('hasUnquotedOperator: echo "a && b" → false（双引号内操作符不算）', () => {
+    expect(hasUnquotedOperator('echo "a && b"')).toBe(false)
+  })
+  // 回归：引号内换行不拆
+  it('splitBashCommand: echo "a\\nb" 引号内换行保留，仍是单命令', () => {
+    const r = splitBashCommand('echo "a\nb"')
+    expect(r.tooComplex).toBe(false)
+    expect(r.commands).toHaveLength(1)
+  })
+})
+
+describe('always 存规则精确化', () => {
+  it('复合命令选 always 存完整精确规则而非危险前缀', async () => {
+    const saved: string[] = []
+    const r = await checkPermission(
+      fakeTool('Bash', false, 'ls && cat foo'),
+      { command: 'ls && cat foo' },
+      pc({ ask: async () => 'always', saveRule: s => saved.push(s) }),
+    )
+    expect(r.ok).toBe(true)
+    expect(saved).toEqual(['Bash(ls && cat foo)']) // 完整精确，不是 'Bash(ls &&:*)'
+  })
+})
+
+describe('checkPermission deny', () => {
+  const denyTool = (name: string, ro: boolean, paths: string[]): any => ({
+    name, isReadOnly: ro, needsPermission: () => name === 'Bash' ? 'cat ~/.ssh/id_rsa' : 'x',
+    deniablePaths: () => paths,
+  })
+  it('Read 命中 deny 硬拒（早于 isReadOnly 放行）', async () => {
+    const r = await checkPermission(
+      denyTool('Read', true, ['/home/u/.ssh/id_rsa']),
+      {}, pc({ deny: ['**/id_rsa'] }),
+    )
+    expect(r.ok).toBe(false)
+  })
+  it('Bash 命中 deny 降级 ask（非硬拒）', async () => {
+    let asked = false
+    const r = await checkPermission(
+      denyTool('Bash', false, ['/home/u/.ssh/id_rsa']),
+      { command: 'cat ~/.ssh/id_rsa' },
+      pc({ deny: ['**/id_rsa'], mode: 'yolo', ask: async () => { asked = true; return 'no' } }),
+    )
+    expect(asked).toBe(true) // yolo 也被 deny 拦下强制问
+    expect(r.ok).toBe(false)
+  })
+  it('未命中 deny 不影响放行', async () => {
+    const r = await checkPermission(denyTool('Read', true, ['/proj/x.ts']), {}, pc({ deny: ['**/id_rsa'] }))
+    expect(r.ok).toBe(true)
   })
 })
