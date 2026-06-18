@@ -63,7 +63,7 @@ export const configTool: Tool<typeof schema> = {
     '敏感/受保护设置（apiKey、baseURL、hooks、mcpServers、permissions、webSearch、SSRF 白名单）不可经此工具修改。',
   inputSchema: schema,
   isReadOnly: false,
-  needsPermission: input => (input.value === undefined ? false : `Config(set ${input.setting})`),
+  needsPermission: input => (input.value === undefined || !CONFIG_KEYS[input.setting] ? false : `Config(set ${input.setting})`),
   async call(input) {
     const key = CONFIG_KEYS[input.setting]
     if (!key) {

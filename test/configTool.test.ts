@@ -76,4 +76,12 @@ describe('configTool 权限', () => {
     expect(configTool.needsPermission({ setting: 'model', value: 'pro' })).toBe('Config(set model)')
     expect(configTool.isReadOnly).toBe(false)
   })
+  it('skills 父键（非嵌套）被拒为未知', async () => {
+    expect(await configTool.call({ setting: 'skills' }, ctx)).toContain('未知设置')
+    expect(await configTool.call({ setting: 'skills.deny', value: 'x' }, ctx)).toContain('未知设置')
+  })
+  it('needsPermission：非白名单 SET 也 auto-allow（false），不弹误导提示', () => {
+    expect(configTool.needsPermission({ setting: 'apiKey', value: 'x' })).toBe(false)
+    expect(configTool.needsPermission({ setting: 'model', value: 'pro' })).toBe('Config(set model)')
+  })
 })
