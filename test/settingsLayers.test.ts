@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { stripUntrustedScope } from '../src/settingsLayers.js'
+import { stripUntrustedScope, isGitTracked } from '../src/settingsLayers.js'
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { execFileSync } from 'node:child_process'
 
 describe('stripUntrustedScope', () => {
   it('剥整键危险字段', () => {
@@ -36,5 +40,31 @@ describe('stripUntrustedScope', () => {
   it('无危险字段 stripped 为空', () => {
     const { stripped } = stripUntrustedScope({ model: 'pro', compactTokens: 100 })
     expect(stripped).toEqual([])
+  })
+})
+
+describe('isGitTracked', () => {
+  it('未在 git 仓库 → false', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dc-nogit-'))
+    try {
+      writeFileSync(join(dir, 'settings.local.json'), '{}')
+      expect(isGitTracked(join(dir, 'settings.local.json'), dir)).toBe(false)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+  it('被 git 跟踪 → true；未跟踪 → false', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dc-git-'))
+    try {
+      execFileSync('git', ['init', '-q'], { cwd: dir })
+      execFileSync('git', ['config', 'user.email', 't@t'], { cwd: dir })
+      execFileSync('git', ['config', 'user.name', 't'], { cwd: dir })
+      const tracked = join(dir, 'tracked.json')
+      writeFileSync(tracked, '{}')
+      execFileSync('git', ['add', 'tracked.json'], { cwd: dir })
+      execFileSync('git', ['commit', '-qm', 'x'], { cwd: dir })
+      const untracked = join(dir, 'untracked.json')
+      writeFileSync(untracked, '{}')
+      expect(isGitTracked(tracked, dir)).toBe(true)
+      expect(isGitTracked(untracked, dir)).toBe(false)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 })

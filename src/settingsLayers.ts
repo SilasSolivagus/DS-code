@@ -1,3 +1,5 @@
+import { execFileSync } from 'node:child_process'
+
 export type SettingScope = 'user' | 'project' | 'local' | 'flag'
 
 /** 整键剥离的危险字段（仅 project / git-tracked local）。 */
@@ -21,4 +23,14 @@ export function stripUntrustedScope(raw: any): { raw: any; stripped: string[] } 
     delete out.skills.sources; stripped.push('skills.sources')
   }
   return { raw: out, stripped }
+}
+
+/** 文件是否被 git 跟踪（= repo 随身携带、非用户手写）。非 git 仓库 / git 不可用 → false。 */
+export function isGitTracked(filePath: string, cwd: string): boolean {
+  try {
+    execFileSync('git', ['ls-files', '--error-unmatch', filePath], { cwd, stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
 }
