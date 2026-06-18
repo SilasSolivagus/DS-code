@@ -44,6 +44,7 @@ import { makeSkillTool } from '../tools/skill.js'
 import { detectEffortKeyword } from '../text.js'
 import { memdirFor } from '../memdir/paths.js'
 import { DEFAULT_MEMORY_CONFIG } from '../memdir/memoryConfig.js'
+import { createMemoryExtractor } from '../services/memory/extractMemories.js'
 
 /** ! 直跑：同步执行，30s 超时，stdout+stderr 合并，超 20k 截断 */
 export function runBang(cmd: string, cwd: string): { output: string; code: number } {
@@ -199,6 +200,8 @@ export function createChatCore(opts: {
   sessionDir?: string  // 测试注入：隔离 session 落盘目录，避免污染 ~/.deepcode/sessions
   flagSettingsPath?: string
   onState: (s: ChatState) => void
+  /** 测试注入：替换 extractMemories 内的 runSubagent，用 spy 验证触发 */
+  runSubagent?: import('../services/memory/extractMemories.js').ExtractorDeps['runSubagent']
 }): ChatCore {
   const settings = loadSettings(opts.cwd, opts.flagSettingsPath)
   let cwd = opts.cwd
@@ -339,6 +342,8 @@ export function createChatCore(opts: {
 
   // —— SessionEnd：会话结束事件。fire-and-forget；失败不阻断退出/清空。 ——
   const fireSessionEnd = (reason: 'clear' | 'exit'): void => {
+    // drain 记忆提取（有界超时 3s，避免挂住退出）
+    void Promise.race([extractor.drain(), new Promise(r => setTimeout(r, 3000))])
     if (!settings.hooks) return
     void runHooks('SessionEnd', {
       hook_event_name: 'SessionEnd', cwd, session_id: ctx.sessionId?.(), reason,
@@ -368,6 +373,12 @@ export function createChatCore(opts: {
     taskList.bind(sessionIdFromFile(session.file))
     fireSessionStart('startup')
   }
+
+  // —— 记忆提取器：每轮末 fire-and-forget onTurnEnd，退出/清空时 drain ——
+  let extractor = createMemoryExtractor({
+    client: opts.client, model, memdir: memdirFor(cwd), config: mem, ctx,
+    runSubagent: opts.runSubagent,
+  })
 
   // InstructionsLoaded：记忆文件加载记录（DEEPCODE.md/CLAUDE.md/全局）。fire-and-forget。
   if (settings.hooks) {
@@ -606,6 +617,9 @@ export function createChatCore(opts: {
       for (const m of messages.slice(lenBefore)) session.appendMessage(m)
       session.appendFileState([...ctx.fileState])
     }
+
+    // 记忆提取：每轮末 fire-and-forget（不等待，不阻断 UI）
+    extractor.onTurnEnd({ messages, turnIds: messages.map(m => turnOf.get(m)), maxTurnId: currentTurnId })
 
     // 自动 compact（落盘之后；busy 保持 true 直到 compact 结束）
     if (shouldAutoCompact(lastPromptTokens, settings.compactTokens, consecutiveCompactFailures, MAX_AUTO_COMPACT_FAILURES)) {
@@ -871,6 +885,11 @@ export function createChatCore(opts: {
     resume: (file: string) => {
       if (busy) return
       const turns = restoreSession(file)
+      // 换会话时重建 extractor，重置游标（上一会话的游标对新会话无效）
+      extractor = createMemoryExtractor({
+        client: opts.client, model, memdir: memdirFor(cwd), config: mem, ctx,
+        runSubagent: opts.runSubagent,
+      })
       dispatch({ type: 'clear' }) // 换了会话，旧 transcript 不再对应当前 messages
       notice('info', `已恢复会话（${turns} 轮对话）`)
       fireSessionStart('resume')
