@@ -191,6 +191,7 @@ export function parseStringArray(raw: unknown): string[] | undefined {
 export function saveRawUserSettings(s: Settings): void {
   fs.mkdirSync(DIR, { recursive: true })
   fs.writeFileSync(FILE, JSON.stringify(s, null, 2))
+  try { fs.chmodSync(FILE, 0o600) } catch { /* 尽力而为 */ }
 }
 
 export function hasApiKey(): boolean {

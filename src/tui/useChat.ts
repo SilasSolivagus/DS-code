@@ -533,9 +533,8 @@ export function createChatCore(opts: {
           deny: resolveDenyList(settings.permissions.deny),
           cwd,
           saveRule: r => {
-            const userAllow = addUserAllowRule(r)        // 持久化到 user scope（raw RMW）
+            addUserAllowRule(r)        // 持久化到 user scope（raw RMW）
             if (!settings.permissions.allow.includes(r)) settings.permissions.allow.push(r) // 内存合并即时生效
-            void userAllow
             fireConfigChange()
           },
           ask,
