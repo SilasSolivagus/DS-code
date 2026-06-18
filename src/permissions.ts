@@ -1,6 +1,37 @@
 // src/permissions.ts
+import { parse, type ParseEntry } from 'shell-quote'
 import type { Tool } from './tools/types.js'
 import type { HookOutcome } from './hooks.js'
+
+const SEPARATORS = new Set(['&&', '||', ';', '|', '&'])
+const REDIR = new Set(['>', '>>', '<', '>&', '<&'])
+
+/** 用 shell-quote 把命令按控制操作符拆成子命令；含动态构造/分组或解析失败 → tooComplex（不得自动放行）。 */
+export function splitBashCommand(command: string): { tooComplex: boolean; commands: string[] } {
+  // 动态构造无法静态证明安全：命令替换 $()/反引号、进程替换 <()/>()
+  if (/\$\(|`|<\(|>\(/.test(command)) return { tooComplex: true, commands: [] }
+  let entries: ParseEntry[]
+  try {
+    entries = parse(command, {}) // 不提供 env：$VAR 不展开，只取操作符结构
+  } catch {
+    return { tooComplex: true, commands: [] }
+  }
+  const commands: string[] = []
+  let cur: string[] = []
+  const flush = () => { if (cur.length) commands.push(cur.join(' ')); cur = [] }
+  let skipTarget = false
+  for (const e of entries) {
+    if (skipTarget) { skipTarget = false; continue } // 跳过重定向目标
+    if (typeof e === 'string') { cur.push(e); continue }
+    const op = (e as { op: string }).op
+    if (op === 'glob') { cur.push((e as { pattern: string }).pattern); continue }
+    if (SEPARATORS.has(op)) { flush(); continue }
+    if (REDIR.has(op)) { skipTarget = true; continue }
+    return { tooComplex: true, commands: [] } // 未知 op（如 '('/')' 子shell分组）→ 保守拒绝
+  }
+  flush()
+  return { tooComplex: false, commands }
+}
 
 export type PermissionMode = 'default' | 'acceptEdits' | 'yolo'
 export type Decision = 'yes' | 'no' | 'always'

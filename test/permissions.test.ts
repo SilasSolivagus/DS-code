@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { matchRule, checkPermission, isDangerous, type PermissionContext, type Decision } from '../src/permissions.js'
+import { matchRule, checkPermission, isDangerous, splitBashCommand, type PermissionContext, type Decision } from '../src/permissions.js'
 
 const fakeTool = (name: string, isReadOnly: boolean, desc: false | string = 'x'): any => ({
   name,
@@ -130,6 +130,27 @@ describe('checkPermission 高危分支', () => {
     expect(rules).toEqual(['Bash(rm -rf /tmp/scratch echo done)'])
     expect((await checkPermission(tool, {}, ctx)).ok).toBe(true)
     expect(asks).toBe(1) // 第二次不再询问
+  })
+})
+
+describe('splitBashCommand', () => {
+  it('单命令不拆', () => {
+    expect(splitBashCommand('ls -la')).toEqual({ tooComplex: false, commands: ['ls -la'] })
+  })
+  it('按控制操作符拆分', () => {
+    expect(splitBashCommand('ls && rm -rf /').commands).toEqual(['ls', 'rm -rf /'])
+    expect(splitBashCommand('a ; b | c').commands).toEqual(['a', 'b', 'c'])
+  })
+  it('剥重定向目标', () => {
+    expect(splitBashCommand('ls > foo').commands).toEqual(['ls'])
+  })
+  it('引号内操作符不算分隔符', () => {
+    expect(splitBashCommand('echo "a && b"').commands).toEqual(['echo a && b'])
+  })
+  it('动态构造判 too-complex', () => {
+    expect(splitBashCommand('$(cat ~/.ssh/id_rsa)').tooComplex).toBe(true)
+    expect(splitBashCommand('echo `whoami`').tooComplex).toBe(true)
+    expect(splitBashCommand('diff <(a) <(b)').tooComplex).toBe(true)
   })
 })
 
