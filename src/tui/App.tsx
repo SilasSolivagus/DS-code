@@ -261,6 +261,8 @@ export function App(props: {
         memoryCount={memoryCount}
         contextPct={state.contextPct()}
         cost={state.sessionCost()}
+        hitRate={state.cacheHitRate()}
+        cacheSavings={state.cacheSavings()}
         toolCounts={toolCounts}
       />
     </Box>
