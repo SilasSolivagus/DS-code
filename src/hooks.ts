@@ -2,9 +2,11 @@
 import { spawn as nodeSpawn } from 'node:child_process'
 import type { SpawnOptions } from 'node:child_process'
 import path from 'node:path'
+import { Agent, ProxyAgent, fetch as undiciFetch } from 'undici'
 import { matchRule } from './permissions.js'
 import { ENV_FILE_EVENTS, ensureSessionEnvDir, hookEnvFileName, DEFAULT_SESSION_ENV_BASE } from './sessionEnv.js'
 import { STRUCTURED_OUTPUT_TOOL_NAME } from './tools/structuredOutput.js'
+import { ssrfGuardedLookup, shouldBypassProxy } from './ssrfGuard.js'
 
 export const HOOK_EVENTS = [
   'PreToolUse', 'PostToolUse', 'PostToolUseFailure',
@@ -172,8 +174,12 @@ export interface HookEngineDeps {
   llm?: (prompt: string, model: string | undefined, signal: AbortSignal) => Promise<string>
   /** agent hook：多轮核查子代理。返回末条 assistant 文本（引擎解析 {ok,reason}）。 */
   runAgent?: (prompt: string, model: string | undefined, signal: AbortSignal) => Promise<string>
-  /** http hook：默认全局 fetch。 */
+  /** http hook：默认 undici fetch。 */
   fetch?: typeof fetch
+  /** http hook URL 白名单（SSRF 前置）：undefined=不限制；[]=全禁；非空=须匹配通配模式。 */
+  allowedHttpHookUrls?: string[]
+  /** http hook header env 插值的全局白名单；设了则与每个 hook 自身 allowedEnvVars 取交集。 */
+  httpHookAllowedEnvVars?: string[]
   /** async/asyncRewake command hook：把已 spawn 的 child 交后台接管（挂 tasks.ts）。
    *  缺省 → async hook fail-safe 退化为同步阻塞执行（对齐 CC forceSyncExecution）。 */
   registerAsync?: (args: {
@@ -192,6 +198,8 @@ interface ResolvedHookDeps {
   now: () => number
   sessionEnvBase: string
   fetch: typeof fetch
+  allowedHttpHookUrls?: string[]
+  httpHookAllowedEnvVars?: string[]
   llm?: HookEngineDeps['llm']
   runAgent?: HookEngineDeps['runAgent']
   registerAsync?: HookEngineDeps['registerAsync']
@@ -332,16 +340,44 @@ export function interpolateEnvVars(value: string, allowed: Set<string>): string 
   return replaced.replace(/[\r\n\x00]/g, '')
 }
 
+/** URL 通配匹配（* → 任意字符），其余正则元字符转义。对齐 CC urlMatchesPattern。 */
+export function urlMatchesPattern(url: string, pattern: string): boolean {
+  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`^${escaped.replace(/\*/g, '.*')}$`).test(url)
+}
+
+/** 选 dispatcher：代理激活→ProxyAgent（跳 IP 守卫，代理做 DNS）；否则 Agent({connect:{lookup}})。 */
+function selectHttpDispatcher(url: string): Agent | ProxyAgent {
+  const proxy = process.env.https_proxy ?? process.env.HTTPS_PROXY ?? process.env.http_proxy ?? process.env.HTTP_PROXY
+  if (proxy && !shouldBypassProxy(url)) return new ProxyAgent(proxy)
+  return new Agent({ connect: { lookup: ssrfGuardedLookup as any } })
+}
+
 /** webhook：POST payload JSON，响应体按 hook JSON 解析；非 2xx→blocking。 */
 async function execHttpHook(hook: HttpHook, payload: Record<string, unknown>, deps: ResolvedHookDeps): Promise<HookResult> {
-  const allowed = new Set(hook.allowedEnvVars ?? [])
+  const base: HookResult = { outcome: 'success', label: '', durationMs: 0 }
+  // 1. URL 白名单（I/O 前）
+  const allow = deps.allowedHttpHookUrls
+  if (allow !== undefined && !allow.some(p => urlMatchesPattern(hook.url, p))) {
+    return { ...base, outcome: 'blocking', preventContinuation: true, blockingError: `HTTP hook blocked: ${hook.url} 不匹配 allowedHttpHookUrls` }
+  }
+  // 2. env 插值白名单：hook 自身 ∩ policy（若设）
+  const hookVars = hook.allowedEnvVars ?? []
+  const effectiveVars = deps.httpHookAllowedEnvVars !== undefined
+    ? hookVars.filter(v => deps.httpHookAllowedEnvVars!.includes(v))
+    : hookVars
+  const allowed = new Set(effectiveVars)
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   for (const [k, v] of Object.entries(hook.headers ?? {})) headers[k] = interpolateEnvVars(v, allowed)
+  // 3. dispatcher 两路 + redirect:error
   const ac = new AbortController()
   const timer = setTimeout(() => ac.abort(), (hook.timeout ?? 30) * 1000)
-  const base: HookResult = { outcome: 'success', label: '', durationMs: 0 }
   try {
-    const res = await deps.fetch(hook.url, { method: 'POST', headers, body: JSON.stringify(payload), signal: ac.signal })
+    const res = await deps.fetch(hook.url, {
+      method: 'POST', headers, body: JSON.stringify(payload), signal: ac.signal,
+      redirect: 'error',
+      dispatcher: selectHttpDispatcher(hook.url),
+    } as any)
     const bodyText = (await res.text()).trim()
     let json: any
     if (bodyText) { try { json = JSON.parse(bodyText) } catch { /* 非 JSON 体 */ } }
@@ -406,7 +442,9 @@ export async function runHooks(
     spawn: deps.spawn ?? nodeSpawn,
     now: deps.now ?? Date.now,
     sessionEnvBase: deps.sessionEnvBase ?? DEFAULT_SESSION_ENV_BASE,
-    fetch: deps.fetch ?? (globalThis.fetch as typeof fetch),
+    fetch: deps.fetch ?? (undiciFetch as unknown as typeof fetch),
+    allowedHttpHookUrls: deps.allowedHttpHookUrls,
+    httpHookAllowedEnvVars: deps.httpHookAllowedEnvVars,
     llm: deps.llm,
     runAgent: deps.runAgent,
     registerAsync: deps.registerAsync,
