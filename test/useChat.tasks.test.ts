@@ -17,6 +17,8 @@ vi.mock('../src/api.js', async orig => ({
     })(),
   ),
 }))
+// 记忆提取器在每轮后 fire-and-forget；此处将 runSubagent 归零，防止消耗 chatStream mock 脚本
+vi.mock('../src/subagentRunner.js', async orig => ({ ...(await orig() as any), runSubagent: vi.fn(async () => 'ok') }))
 
 import { createChatCore } from '../src/tui/useChat.js'
 import {

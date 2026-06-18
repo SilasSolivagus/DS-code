@@ -6,6 +6,7 @@ import {
   parsePermissions, parseHooksConfig, parseMcpServers, parseSkillsConfig,
   parseWebSearchConfig, parseStringArray, type Settings,
 } from './config.js'
+import { parseMemoryConfig } from './memdir/memoryConfig.js'
 
 export type SettingScope = 'user' | 'project' | 'local' | 'flag'
 
@@ -142,6 +143,7 @@ function parsePresent(raw: any): Record<string, unknown> {
   if ('webSearch' in raw) { const w = parseWebSearchConfig(raw.webSearch); if (w) p.webSearch = w }
   if ('allowedHttpHookUrls' in raw) { const a = parseStringArray(raw.allowedHttpHookUrls); if (a) p.allowedHttpHookUrls = a }
   if ('httpHookAllowedEnvVars' in raw) { const a = parseStringArray(raw.httpHookAllowedEnvVars); if (a) p.httpHookAllowedEnvVars = a }
+  if ('memory' in raw) p.memory = parseMemoryConfig(raw.memory)
   return p
 }
 

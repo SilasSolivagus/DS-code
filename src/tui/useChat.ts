@@ -17,7 +17,8 @@ import { makeWebSearchTool, resolveWebSearchConfig } from '../tools/webSearchToo
 import { makeAskUserQuestionTool, type Question, type Answer } from '../tools/askUserQuestion.js'
 import { bgTaskListTool, taskOutputTool, taskStopTool } from '../tools/taskTools.js'
 import { taskCreateTool, taskGetTool, taskUpdateTool, taskListTool } from '../tools/taskListTools.js'
-import { onNotification, drainNotifications, formatNotification } from '../tasks.js'
+import { onNotification, drainNotifications, formatNotification, registerTask, updateTask, enqueueNotification, getTask, generateTaskId } from '../tasks.js'
+import { runAutoDream } from '../services/memory/autoDream.js'
 import { buildSystemPrompt, findMemoryFiles } from '../prompt.js'
 import { formatMemory } from '../memory.js'
 import { loadSettings, loadRawUserSettings, addUserAllowRule, removeUserAllowRule, listUserAllowRules, SETTINGS_FILE } from '../config.js'
@@ -42,6 +43,12 @@ import { attachMcpTools } from '../mcp.js'
 import { loadSkills, substituteSkillArgs } from '../skillsLoader.js'
 import { makeSkillTool } from '../tools/skill.js'
 import { detectEffortKeyword } from '../text.js'
+import { memdirFor, sessionMemoryPathFor, findGitRoot, sanitizeProjectKey } from '../memdir/paths.js'
+import { DEFAULT_MEMORY_CONFIG } from '../memdir/memoryConfig.js'
+import { createMemoryExtractor } from '../services/memory/extractMemories.js'
+import { createRecaller } from '../services/memory/recall.js'
+import { findRelevantMemories } from '../memdir/findRelevantMemories.js'
+import { type SessionMemoryState, shouldUpdateSessionMemory, runSessionMemoryUpdate } from '../services/memory/sessionMemory.js'
 
 /** ! 直跑：同步执行，30s 超时，stdout+stderr 合并，超 20k 截断 */
 export function runBang(cmd: string, cwd: string): { output: string; code: number } {
@@ -197,6 +204,8 @@ export function createChatCore(opts: {
   sessionDir?: string  // 测试注入：隔离 session 落盘目录，避免污染 ~/.deepcode/sessions
   flagSettingsPath?: string
   onState: (s: ChatState) => void
+  /** 测试注入：替换 extractMemories 内的 runSubagent，用 spy 验证触发 */
+  runSubagent?: import('../services/memory/extractMemories.js').ExtractorDeps['runSubagent']
 }): ChatCore {
   const settings = loadSettings(opts.cwd, opts.flagSettingsPath)
   let cwd = opts.cwd
@@ -230,7 +239,21 @@ export function createChatCore(opts: {
   const skills = loadSkills(cwd, undefined, settings.skills)
   const injectionBuffer: string[] = []
   ctx.injectUserMessage = (c: string) => injectionBuffer.push(c)
-  const messages: any[] = [{ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars) }]
+  const mem = settings.memory ?? DEFAULT_MEMORY_CONFIG
+  const memdir = mem.enabled && !mem.recall.enabled ? memdirFor(cwd) : undefined
+  // 动态召回：recall 开时构 recaller（prefetch 每轮非阻塞启动，consume 在 tool_end 后注入 reminder）
+  const recaller = (mem.enabled && mem.recall.enabled)
+    ? createRecaller({
+        memdir: memdirFor(cwd),
+        maxResults: mem.recall.maxResults,
+        find: q => findRelevantMemories(opts.client, q, memdirFor(cwd), {
+          maxResults: mem.recall.maxResults,
+          model,
+          signal: ctx.signal,
+        }),
+      })
+    : null
+  const messages: any[] = [{ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars, memdir) }]
   const usageLog: UsageRecord[] = []
   let session!: SessionHandle
   const hookDeps = {
@@ -310,7 +333,7 @@ export function createChatCore(opts: {
     taskList.bind(sessionIdFromFile(session.file)); compacted = false; lastPromptTokens = 0; consecutiveCompactFailures = 0; compactWarned = false
     // doCompact 崩溃在 appendCompact 与首条 re-append 之间的兜底
     if (messages.length === 0 || messages[0]?.role !== 'system') {
-      messages.unshift({ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars) })
+      messages.unshift({ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars, memdir) })
       session.appendMessage(messages[0])
     }
     nextTurnId = loaded.maxTurnId + 1
@@ -335,6 +358,8 @@ export function createChatCore(opts: {
 
   // —— SessionEnd：会话结束事件。fire-and-forget；失败不阻断退出/清空。 ——
   const fireSessionEnd = (reason: 'clear' | 'exit'): void => {
+    // drain 记忆提取（有界超时 3s，避免挂住退出）
+    void Promise.race([extractor.drain(), new Promise(r => setTimeout(r, 3000))])
     if (!settings.hooks) return
     void runHooks('SessionEnd', {
       hook_event_name: 'SessionEnd', cwd, session_id: ctx.sessionId?.(), reason,
@@ -364,6 +389,18 @@ export function createChatCore(opts: {
     taskList.bind(sessionIdFromFile(session.file))
     fireSessionStart('startup')
   }
+
+  // —— 记忆提取器：每轮末 fire-and-forget onTurnEnd，退出/清空时 drain ——
+  let extractor = createMemoryExtractor({
+    client: opts.client, model, memdir: memdirFor(cwd), config: mem, ctx,
+    runSubagent: opts.runSubagent,
+  })
+
+  // —— SessionMemory 状态：跨轮持久，resume/clear 时重置 ——
+  let smState: SessionMemoryState = { promptTokens: 0, tokensAtLastUpdate: 0, initialized: false, toolCallsSinceUpdate: 0, lastTurnHadToolCalls: false }
+
+  // —— autoDream：记录上次触发时间，每轮末门控后 fire-and-forget ——
+  let dreamLastScanAt = 0
 
   // InstructionsLoaded：记忆文件加载记录（DEEPCODE.md/CLAUDE.md/全局）。fire-and-forget。
   if (settings.hooks) {
@@ -430,7 +467,21 @@ export function createChatCore(opts: {
         hook_event_name: 'PreCompact', cwd, trigger, messages_count: messages.length,
       }, settings.hooks, hookDeps)
     }
-    const { summary, usage: u, truncated } = await summarize(opts.client, messages, ac.signal)
+    // SessionMemory 并入：若 summary.md 存在，将其内容作为 user 前置消息注入 summarize 输入，保留会话状态
+    let messagesForSummarize = messages
+    const sid = ctx.sessionId?.()
+    if (mem.enabled && mem.sessionMemory.enabled && sid) {
+      const smPath = sessionMemoryPathFor(cwd, sid, os.homedir())
+      try {
+        const smContent = fs.readFileSync(smPath, 'utf8')
+        messagesForSummarize = [
+          ...messages.slice(0, 1), // system
+          { role: 'user', content: `<会话记忆>\n${smContent}\n</会话记忆>` },
+          ...messages.slice(1),
+        ]
+      } catch { /* summary.md 不存在则跳过 */ }
+    }
+    const { summary, usage: u, truncated } = await summarize(opts.client, messagesForSummarize, ac.signal)
     usageLog.push({ usage: u, model: 'deepseek-v4-flash' })
     session.appendUsage(u, 'deepseek-v4-flash')
     const rebuilt = rebuildMessages(messages, summary)
@@ -524,6 +575,8 @@ export function createChatCore(opts: {
       const kw = detectEffortKeyword(userText)
       const turnThinking = kw ? true : thinking
       const turnEffort = kw ?? effortLevel
+      // recall: 用户提交后、跑 loop 前启动后台召回
+      if (recaller) recaller.prefetch(userText)
       const deps: LoopDeps = {
         client: opts.client,
         tools,
@@ -556,16 +609,28 @@ export function createChatCore(opts: {
       }
       const gen = runLoop(messages, deps)
       let firstDeltaAt: number | null = null // 本 turn 首个流式分片时间戳（tok/s 计算）
+      let turnToolCalls = 0 // 本次内层 turn 工具调用数（维护 smState.toolCallsSinceUpdate）
+      let atTurnStart = true // 每个内层 turn 开始时归零 turnToolCalls（防中断路径带入上轮脏值）
       let step
       while (!(step = await gen.next()).done) {
+        if (atTurnStart) { turnToolCalls = 0; atTurnStart = false }
         const ev = step.value
         if (ev.type === 'text') {
           if (firstDeltaAt === null) firstDeltaAt = Date.now()
           // spinner 实时输出 token 估算（非思考流；中文偏低估，仅作动态观感）
           if (!ev.reasoning) turnOutTokens += Math.ceil(ev.delta.length / 3)
           dispatch({ type: 'delta', delta: ev.delta, reasoning: !!ev.reasoning })
-        } else if (ev.type === 'tool_start' || ev.type === 'tool_end') {
+        } else if (ev.type === 'tool_start') {
+          turnToolCalls++
           dispatch(ev)
+        } else if (ev.type === 'tool_end') {
+          dispatch(ev)
+          // recall: tool 结果回灌后 poll，与 drainInjections 同站点——已 settle 则注入 reminder
+          if (recaller) {
+            const readPaths = new Set(ctx.fileState.keys())
+            const rem = recaller.consume(readPaths)
+            if (rem) ctx.injectUserMessage!(rem)
+          }
         } else if (ev.type === 'turn_end') {
           usageLog.push({ usage: ev.usage, model })
           session.appendUsage(ev.usage, model)
@@ -589,6 +654,12 @@ export function createChatCore(opts: {
             compactWarned = true
             notice('warn', `上下文已用 ${Math.round(ctxPct)}%，接近自动压缩阈值`)
           }
+          // smState 每轮更新（turn_end 是本 inner-turn 的边界）
+          smState.promptTokens = ev.usage.prompt_tokens
+          smState.toolCallsSinceUpdate += turnToolCalls
+          smState.lastTurnHadToolCalls = turnToolCalls > 0
+          turnToolCalls = 0
+          atTurnStart = true // 内层 turn 结束，下一内层 turn 开始前归零
         }
       }
       if (step.value === 'aborted') notice('warn', '[已中断]')
@@ -601,6 +672,52 @@ export function createChatCore(opts: {
       // 本轮 loop 内部新增的 assistant/tool 消息补落盘 + fileState 快照
       for (const m of messages.slice(lenBefore)) session.appendMessage(m)
       session.appendFileState([...ctx.fileState])
+    }
+
+    // 记忆提取：每轮末 fire-and-forget（不等待，不阻断 UI）
+    extractor.onTurnEnd({ messages, turnIds: messages.map(m => turnOf.get(m)), maxTurnId: currentTurnId })
+
+    // SessionMemory：达阈值时 fire-and-forget 更新 summary.md（不阻断 UI）
+    if (mem.enabled && mem.sessionMemory.enabled && shouldUpdateSessionMemory(smState, mem.sessionMemory)) {
+      const sid = ctx.sessionId?.()
+      if (sid) {
+        const smPath = sessionMemoryPathFor(cwd, sid, os.homedir())
+        void runSessionMemoryUpdate({ client: opts.client, model, absPath: smPath, ctx, runSubagent: opts.runSubagent })
+        smState.tokensAtLastUpdate = smState.promptTokens
+        smState.initialized = true
+        smState.toolCallsSinceUpdate = 0
+      }
+    }
+
+    // autoDream：满门控（24h/5会话/锁）时后台合并记忆，作后台任务带通知
+    if (mem.enabled && mem.dream.enabled) {
+      const now = Date.now()
+      const sessionsDir = path.join(os.homedir(), '.deepcode', 'sessions')
+      const dreamProjectKey = sanitizeProjectKey(findGitRoot(cwd) ?? path.resolve(cwd))
+      let dreamTaskId: string | undefined
+      void runAutoDream({
+        client: opts.client, model, memdir: memdirFor(cwd),
+        sessionsDir, currentSessionFile: session.file,
+        projectKey: dreamProjectKey,
+        cfg: mem.dream, ctx, now, lastScanAt: dreamLastScanAt,
+        runSubagent: opts.runSubagent,
+        onStart: () => {
+          const taskId = generateTaskId('local_agent')
+          dreamTaskId = taskId
+          registerTask({
+            id: taskId, type: 'local_agent', status: 'running',
+            description: '记忆整理（dream）',
+            startTime: now, outputFile: '', outputOffset: 0, notified: false,
+          })
+        },
+        onDone: (changed) => {
+          if (!dreamTaskId) return
+          updateTask(dreamTaskId, { status: changed ? 'completed' : 'failed', endTime: Date.now() })
+          const t = getTask(dreamTaskId)
+          if (t && changed) enqueueNotification(t)
+        },
+      })
+      dreamLastScanAt = now
     }
 
     // 自动 compact（落盘之后；busy 保持 true 直到 compact 结束）
@@ -735,6 +852,12 @@ export function createChatCore(opts: {
       checkpointer = createCheckpointer(checkpointStoreFor(session.file))
       taskList.bind(sessionIdFromFile(session.file))
       nextTurnId = 1; currentTurnId = 0
+      // 重建 extractor，重置游标（旧会话游标对新会话无效，防新会话首轮被静默跳过）
+      extractor = createMemoryExtractor({
+        client: opts.client, model, memdir: memdirFor(cwd), config: mem, ctx,
+        runSubagent: opts.runSubagent,
+      })
+      smState = { promptTokens: 0, tokensAtLastUpdate: 0, initialized: false, toolCallsSinceUpdate: 0, lastTurnHadToolCalls: false }
       dispatch({ type: 'clear' })
       notice('info', '对话已清空，已开新会话文件（本会话花费累计保留）')
       fireSessionStart('clear')
@@ -867,6 +990,12 @@ export function createChatCore(opts: {
     resume: (file: string) => {
       if (busy) return
       const turns = restoreSession(file)
+      // 换会话时重建 extractor，重置游标（上一会话的游标对新会话无效）
+      extractor = createMemoryExtractor({
+        client: opts.client, model, memdir: memdirFor(cwd), config: mem, ctx,
+        runSubagent: opts.runSubagent,
+      })
+      smState = { promptTokens: 0, tokensAtLastUpdate: 0, initialized: false, toolCallsSinceUpdate: 0, lastTurnHadToolCalls: false }
       dispatch({ type: 'clear' }) // 换了会话，旧 transcript 不再对应当前 messages
       notice('info', `已恢复会话（${turns} 轮对话）`)
       fireSessionStart('resume')

@@ -4,6 +4,7 @@ import path from 'node:path'
 import os from 'node:os'
 import { HOOK_EVENTS, type HooksConfig, type HookEvent, runHooks } from './hooks.js'
 import { loadLayeredSettings } from './settingsLayers.js'
+import { parseMemoryConfig } from './memdir/memoryConfig.js'
 
 export interface McpStdioServerConfig {
   command: string
@@ -57,6 +58,8 @@ export interface Settings {
   allowedHttpHookUrls?: string[]
   /** http hook header env 插值的全局白名单；设了则与每个 hook 自身 allowedEnvVars 取交集。 */
   httpHookAllowedEnvVars?: string[]
+  /** 记忆子系统配置（缺省全默认，见 memoryConfig.ts）。 */
+  memory?: import('./memdir/memoryConfig.js').MemoryConfig
 }
 
 const DIR = path.join(os.homedir(), '.deepcode')
@@ -103,6 +106,7 @@ export function loadRawUserSettings(): Settings {
     skills: parseSkillsConfig(raw?.skills), webSearch: parseWebSearchConfig(raw?.webSearch),
     allowedHttpHookUrls: parseStringArray(raw?.allowedHttpHookUrls),
     httpHookAllowedEnvVars: parseStringArray(raw?.httpHookAllowedEnvVars),
+    memory: parseMemoryConfig(raw?.memory),
   }
 }
 

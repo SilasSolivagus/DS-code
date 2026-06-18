@@ -56,10 +56,10 @@
 
 | # | 机制 | CC 源码 | deepcode | 状态 | TUI? | 工作量 |
 |---|---|---|---|---|---|---|
-| 3.1 | **记忆索引系统**（memdir：type/section/tags 标记 + 扫描 + relevance 查询 + 加载） | `memdir/` | memory.ts 仅格式化 | 🟡 | 否 | M |
-| 3.2 | **自动记忆提取**（会话末提取持久记忆文件） | `services/extractMemories` | 无 | ⬜ | 否 | L |
-| 3.3 | **SessionMemory**（会话记忆 markdown 维护） | `services/SessionMemory` | 无 | ⬜ | 否 | L |
-| 3.4 | **autoDream**（后台记忆合并，时间/会话门槛） | `services/autoDream` | 无 | ⬜ | 否 | L |
+| 3.1 | **记忆索引系统**（memdir：type/section/tags 标记 + 扫描 + relevance 查询 + 加载） | `memdir/` | ✅ C2(2026-06-19) | ✅ | 否 | M |
+| 3.2 | **自动记忆提取**（会话末提取持久记忆文件） | `services/extractMemories` | ✅ C2(2026-06-19) | ✅ | 否 | L |
+| 3.3 | **SessionMemory**（会话记忆 markdown 维护） | `services/SessionMemory` | ✅ C2(2026-06-19) | ✅ | 否 | L |
+| 3.4 | **autoDream**（后台记忆合并，时间/会话门槛） | `services/autoDream` | ✅ C2(2026-06-19) | ✅ | 否 | L |
 | 3.5 | **Checkpoint/rewind**（回合级文件备份 + content-addressable blob + /rewind 还原） | `utils/fileHistory.ts` `commands/rewind` | checkpoint.ts 存在,完整度待核实 | 🟡 | 部分 | M |
 | 3.6 | **会话管理**（/resume /branch /rename /tag /share + history） | `commands/{resume,branch,rename,tag,share}` `history.ts` | 部分(export/session) | 🟡 | 碰TUI | M |
 | 3.7 | **权限 deny 规则层 + 来源层级 + denial tracking + /permissions** | `utils/permissions/*` | 🟡 deny 规则+denial tracking(安全批`e5f403d`);缺来源层级(归 3.9)+/permissions UI | 🟡 | 部分 | M |
