@@ -2,6 +2,7 @@
 import { describe, it, expect } from 'vitest'
 import { configTool, CONFIG_KEYS } from '../src/tools/configTool.js'
 import { loadRawUserSettings, saveRawUserSettings } from '../src/config.js'
+import { allTools } from '../src/tools/index.js'
 
 const ctx: any = { cwd: () => process.cwd(), signal: new AbortController().signal, fileState: new Map() }
 
@@ -83,5 +84,11 @@ describe('configTool 权限', () => {
   it('needsPermission：非白名单 SET 也 auto-allow（false），不弹误导提示', () => {
     expect(configTool.needsPermission({ setting: 'apiKey', value: 'x' })).toBe(false)
     expect(configTool.needsPermission({ setting: 'model', value: 'pro' })).toBe('Config(set model)')
+  })
+})
+
+describe('configTool 注册', () => {
+  it('Config 工具在 allTools 中', () => {
+    expect(allTools.find(t => t.name === 'Config')).toBeTruthy()
   })
 })
