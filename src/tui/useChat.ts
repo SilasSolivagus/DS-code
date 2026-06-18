@@ -20,7 +20,7 @@ import { taskCreateTool, taskGetTool, taskUpdateTool, taskListTool } from '../to
 import { onNotification, drainNotifications, formatNotification } from '../tasks.js'
 import { buildSystemPrompt, findMemoryFiles } from '../prompt.js'
 import { formatMemory } from '../memory.js'
-import { loadSettings, saveSettings, SETTINGS_FILE } from '../config.js'
+import { loadSettings, loadRawUserSettings, addUserAllowRule, removeUserAllowRule, listUserAllowRules, SETTINGS_FILE } from '../config.js'
 import { runHooks } from '../hooks.js'
 import { makeHookRuntime } from '../hookRuntime.js'
 import { isDangerous, type Decision, type PermissionMode } from '../permissions.js'
@@ -532,7 +532,12 @@ export function createChatCore(opts: {
           rules: settings.permissions.allow,
           deny: resolveDenyList(settings.permissions.deny),
           cwd,
-          saveRule: r => { settings.permissions.allow.push(r); saveSettings(settings); fireConfigChange() },
+          saveRule: r => {
+            const userAllow = addUserAllowRule(r)        // 持久化到 user scope（raw RMW）
+            if (!settings.permissions.allow.includes(r)) settings.permissions.allow.push(r) // 内存合并即时生效
+            void userAllow
+            fireConfigChange()
+          },
           ask,
         },
         reminders: () => {
@@ -771,15 +776,18 @@ export function createChatCore(opts: {
     if (line === '/permissions' || line.startsWith('/permissions ')) {
       const arg = line.slice('/permissions'.length).trim()
       const m = arg.match(/^rm\s+(\d+)$/)
+      const userRules = listUserAllowRules()
       if (m) {
         const i = Number(m[1]) - 1
-        if (settings.permissions.allow[i] !== undefined) {
-          notice('info', `已删除：${settings.permissions.allow.splice(i, 1)[0]}`)
-          saveSettings(settings)
+        const removed = removeUserAllowRule(i)
+        if (removed !== undefined) {
+          const mem = settings.permissions.allow.indexOf(removed)
+          if (mem >= 0) settings.permissions.allow.splice(mem, 1) // 内存合并同步
+          notice('info', `已删除：${removed}`)
           fireConfigChange()
         } else notice('warn', '编号无效')
-      } else if (settings.permissions.allow.length) {
-        notice('info', settings.permissions.allow.map((r, i) => `  ${i + 1}. ${r}`).join('\n') + '\n（/permissions rm <编号> 删除对应规则）')
+      } else if (userRules.length) {
+        notice('info', userRules.map((r, i) => `  ${i + 1}. ${r}`).join('\n') + '\n（/permissions rm <编号> 删除对应规则）')
       } else notice('info', '没有已保存的权限规则')
       return
     }
