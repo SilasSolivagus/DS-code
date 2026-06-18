@@ -18,3 +18,20 @@ describe('capToolResult', () => {
     expect(out.endsWith('b')).toBe(true)   // 保留了尾
   })
 })
+
+import { detectEffortKeyword } from '../src/text.js'
+
+describe('detectEffortKeyword', () => {
+  it('命中 ultrathink → high', () => {
+    expect(detectEffortKeyword('请 ultrathink 这个问题')).toBe('high')
+    expect(detectEffortKeyword('ULTRATHINK now')).toBe('high')
+  })
+  it('命中 think harder / think hard → high', () => {
+    expect(detectEffortKeyword('think harder about edge cases')).toBe('high')
+    expect(detectEffortKeyword('please Think Hard')).toBe('high')
+  })
+  it('无关键词 → null', () => {
+    expect(detectEffortKeyword('just fix the bug')).toBe(null)
+    expect(detectEffortKeyword('rethinking the design')).toBe(null) // 不误伤 rethinking
+  })
+})

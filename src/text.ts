@@ -15,3 +15,8 @@ export function capToolResult(content: string, maxChars: number): string {
   const cut = content.length - head - tail
   return content.slice(0, head) + `\n…[工具结果过大，已截断 ${cut} 字符]…\n` + content.slice(content.length - tail)
 }
+
+/** 检测用户输入里的「加强思考」关键词，命中返回 'high'（本轮临时升 effort 档），否则 null。 */
+export function detectEffortKeyword(text: string): 'high' | null {
+  return /\bultrathink\b|\bthink\s+har(?:d|der)\b/i.test(text) ? 'high' : null
+}
