@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
+import { writeFileSync, mkdtempSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 
 // createClient 读取 process.env.DEEPSEEK_API_KEY，测试时注入哑值避免抛错
 const origKey = process.env.DEEPSEEK_API_KEY
@@ -17,6 +20,29 @@ describe('createClient', () => {
   it('缺省 baseURL 含 api.deepseek.com', () => {
     const c = createClient()
     expect((c as any).baseURL).toContain('api.deepseek.com')
+  })
+
+  it('flag 文件的 baseURL 抵达 HTTP 客户端', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dc-api-test-'))
+    const flagFile = join(dir, 'flag.json')
+    writeFileSync(flagFile, JSON.stringify({ baseURL: 'https://my-custom-endpoint.example.com/v1' }))
+    const c = createClient(flagFile)
+    expect((c as any).baseURL).toContain('my-custom-endpoint.example.com')
+  })
+
+  it('flag 文件的 apiKey 优先于 env（env 未设时）', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dc-api-test-'))
+    const flagFile = join(dir, 'flag.json')
+    writeFileSync(flagFile, JSON.stringify({ apiKey: 'sk-flag-key' }))
+    // 临时移除 env key，确保 flag apiKey 被用到（不抛 "缺少 API key" 错误）
+    const savedKey = process.env.DEEPSEEK_API_KEY
+    delete process.env.DEEPSEEK_API_KEY
+    try {
+      const c = createClient(flagFile)
+      expect((c as any).apiKey).toBe('sk-flag-key')
+    } finally {
+      process.env.DEEPSEEK_API_KEY = savedKey
+    }
   })
 })
 

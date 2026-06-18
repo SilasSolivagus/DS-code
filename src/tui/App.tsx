@@ -44,6 +44,7 @@ export function App(props: {
   cwd: string
   continueSession?: boolean
   sessionDir?: string  // 测试注入：隔离 session 落盘目录
+  flagSettingsPath?: string
 }) {
   const { exit } = useApp()
   const core = useMemo(() => createChatCore({
@@ -52,6 +53,7 @@ export function App(props: {
     cwd: props.cwd,
     continueSession: props.continueSession,
     sessionDir: props.sessionDir,
+    flagSettingsPath: props.flagSettingsPath,
     onState: () => {},
   }), [])  // eslint-disable-line react-hooks/exhaustive-deps
   const state = useChat(core)

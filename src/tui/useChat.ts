@@ -20,7 +20,7 @@ import { taskCreateTool, taskGetTool, taskUpdateTool, taskListTool } from '../to
 import { onNotification, drainNotifications, formatNotification } from '../tasks.js'
 import { buildSystemPrompt, findMemoryFiles } from '../prompt.js'
 import { formatMemory } from '../memory.js'
-import { loadSettings, saveSettings, SETTINGS_FILE } from '../config.js'
+import { loadSettings, loadRawUserSettings, addUserAllowRule, removeUserAllowRule, listUserAllowRules, SETTINGS_FILE } from '../config.js'
 import { runHooks } from '../hooks.js'
 import { makeHookRuntime } from '../hookRuntime.js'
 import { isDangerous, type Decision, type PermissionMode } from '../permissions.js'
@@ -195,9 +195,10 @@ export function createChatCore(opts: {
   cwd: string
   continueSession?: boolean
   sessionDir?: string  // 测试注入：隔离 session 落盘目录，避免污染 ~/.deepcode/sessions
+  flagSettingsPath?: string
   onState: (s: ChatState) => void
 }): ChatCore {
-  const settings = loadSettings()
+  const settings = loadSettings(opts.cwd, opts.flagSettingsPath)
   let cwd = opts.cwd
   let abort = new AbortController()
   let model = settings.model ?? 'deepseek-v4-flash'
@@ -232,12 +233,16 @@ export function createChatCore(opts: {
   const messages: any[] = [{ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars) }]
   const usageLog: UsageRecord[] = []
   let session!: SessionHandle
-  const hookDeps = makeHookRuntime({
-    client: opts.client,
-    getModel: () => model,
-    onUsage: (u, m) => { usageLog.push({ usage: u, model: m }); session.appendUsage(u, m) },
-    cwd: () => cwd,
-  })
+  const hookDeps = {
+    ...makeHookRuntime({
+      client: opts.client,
+      getModel: () => model,
+      onUsage: (u, m) => { usageLog.push({ usage: u, model: m }); session.appendUsage(u, m) },
+      cwd: () => cwd,
+    }),
+    allowedHttpHookUrls: settings.allowedHttpHookUrls,
+    httpHookAllowedEnvVars: settings.httpHookAllowedEnvVars,
+  }
   let compacted = false       // compact 后首条用户消息的一次性提醒
   let lastPromptTokens = 0    // 自动 compact 触发依据
   let costWarned = false      // $阈值提醒只发一次
@@ -532,7 +537,11 @@ export function createChatCore(opts: {
           rules: settings.permissions.allow,
           deny: resolveDenyList(settings.permissions.deny),
           cwd,
-          saveRule: r => { settings.permissions.allow.push(r); saveSettings(settings); fireConfigChange() },
+          saveRule: r => {
+            addUserAllowRule(r)        // 持久化到 user scope（raw RMW）
+            if (!settings.permissions.allow.includes(r)) settings.permissions.allow.push(r) // 内存合并即时生效
+            fireConfigChange()
+          },
           ask,
         },
         reminders: () => {
@@ -768,18 +777,27 @@ export function createChatCore(opts: {
       notice('info', formatMemory(findMemoryFiles(cwd), os.homedir()))
       return
     }
+    if (line === '/config') {
+      const { loadLayeredSettings } = await import('../settingsLayers.js')
+      const { formatConfigReport } = await import('../configReport.js')
+      notice('info', formatConfigReport(loadLayeredSettings(cwd, opts.flagSettingsPath)))
+      return
+    }
     if (line === '/permissions' || line.startsWith('/permissions ')) {
       const arg = line.slice('/permissions'.length).trim()
       const m = arg.match(/^rm\s+(\d+)$/)
+      const userRules = listUserAllowRules()
       if (m) {
         const i = Number(m[1]) - 1
-        if (settings.permissions.allow[i] !== undefined) {
-          notice('info', `已删除：${settings.permissions.allow.splice(i, 1)[0]}`)
-          saveSettings(settings)
+        const removed = removeUserAllowRule(i)
+        if (removed !== undefined) {
+          const mem = settings.permissions.allow.indexOf(removed)
+          if (mem >= 0) settings.permissions.allow.splice(mem, 1) // 内存合并同步
+          notice('info', `已删除：${removed}`)
           fireConfigChange()
         } else notice('warn', '编号无效')
-      } else if (settings.permissions.allow.length) {
-        notice('info', settings.permissions.allow.map((r, i) => `  ${i + 1}. ${r}`).join('\n') + '\n（/permissions rm <编号> 删除对应规则）')
+      } else if (userRules.length) {
+        notice('info', userRules.map((r, i) => `  ${i + 1}. ${r}`).join('\n') + '\n（/permissions rm <编号> 删除对应规则）')
       } else notice('info', '没有已保存的权限规则')
       return
     }

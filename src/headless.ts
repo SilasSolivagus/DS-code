@@ -34,9 +34,9 @@ export interface HeadlessResult {
 }
 
 /** 单 prompt 跑完整个 loop。工具事件打到 stderr（stdout 留给最终结果，方便脚本消费）。 */
-export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: boolean }): Promise<HeadlessResult> {
+export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: boolean; flagSettingsPath?: string }): Promise<HeadlessResult> {
   installTaskCleanup() // 退出时 kill 仍 running 的后台任务
-  const settings = loadSettings()
+  const settings = loadSettings(process.cwd(), opts.flagSettingsPath)
   const model = 'deepseek-v4-flash'
   let cwd = process.cwd()
   const agents = resolveAgents(cwd)
@@ -64,7 +64,11 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     total.completion_tokens += u.completion_tokens
     total.prompt_cache_hit_tokens += u.prompt_cache_hit_tokens
   }
-  const hookDeps = makeHookRuntime({ client: opts.client, getModel: () => model, onUsage: (u, _m) => addUsage(u), cwd: () => cwd })
+  const hookDeps = {
+    ...makeHookRuntime({ client: opts.client, getModel: () => model, onUsage: (u, _m) => addUsage(u), cwd: () => cwd }),
+    allowedHttpHookUrls: settings.allowedHttpHookUrls,
+    httpHookAllowedEnvVars: settings.httpHookAllowedEnvVars,
+  }
   ctx.hookDispatch = (event, payload) => runHooks(event, payload, settings.hooks, hookDeps)
   // SessionStart：会话开始（headless 恒 startup）。await 注入 additionalContext 到初始上下文。
   const initMsgs: any[] = [{ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars) }]
