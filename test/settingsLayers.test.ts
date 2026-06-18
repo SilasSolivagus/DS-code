@@ -109,7 +109,7 @@ describe('loadLayeredSettings', () => {
       expect(res.settings.model).toBe('pro')          // 安全字段生效
       expect(res.settings.apiKey).toBeUndefined()      // 危险整键剥
       expect(res.settings.hooks).toBeUndefined()
-      // project allow 剥：Bash(rm:*) 不在最终 allow 中（user 内容不断言）
+      // stripUntrustedScope deletes the whole permissions.allow key, so NO project allow rule survives (Bash(rm:*) is the only one here)
       expect(res.settings.permissions.allow).not.toContain('Bash(rm:*)')
       expect(res.settings.permissions.deny).toContain('**/.secret') // deny 保留
       const proj = res.scopes.find(s => s.scope === 'project')!

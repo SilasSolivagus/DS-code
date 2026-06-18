@@ -126,7 +126,13 @@ function scopePaths(cwd: string, flagPath?: string): { scope: SettingScope; path
 function parsePresent(raw: any): Record<string, unknown> {
   const p: Record<string, unknown> = {}
   if (!raw || typeof raw !== 'object') return p
-  if ('permissions' in raw) p.permissions = parsePermissions(raw)
+  if ('permissions' in raw && raw.permissions && typeof raw.permissions === 'object') {
+    const perm = parsePermissions(raw)
+    const out: { allow?: string[]; deny?: string[] } = {}
+    if (Array.isArray(raw.permissions.allow)) out.allow = perm.allow
+    if (perm.deny) out.deny = perm.deny
+    if (Object.keys(out).length) p.permissions = out
+  }
   for (const k of ['compactTokens', 'costWarnCNY', 'maxToolResultChars', 'model', 'baseURL', 'apiKey', 'inline'] as const) {
     if (raw[k] !== undefined) p[k] = raw[k]
   }
