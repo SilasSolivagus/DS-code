@@ -3,7 +3,9 @@ import type { LayeredResult } from './settingsLayers.js'
 
 const SENSITIVE = new Set(['apiKey'])
 function maskValue(key: string, v: unknown): string {
-  if (SENSITIVE.has(key) && typeof v === 'string' && v) return v.slice(0, 4) + '…(已打码)'
+  if (SENSITIVE.has(key) && typeof v === 'string' && v) {
+    return v.length > 8 ? v.slice(0, 4) + '…(已打码)' : '…(已打码)'
+  }
   if (Array.isArray(v)) return `${v.length} 条`
   if (v && typeof v === 'object') return JSON.stringify(v)
   return String(v)
