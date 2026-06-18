@@ -24,7 +24,7 @@ vi.mock('node:os', async importOriginal => {
 import os from 'node:os'
 import fs from 'node:fs'
 import path from 'node:path'
-import { loadSettings, saveSettings, saveApiKey, hasApiKey, parseHooksConfig, parsePermissions, parseStringArray } from '../src/config.js'
+import { loadSettings, loadRawUserSettings, saveRawUserSettings, saveApiKey, hasApiKey, parseHooksConfig, parsePermissions, parseStringArray, addUserAllowRule, removeUserAllowRule } from '../src/config.js'
 
 const fakeHome = os.homedir()
 const settingsFile = path.join(fakeHome, '.deepcode', 'settings.json')
@@ -41,8 +41,8 @@ describe('settings 默认值（hermetic：homedir 已 mock 到临时目录）', 
 })
 
 describe('settings 读写 round-trip', () => {
-  it('saveSettings 后 loadSettings 原样读回，且写入的是 mock home', () => {
-    saveSettings({
+  it('saveRawUserSettings 后 loadSettings 原样读回，且写入的是 mock home', () => {
+    saveRawUserSettings({
       permissions: { allow: ['Bash(ls)'] },
       compactTokens: 50_000,
       costWarnCNY: 5,
@@ -65,16 +65,16 @@ describe('settings 读写 round-trip', () => {
   })
 
   it('settings 支持 model/baseURL 自定义，缺省为 undefined', () => {
-    const s = loadSettings()
+    const s = loadRawUserSettings()
     expect('model' in s).toBe(true)
     expect('baseURL' in s).toBe(true)
     expect(s.model).toBeUndefined()
     expect(s.baseURL).toBeUndefined()
   })
 
-  it('向后兼容：旧键 costWarnUSD 仍被 loadSettings 读取（fallback 到 costWarnCNY）', () => {
+  it('向后兼容：旧键 costWarnUSD 仍被 loadRawUserSettings 读取（fallback 到 costWarnCNY）', () => {
     fs.writeFileSync(settingsFile, JSON.stringify({ costWarnUSD: 8 }))
-    const s = loadSettings()
+    const s = loadRawUserSettings()
     expect(s.costWarnCNY).toBe(8)
   })
 
@@ -124,7 +124,7 @@ describe('saveApiKey Setup hook', () => {
   beforeEach(() => { hookCalls.length = 0 })
 
   it('已配置 hooks 时写 key → Setup(trigger=init) 触发', async () => {
-    saveSettings({ permissions: { allow: [] }, compactTokens: 200000, costWarnCNY: 2, hooks: { Setup: [{ hooks: [{ type: 'command', command: 'true' }] }] } } as any)
+    saveRawUserSettings({ permissions: { allow: [] }, compactTokens: 200000, costWarnCNY: 2, hooks: { Setup: [{ hooks: [{ type: 'command', command: 'true' }] }] } } as any)
     saveApiKey('sk-test')
     await new Promise(r => setImmediate(r))
     const setup = hookCalls.find(c => c.event === 'Setup')
@@ -133,14 +133,14 @@ describe('saveApiKey Setup hook', () => {
   })
 
   it('未配置 hooks 时写 key → 不触发 Setup', async () => {
-    saveSettings({ permissions: { allow: [] }, compactTokens: 200000, costWarnCNY: 2 } as any)
+    saveRawUserSettings({ permissions: { allow: [] }, compactTokens: 200000, costWarnCNY: 2 } as any)
     saveApiKey('sk-test2')
     await new Promise(r => setImmediate(r))
     expect(hookCalls.find(c => c.event === 'Setup')).toBeFalsy()
   })
 
   it('已有落盤 key 再改 → Setup(trigger=maintenance)', async () => {
-    saveSettings({ permissions: { allow: [] }, compactTokens: 200000, costWarnCNY: 2, apiKey: 'sk-old', hooks: { Setup: [{ hooks: [{ type: 'command', command: 'true' }] }] } } as any)
+    saveRawUserSettings({ permissions: { allow: [] }, compactTokens: 200000, costWarnCNY: 2, apiKey: 'sk-old', hooks: { Setup: [{ hooks: [{ type: 'command', command: 'true' }] }] } } as any)
     hookCalls.length = 0
     saveApiKey('sk-changed')
     await new Promise(r => setTimeout(r, 0))
@@ -168,5 +168,32 @@ describe('parseStringArray', () => {
   })
   it('空数组返回空数组（区分「全禁」语义）', () => {
     expect(parseStringArray([])).toEqual([])
+  })
+})
+
+describe('raw user settings 读写', () => {
+  it('saveRawUserSettings 后 loadRawUserSettings 往返', () => {
+    const before = loadRawUserSettings()
+    const probe = { ...before, costWarnCNY: 42 }
+    saveRawUserSettings(probe)
+    try {
+      expect(loadRawUserSettings().costWarnCNY).toBe(42)
+    } finally {
+      saveRawUserSettings(before) // 还原，避免污染真 ~/.deepcode
+    }
+  })
+})
+
+describe('user-scope allow 规则 RMW', () => {
+  it('add 只动 user.permissions.allow，不引入其它 scope 字段', () => {
+    const before = loadRawUserSettings()
+    try {
+      addUserAllowRule('Bash(echo:*)')
+      const after = loadRawUserSettings()
+      expect(after.permissions.allow).toContain('Bash(echo:*)')
+      const removed = removeUserAllowRule(after.permissions.allow.indexOf('Bash(echo:*)'))
+      expect(removed).toBe('Bash(echo:*)')
+      expect(loadRawUserSettings().permissions.allow).not.toContain('Bash(echo:*)')
+    } finally { saveRawUserSettings(before) }
   })
 })

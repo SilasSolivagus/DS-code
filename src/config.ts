@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import { HOOK_EVENTS, type HooksConfig, type HookEvent, runHooks } from './hooks.js'
+import { loadLayeredSettings } from './settingsLayers.js'
 
 export interface McpStdioServerConfig {
   command: string
@@ -88,29 +89,26 @@ export function parsePermissions(raw: any): { allow: string[]; deny?: string[] }
   return out
 }
 
-export function loadSettings(): Settings {
+/** 单文件原始 user scope 解析（写路径用；= 旧 loadSettings 实现）。 */
+export function loadRawUserSettings(): Settings {
   let raw: any = {}
-  try {
-    raw = JSON.parse(fs.readFileSync(FILE, 'utf8'))
-  } catch {
-    // 用默认
-  }
+  try { raw = JSON.parse(fs.readFileSync(FILE, 'utf8')) } catch { /* 用默认 */ }
   return {
     permissions: parsePermissions(raw),
     compactTokens: raw?.compactTokens ?? 200_000,
     costWarnCNY: raw?.costWarnCNY ?? raw?.costWarnUSD ?? 15,
     maxToolResultChars: raw?.maxToolResultChars ?? 100_000,
-    model: raw?.model,
-    baseURL: raw?.baseURL,
-    apiKey: raw?.apiKey,
-    inline: raw?.inline,
-    hooks: parseHooksConfig(raw?.hooks),
-    mcpServers: parseMcpServers(raw?.mcpServers),
-    skills: parseSkillsConfig(raw?.skills),
-    webSearch: parseWebSearchConfig(raw?.webSearch),
+    model: raw?.model, baseURL: raw?.baseURL, apiKey: raw?.apiKey, inline: raw?.inline,
+    hooks: parseHooksConfig(raw?.hooks), mcpServers: parseMcpServers(raw?.mcpServers),
+    skills: parseSkillsConfig(raw?.skills), webSearch: parseWebSearchConfig(raw?.webSearch),
     allowedHttpHookUrls: parseStringArray(raw?.allowedHttpHookUrls),
     httpHookAllowedEnvVars: parseStringArray(raw?.httpHookAllowedEnvVars),
   }
+}
+
+/** 运行时合并配置（分层）。所有只读消费者用此。 */
+export function loadSettings(cwd?: string, flagPath?: string): Settings {
+  return loadLayeredSettings(cwd, flagPath).settings
 }
 
 /** 宽松解析 settings.hooks：只留已知事件键、matcher 为对象数组、hooks 为对象数组的条目。非对象→undefined。 */
@@ -189,21 +187,43 @@ export function parseStringArray(raw: unknown): string[] | undefined {
   return raw.filter((s): s is string => typeof s === 'string').map(s => s.trim()).filter(s => s.length > 0)
 }
 
-export function saveSettings(s: Settings): void {
+/** 只写 user scope 原始文件（分层下唯一写目标，防洗白）。 */
+export function saveRawUserSettings(s: Settings): void {
   fs.mkdirSync(DIR, { recursive: true })
   fs.writeFileSync(FILE, JSON.stringify(s, null, 2))
 }
 
 export function hasApiKey(): boolean {
-  return !!(process.env.DEEPSEEK_API_KEY ?? loadSettings().apiKey)
+  return !!(process.env.DEEPSEEK_API_KEY ?? loadRawUserSettings().apiKey)
 }
 
 export function saveApiKey(key: string): void {
-  const s = loadSettings()
-  const hadKey = !!s.apiKey // 保存前是否已有落盘 key → 区分 init/maintenance
+  const s = loadRawUserSettings()
+  const hadKey = !!s.apiKey
   s.apiKey = key || undefined
-  saveSettings(s)
-  try { fs.chmodSync(FILE, 0o600) } catch { /* 尽力而为 */ }
-  // Setup hook：首跑向导写 key=init；后续改 key=maintenance。fire-and-forget，hook 故障不阻断。
+  saveRawUserSettings(s)
+  try { fs.chmodSync(FILE, 0o600) } catch { /* 尽力 */ }
   if (s.hooks) void runHooks('Setup', { hook_event_name: 'Setup', cwd: process.cwd(), trigger: hadKey ? 'maintenance' : 'init' }, s.hooks).catch(() => {})
+}
+
+/** 往 user scope allow 列表加规则（raw RMW，不触其它 scope）。返回更新后的 user allow 数组。 */
+export function addUserAllowRule(rule: string): string[] {
+  const s = loadRawUserSettings()
+  if (!s.permissions.allow.includes(rule)) s.permissions.allow.push(rule)
+  saveRawUserSettings(s)
+  return s.permissions.allow
+}
+
+/** 按 user scope allow 索引删除一条；返回被删规则或 undefined。 */
+export function removeUserAllowRule(index: number): string | undefined {
+  const s = loadRawUserSettings()
+  if (s.permissions.allow[index] === undefined) return undefined
+  const [removed] = s.permissions.allow.splice(index, 1)
+  saveRawUserSettings(s)
+  return removed
+}
+
+/** 读 user scope allow 列表（/permissions 显示用，保 rm 索引一致）。 */
+export function listUserAllowRules(): string[] {
+  return loadRawUserSettings().permissions.allow
 }
