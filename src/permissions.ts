@@ -7,27 +7,34 @@ const SEPARATORS = new Set(['&&', '||', ';', '|', '&'])
 const REDIR = new Set(['>', '>>', '<', '>&', '<&'])
 
 /**
+ * 引号/转义感知扫描。对每个「裸」字符（不在引号内、自身未被反斜杠转义、
+ * 且不是引号/转义控制符本身）调用 onBare(char, index)。
+ * shell 语义：单引号内无转义；双引号内与无引号处反斜杠转义下一字符。
+ */
+function scanBareChars(s: string, onBare: (c: string, i: number) => void): void {
+  let q: '' | '"' | "'" = ''
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i]
+    if (q === "'") { if (c === "'") q = ''; continue }   // 单引号内：仅 ' 结束，无转义
+    if (q === '"') {                                       // 双引号内：\ 转义下一字符
+      if (c === '\\') { i++; continue }
+      if (c === '"') q = ''
+      continue
+    }
+    if (c === '\\') { i++; continue }                     // 无引号：\ 转义下一字符
+    if (c === '"' || c === "'") { q = c; continue }       // 进入引号
+    onBare(c, i)
+  }
+}
+
+/**
  * 引号感知地把未被引号包裹的 \n/\r 替换为 ';'，使 shell-quote 将其识别为命令分隔符。
  * 引号内的换行（如 echo "a\nb"）保留原样。
  */
 function normalizeUnquotedNewlines(s: string): string {
-  let q: '' | '"' | "'" = ''
-  let out = ''
-  for (let i = 0; i < s.length; i++) {
-    const c = s[i]
-    if (q) {
-      if (c === q) q = ''
-      out += c
-    } else if (c === '"' || c === "'") {
-      q = c
-      out += c
-    } else if (c === '\n' || c === '\r') {
-      out += ';'
-    } else {
-      out += c
-    }
-  }
-  return out
+  const chars = s.split('')
+  scanBareChars(s, (c, i) => { if (c === '\n' || c === '\r') chars[i] = ';' })
+  return chars.join('')
 }
 
 /** 用 shell-quote 把命令按控制操作符拆成子命令；含动态构造/分组或解析失败 → tooComplex（不得自动放行）。 */
@@ -94,15 +101,9 @@ export function isDangerous(desc: string): boolean {
 
 /** 检测未被引号包裹的 shell 控制操作符。 */
 export function hasUnquotedOperator(s: string): boolean {
-  let q: '' | '"' | "'" = ''
-  for (let i = 0; i < s.length; i++) {
-    const c = s[i]
-    if (q) { if (c === q) q = ''; continue }
-    if (c === '"' || c === "'") { q = c; continue }
-    if (c === ';' || c === '&') return true
-    if (c === '|') return true
-  }
-  return false
+  let found = false
+  scanBareChars(s, c => { if (c === ';' || c === '&' || c === '|') found = true })
+  return found
 }
 
 /** 规则形如 Bash(npm test:*)（前缀）或 Bash(ls)（精确） */

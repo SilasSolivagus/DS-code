@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { matchRule, checkPermission, isDangerous, splitBashCommand, bashCommandAllowed, type PermissionContext, type Decision } from '../src/permissions.js'
+import { matchRule, checkPermission, isDangerous, splitBashCommand, bashCommandAllowed, hasUnquotedOperator, type PermissionContext, type Decision } from '../src/permissions.js'
 
 const fakeTool = (name: string, isReadOnly: boolean, desc: false | string = 'x'): any => ({
   name,
@@ -248,6 +248,29 @@ describe('换行符命令分隔符绕过修复', () => {
     const r = splitBashCommand('echo "a\nb"')
     expect(r.tooComplex).toBe(false)
     expect(r.commands).toEqual(['echo a\nb'])
+  })
+})
+
+describe('转义感知引号扫描（假引号绕过修复）', () => {
+  // echo \' <真换行> rm -rf /：\' 不是引号开启，换行应被归一成 ;，命令应被拆成两段
+  it("bashCommandAllowed: echo \\' <真换行> rm -rf / 不被 Bash(echo:*) 放行（单引号假引号绕过）", () => {
+    expect(bashCommandAllowed("echo \\'\nrm -rf /", ['Bash(echo:*)'])).toBe(false)
+  })
+  it('bashCommandAllowed: echo \\" <真换行> rm -rf / 不被 Bash(echo:*) 放行（双引号假引号绕过）', () => {
+    expect(bashCommandAllowed('echo \\"\nrm -rf /', ['Bash(echo:*)'])).toBe(false)
+  })
+  it("hasUnquotedOperator: ls \\' && rm -rf / → true（backstop 不被假引号骗过）", () => {
+    expect(hasUnquotedOperator("ls \\' && rm -rf /")).toBe(true)
+  })
+  // 回归：真引号内的操作符仍不算
+  it('hasUnquotedOperator: echo "a && b" → false（双引号内操作符不算）', () => {
+    expect(hasUnquotedOperator('echo "a && b"')).toBe(false)
+  })
+  // 回归：引号内换行不拆
+  it('splitBashCommand: echo "a\\nb" 引号内换行保留，仍是单命令', () => {
+    const r = splitBashCommand('echo "a\nb"')
+    expect(r.tooComplex).toBe(false)
+    expect(r.commands).toHaveLength(1)
   })
 })
 
