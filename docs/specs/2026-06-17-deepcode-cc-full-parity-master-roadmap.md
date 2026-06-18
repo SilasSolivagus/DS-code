@@ -80,7 +80,7 @@
 | 4.7 | **REPL 工具**（交互式 Python/Node REPL） | `tools/REPLTool` | 无 | ⬜ | 否 | M |
 | 4.8 | **NotebookEdit**（Jupyter 单元格编辑） | `tools/NotebookEditTool` | 无 | ⬜ | 否 | M |
 | 4.9 | **PowerShell**（Windows shell） | `tools/PowerShellTool` | 无 | ⬜ | 否 | M |
-| 4.10 | **RemoteTrigger**（远程触发工作流） | `tools/RemoteTriggerTool` | 无 | ⬜ | 否 | L |
+| 4.10 | **RemoteTrigger**（远程触发工作流） | `tools/RemoteTriggerTool` | ↗️归第6层(云/平台编排,用户2026-06-18 拍板) | ↗️ | 否 | L |
 | 4.11 | **多模态附件输入**（图片/PDF/Jupyter paste + MIME 检测，嵌消息体） | `utils/attachments.ts` | 无(纯文本) | ⬜ | 碰TUI | L |
 
 ## 第 5 层 · 体验层（几乎全碰 TUI，留最后批一起真机冒烟）
@@ -123,21 +123,27 @@
 
 ---
 
-## 执行序（第 1-5 层；非 TUI 先，TUI 批最后）
+## 执行序（2026-06-18 重订：opus 专家建议 + 用户拍板取代旧逐层提案）
 
-**A 批 · 非 TUI（逐件 brainstorm→spec→plan→实现→合 main）：**
-1. **1.1 MCP** ← 起跑（纯逻辑、高价值、闭合 L-040B 的 mcpServers 缺口）
-2. 1.2 Skills（闭合 skills 字段）
-3. 1.8 TaskCreate/Get/Update 暴露（S，快赢）
-4. 4.2 ToolSearch / 4.3 Sleep / 4.1 WebSearch / 4.4 Brief（S，快赢批）
-5. 2.4 Prompt caching / 2.6 Cost 告警（S）
-6. 2.1 思考预算 / 2.2 Microcompact / 2.3 自动 compact / 2.5 Token 计数
-7. 1.3 Steering（核心逻辑部分）
-8. 3.1 记忆索引 / 3.2 自动提取 / 3.3 SessionMemory / 3.4 autoDream
-9. 3.7 权限 deny 规则 / 3.9 Settings 分层 / 3.8 Sandbox / 3.10 Cron
-10. 4.5 Config / 4.6 LSP / 4.7 REPL / 4.8 Notebook / 4.9 PowerShell / 4.10 RemoteTrigger
+**排序原则（用户钦定，取代旧"非TUI先/逐层"）：依赖拓扑 → 可感知收益 → 主题聚类（共享子系统连做，省重复实读 CC）→ 小件穿插。** 理由：六层是机制分类轴非执行轴；单人+AI 一件一仪式流程下最贵的是上下文切换+重复实读同一 CC 子系统，主题聚类消灭浪费。**逐层独立做完已被否决。**
 
-**B 批 · 碰 TUI（最后一起真机冒烟）：**
-1.4 Plan mode、1.5 可写 subagent+worktree、1.6 多 agent、1.7 hooks TUI(①e)、2.7 模型切换、3.5 rewind UI、3.6 会话管理、4.11 多模态、第 5 层全部(5.1-5.9)。
+**主题聚类批次（剩余非 TUI，按此序）：**
+- **C1 · 配置与权限层** ← 下一批起跑：**3.9 Settings 分层（捆绑 hook SSRF/URL 白名单加固）** → 3.7 余「来源层级」 → 4.5 Config 工具。
+  - *3.9 是隐藏拓扑根*：解锁 3.7 来源层级 + 是所有未来「项目级配置」的安全前置（威胁模型已点名：共享 settings 启用前必须先补 hook SSRF，否则项目级文件=供应链 RCE）+ 越晚做读 config 件返工面越大。
+- **C2 · 记忆子系统**（最该打包）：3.1 记忆索引（先定 schema）→ 3.3 SessionMemory → 3.2 自动提取 → 3.4 autoDream。四件共享 memdir，一次实读 CC memory 子系统连做，别拆开穿插。
+- **C3 · Token/Compact 收尾**：2.5 Token 计数 → 2.1 余 adaptive budget → 2.3 余自动触发。
+- **C4 · 独立工具件**（互相独立，可并行 worktree 丢 agent，降仪式）：4.6 LSP、4.7 REPL、4.8 Notebook、4.9 PowerShell、3.10 Cron、3.8 Sandbox。
+- **C5 · Steering→多agent**：1.3 Steering 非 TUI 逻辑（为 B 批 1.6 铺路）。
 
-**第 6 层**：单独立项「云管平台」，本表记录在案，待用户启动。
+**推荐下一步 6-8 件**：①3.9 Settings+SSRF ②3.7 来源层级 ③4.5 Config ④3.1 记忆索引 ⑤3.3 SessionMemory ⑥3.2 自动提取 ⑦3.4 autoDream ⑧2.5 Token 计数。（④-⑦ 是整个 memory 批，不拆。）
+
+**TUI 批 · 两件提前破例（用户拍板，其余仍攒最后一起冒烟）：**
+- 🔓 **3.5 Rewind UI 提前**（安全网，让后面可写 subagent 1.5/autoDream 敢做）。
+- 🔓 **5.6 权限弹窗 UI 提前**（点亮已做的重权限逻辑 deny/来源层级，否则用户感知不到）。
+- 攒最后批（不破例）：1.4 Plan mode、1.5 可写 subagent+worktree、1.6 多 agent（依赖 1.3）、1.7 hooks TUI(①e)、2.7 模型切换（轻量，DeepSeek 档位少）、3.6 会话管理、4.11 多模态、第 5 层其余(5.1-5.5/5.7-5.9)。
+
+**裁决（用户拍板）：4.10 RemoteTrigger → 归第 6 层**（远程触发工作流本质偏云/平台编排，与 6.8 远程会话同类）。专家另建议砍 4.9 PowerShell、降 3.10 Cron/3.8 Sandbox、4.6 LSP 单独评估——**用户选择保留**（暂不砍，做到时再按 ROI 复评）。
+
+**仪式分层提醒（专家盲点）：剩余件分「能力件」（记忆批/Steering/可写subagent/rewind，用全仪式 opus 终审）vs「对齐件」（Notebook/PowerShell/Config 等表面对齐，可降仪式、并行 worktree）——别对 4.8 Notebook 和 3.1 记忆索引用一样重的流程。**
+
+**第 6 层**：单独立项「云管平台」，本表记录在案，待用户启动。新增 4.10 RemoteTrigger 归入。
