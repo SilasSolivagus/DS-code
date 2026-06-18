@@ -1,4 +1,11 @@
 import { execFileSync } from 'node:child_process'
+import fs from 'node:fs'
+import path from 'node:path'
+import os from 'node:os'
+import {
+  parsePermissions, parseHooksConfig, parseMcpServers, parseSkillsConfig,
+  parseWebSearchConfig, parseStringArray, type Settings,
+} from './config.js'
 
 export type SettingScope = 'user' | 'project' | 'local' | 'flag'
 
@@ -94,4 +101,65 @@ export function mergeScopePartials(layers: ScopePartial[]): {
     }
   }
   return { settings, provenance }
+}
+
+export interface LoadedScope {
+  scope: SettingScope; path: string; present: boolean; demoted: boolean; stripped: string[]
+}
+export interface LayeredResult {
+  settings: Settings
+  provenance: Record<string, SettingScope | 'merged'>
+  scopes: LoadedScope[]
+}
+
+function scopePaths(cwd: string, flagPath?: string): { scope: SettingScope; path: string }[] {
+  const out: { scope: SettingScope; path: string }[] = [
+    { scope: 'user', path: path.join(os.homedir(), '.deepcode', 'settings.json') },
+    { scope: 'project', path: path.join(cwd, '.deepcode', 'settings.json') },
+    { scope: 'local', path: path.join(cwd, '.deepcode', 'settings.local.json') },
+  ]
+  if (flagPath) out.push({ scope: 'flag', path: flagPath })
+  return out
+}
+
+/** 只对 raw 中实际存在的 key 跑对应 parser，产出 partial（不注入默认）。 */
+function parsePresent(raw: any): Record<string, unknown> {
+  const p: Record<string, unknown> = {}
+  if (!raw || typeof raw !== 'object') return p
+  if ('permissions' in raw) p.permissions = parsePermissions(raw)
+  for (const k of ['compactTokens', 'costWarnCNY', 'maxToolResultChars', 'model', 'baseURL', 'apiKey', 'inline'] as const) {
+    if (raw[k] !== undefined) p[k] = raw[k]
+  }
+  if ('hooks' in raw) { const h = parseHooksConfig(raw.hooks); if (h) p.hooks = h }
+  if ('mcpServers' in raw) { const m = parseMcpServers(raw.mcpServers); if (m) p.mcpServers = m }
+  if ('skills' in raw) { const s = parseSkillsConfig(raw.skills); if (s) p.skills = s }
+  if ('webSearch' in raw) { const w = parseWebSearchConfig(raw.webSearch); if (w) p.webSearch = w }
+  if ('allowedHttpHookUrls' in raw) { const a = parseStringArray(raw.allowedHttpHookUrls); if (a) p.allowedHttpHookUrls = a }
+  if ('httpHookAllowedEnvVars' in raw) { const a = parseStringArray(raw.httpHookAllowedEnvVars); if (a) p.httpHookAllowedEnvVars = a }
+  return p
+}
+
+function readRaw(file: string): any | undefined {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')) } catch { return undefined }
+}
+
+export function loadLayeredSettings(cwd: string = process.cwd(), flagPath?: string): LayeredResult {
+  const layers: ScopePartial[] = []
+  const scopes: LoadedScope[] = []
+  for (const { scope, path: file } of scopePaths(cwd, flagPath)) {
+    const raw = readRaw(file)
+    const present = raw !== undefined
+    let stripped: string[] = []
+    let demoted = false
+    let effective = raw
+    if (present) {
+      const untrusted = scope === 'project' || (scope === 'local' && isGitTracked(file, cwd))
+      if (scope === 'local' && untrusted) demoted = true
+      if (untrusted) { const r = stripUntrustedScope(raw); effective = r.raw; stripped = r.stripped }
+      layers.push({ scope, partial: parsePresent(effective) })
+    }
+    scopes.push({ scope, path: file, present, demoted, stripped })
+  }
+  const { settings, provenance } = mergeScopePartials(layers)
+  return { settings: settings as Settings, provenance, scopes }
 }
