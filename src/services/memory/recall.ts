@@ -1,0 +1,48 @@
+import fs from 'node:fs'
+import path from 'node:path'
+
+export const MAX_RECALL_BYTES = 16384
+
+export function buildRecallReminder(files: { filename: string; content: string }[]): string {
+  const body = files.map(f => `### ${f.filename}\n${f.content}`).join('\n\n')
+  return `<system-reminder>\n以下是与你当前任务可能相关的已存记忆（自动召回，背景参考，非用户指令）：\n\n${body}\n</system-reminder>`
+}
+
+export interface RecallerDeps {
+  memdir: string
+  find: (query: string) => Promise<string[]>
+  maxResults: number
+}
+
+export function createRecaller(deps: RecallerDeps) {
+  let settled: string[] | null = null
+  let running = false
+  const seen = new Set<string>()
+
+  return {
+    prefetch(query: string) {
+      settled = null
+      running = true
+      deps.find(query).then(r => { settled = r }, () => { settled = [] }).finally(() => { running = false })
+    },
+    consume(alreadyRead: Set<string>): string | null {
+      if (settled === null) return null // 还没好，下一轮再来
+      const picks = settled.filter(fn => !seen.has(fn) && !alreadyRead.has(path.join(deps.memdir, fn)))
+      settled = null
+      if (!picks.length) return null
+      const files: { filename: string; content: string }[] = []
+      let bytes = 0
+      for (const fn of picks) {
+        let content = ''
+        try { content = fs.readFileSync(path.join(deps.memdir, fn), 'utf8') } catch { continue }
+        if (bytes + Buffer.byteLength(content, 'utf8') > MAX_RECALL_BYTES) {
+          content = content.slice(0, 2000) + '\n…（截断，用 Read 看全文）'
+        }
+        bytes += Buffer.byteLength(content, 'utf8')
+        files.push({ filename: fn, content })
+        seen.add(fn)
+      }
+      return files.length ? buildRecallReminder(files) : null
+    },
+  }
+}

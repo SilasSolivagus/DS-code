@@ -45,6 +45,8 @@ import { detectEffortKeyword } from '../text.js'
 import { memdirFor } from '../memdir/paths.js'
 import { DEFAULT_MEMORY_CONFIG } from '../memdir/memoryConfig.js'
 import { createMemoryExtractor } from '../services/memory/extractMemories.js'
+import { createRecaller } from '../services/memory/recall.js'
+import { findRelevantMemories } from '../memdir/findRelevantMemories.js'
 
 /** ! 直跑：同步执行，30s 超时，stdout+stderr 合并，超 20k 截断 */
 export function runBang(cmd: string, cwd: string): { output: string; code: number } {
@@ -237,6 +239,18 @@ export function createChatCore(opts: {
   ctx.injectUserMessage = (c: string) => injectionBuffer.push(c)
   const mem = settings.memory ?? DEFAULT_MEMORY_CONFIG
   const memdir = mem.enabled && !mem.recall.enabled ? memdirFor(cwd) : undefined
+  // 动态召回：recall 开时构 recaller（prefetch 每轮非阻塞启动，consume 在 tool_end 后注入 reminder）
+  const recaller = (mem.enabled && mem.recall.enabled)
+    ? createRecaller({
+        memdir: memdirFor(cwd),
+        maxResults: mem.recall.maxResults,
+        find: q => findRelevantMemories(opts.client, q, memdirFor(cwd), {
+          maxResults: mem.recall.maxResults,
+          model,
+          signal: ctx.signal,
+        }),
+      })
+    : null
   const messages: any[] = [{ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars, memdir) }]
   const usageLog: UsageRecord[] = []
   let session!: SessionHandle
@@ -539,6 +553,8 @@ export function createChatCore(opts: {
       const kw = detectEffortKeyword(userText)
       const turnThinking = kw ? true : thinking
       const turnEffort = kw ?? effortLevel
+      // recall: 用户提交后、跑 loop 前启动后台召回
+      if (recaller) recaller.prefetch(userText)
       const deps: LoopDeps = {
         client: opts.client,
         tools,
@@ -579,8 +595,16 @@ export function createChatCore(opts: {
           // spinner 实时输出 token 估算（非思考流；中文偏低估，仅作动态观感）
           if (!ev.reasoning) turnOutTokens += Math.ceil(ev.delta.length / 3)
           dispatch({ type: 'delta', delta: ev.delta, reasoning: !!ev.reasoning })
-        } else if (ev.type === 'tool_start' || ev.type === 'tool_end') {
+        } else if (ev.type === 'tool_start') {
           dispatch(ev)
+        } else if (ev.type === 'tool_end') {
+          dispatch(ev)
+          // recall: tool 结果回灌后 poll，与 drainInjections 同站点——已 settle 则注入 reminder
+          if (recaller) {
+            const readPaths = new Set(ctx.fileState.keys())
+            const rem = recaller.consume(readPaths)
+            if (rem) injectionBuffer.push(rem)
+          }
         } else if (ev.type === 'turn_end') {
           usageLog.push({ usage: ev.usage, model })
           session.appendUsage(ev.usage, model)
