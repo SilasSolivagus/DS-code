@@ -24,7 +24,7 @@ vi.mock('node:os', async importOriginal => {
 import os from 'node:os'
 import fs from 'node:fs'
 import path from 'node:path'
-import { loadSettings, saveSettings, saveApiKey, hasApiKey, parseHooksConfig } from '../src/config.js'
+import { loadSettings, saveSettings, saveApiKey, hasApiKey, parseHooksConfig, parsePermissions } from '../src/config.js'
 
 const fakeHome = os.homedir()
 const settingsFile = path.join(fakeHome, '.deepcode', 'settings.json')
@@ -139,7 +139,7 @@ describe('saveApiKey Setup hook', () => {
     expect(hookCalls.find(c => c.event === 'Setup')).toBeFalsy()
   })
 
-  it('已有落盘 key 再改 → Setup(trigger=maintenance)', async () => {
+  it('已有落盤 key 再改 → Setup(trigger=maintenance)', async () => {
     saveSettings({ permissions: { allow: [] }, compactTokens: 200000, costWarnCNY: 2, apiKey: 'sk-old', hooks: { Setup: [{ hooks: [{ type: 'command', command: 'true' }] }] } } as any)
     hookCalls.length = 0
     saveApiKey('sk-changed')
@@ -147,5 +147,13 @@ describe('saveApiKey Setup hook', () => {
     const setup = hookCalls.find(c => c.event === 'Setup')
     expect(setup).toBeTruthy()
     expect(setup!.payload.trigger).toBe('maintenance')
+  })
+})
+
+describe('parsePermissions', () => {
+  it('解析 permissions.deny（过滤非法项）', () => {
+    const raw = { permissions: { allow: ['Bash(ls:*)'], deny: ['**/x', '', 123, '  **/y  '] } }
+    const out = parsePermissions(raw)
+    expect(out).toEqual({ allow: ['Bash(ls:*)'], deny: ['**/x', '**/y'] })
   })
 })

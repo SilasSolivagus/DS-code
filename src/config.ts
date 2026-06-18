@@ -29,7 +29,7 @@ export interface WebSearchSettings {
 }
 
 export interface Settings {
-  permissions: { allow: string[] }
+  permissions: { allow: string[]; deny?: string[] }
   /** 自动 compact 触发阈值（上次请求的 prompt_tokens 超过即触发） */
   compactTokens: number
   /** 本会话花费提醒阈值（CNY，状态行变色一次） */
@@ -71,6 +71,19 @@ export function taskOutputPath(id: string): string {
   return path.join(TASKS_DIR, id + '.log')
 }
 
+export function parsePermissions(raw: any): { allow: string[]; deny?: string[] } {
+  const allow: string[] = Array.isArray(raw?.permissions?.allow)
+    ? raw.permissions.allow.filter((s: unknown): s is string => typeof s === 'string')
+    : []
+  const out: { allow: string[]; deny?: string[] } = { allow }
+  const rawDeny = raw?.permissions?.deny
+  if (Array.isArray(rawDeny)) {
+    const deny = rawDeny.filter((d: unknown): d is string => typeof d === 'string').map((d: string) => d.trim()).filter((d: string) => d.length > 0)
+    if (deny.length) out.deny = deny
+  }
+  return out
+}
+
 export function loadSettings(): Settings {
   let raw: any = {}
   try {
@@ -79,7 +92,7 @@ export function loadSettings(): Settings {
     // 用默认
   }
   return {
-    permissions: { allow: raw?.permissions?.allow ?? [] },
+    permissions: parsePermissions(raw),
     compactTokens: raw?.compactTokens ?? 200_000,
     costWarnCNY: raw?.costWarnCNY ?? raw?.costWarnUSD ?? 15,
     maxToolResultChars: raw?.maxToolResultChars ?? 100_000,
