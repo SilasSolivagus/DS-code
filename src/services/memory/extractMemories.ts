@@ -36,9 +36,14 @@ export function createMemoryExtractor(deps: ExtractorDeps) {
 
   async function run(snap: TurnSnapshot, isTrailing: boolean): Promise<void> {
     const recent = messagesSince(snap.messages, snap.turnIds, cursor)
-    if (!recent.length) { turnsSinceLast = 0; return }
+    if (!recent.length) return
     // 主 agent 已自写记忆 → 跳过 fork、推进游标
-    if (hasMemoryWritesSince(recent, deps.memdir)) { cursor = snap.maxTurnId; turnsSinceLast = 0; return }
+    if (hasMemoryWritesSince(recent, deps.memdir)) {
+      cursor = snap.maxTurnId
+      if (failedAt > 0 && cursor >= failedAt) failedAt = 0
+      turnsSinceLast = 0
+      return
+    }
     const manifest = formatMemoryManifest(await scan(deps.memdir))
     await runSub({
       client: deps.client, model: deps.model,
@@ -50,6 +55,7 @@ export function createMemoryExtractor(deps: ExtractorDeps) {
       agentId: `extract-${++counter}`, agentType: 'extract_memories',
     })
     cursor = snap.maxTurnId // 仅成功后推进
+    if (failedAt > 0 && cursor >= failedAt) failedAt = 0
     turnsSinceLast = 0
   }
 
@@ -57,7 +63,7 @@ export function createMemoryExtractor(deps: ExtractorDeps) {
     if (!deps.config.enabled) return
     if (inProgress) { pending = snap; return }
     // 失败后同一范围不重试：需要新消息（maxTurnId > failedAt）才恢复
-    if (snap.maxTurnId <= failedAt) return
+    if (snap.maxTurnId <= failedAt) { hasNewSnap = false; return }
     if (!shouldExtractByThrottle(turnsSinceLast, deps.config.extractEveryTurns, isTrailing)) return
     hasNewSnap = false // 消费掉本次 snap
     inProgress = true

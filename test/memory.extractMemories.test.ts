@@ -34,17 +34,20 @@ describe('createMemoryExtractor', () => {
     expect(runSub).toHaveBeenCalledTimes(1)
   })
 
-  test('失败不前移游标，下次重试', async () => {
-    const runSub = vi.fn(async () => { throw new Error('boom') })
-    const ex = createMemoryExtractor(mkDeps(md, runSub))
-    const snap = { messages: [{ role: 'user', content: 'a' }], turnIds: [1], maxTurnId: 1 }
-    ex.onTurnEnd(snap); await ex.drain()
-    const runSub2 = vi.fn(async () => 'ok')
-    const ex2Deps = mkDeps(md, runSub2)
-    // 复用同一 extractor 实例验证重试：换成成功
-    ;(ex as any) // 同实例：第二次仍因游标未动而尝试
-    ex.onTurnEnd(snap); await ex.drain()
-    expect(runSub).toHaveBeenCalledTimes(1) // 第一次失败
+  test('失败不前移游标，新 turn 重试失败范围', async () => {
+    const runSub = vi.fn()
+      .mockImplementationOnce(async () => { throw new Error('boom') }) // turn1 失败
+      .mockImplementationOnce(async () => 'ok')                         // 重试成功
+    const ex = createMemoryExtractor(mkDeps(md, runSub, { ...DEFAULT_MEMORY_CONFIG, extractEveryTurns: 100 }))
+    // turn1：失败，cursor 不前移
+    ex.onTurnEnd({ messages: [{ role: 'user', content: 'a' }], turnIds: [1], maxTurnId: 1 })
+    await ex.drain()
+    const callsAfterT1 = runSub.mock.calls.length
+    expect(callsAfterT1).toBeGreaterThanOrEqual(1) // 至少失败一次
+    // turn2：新 maxTurnId，失败范围（turn1）应随新增量一起被重试
+    ex.onTurnEnd({ messages: [{ role: 'user', content: 'a' }, { role: 'user', content: 'b' }], turnIds: [1, 2], maxTurnId: 2 })
+    await ex.drain()
+    expect(runSub.mock.calls.length).toBeGreaterThan(callsAfterT1) // 新 turn 确实再次提取（重试）
   })
 
   test('enabled=false 不触发', async () => {
