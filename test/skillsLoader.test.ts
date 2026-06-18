@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { parseSkillFile, loadSkills, substituteSkillArgs } from '../src/skillsLoader.js'
+import {
+  parseSkillFile, loadSkills, substituteSkillArgs,
+  formatSkillListing, MAX_LISTING_DESC_CHARS,
+} from '../src/skillsLoader.js'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -86,6 +89,56 @@ describe('loadSkills 发现 + 合并', () => {
   })
 })
 
+describe('loadSkills config（sources/deny/priority）', () => {
+  function setup() {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dc-home-'))
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'dc-cwd-'))
+    // home/.claude/skills/cso（模拟 gstack 灌入）
+    fs.mkdirSync(path.join(home, '.claude', 'skills', 'cso'), { recursive: true })
+    fs.writeFileSync(path.join(home, '.claude', 'skills', 'cso', 'SKILL.md'), '---\ndescription: 安全审计\n---\n审计')
+    // home/.deepcode/skills/hello（user 级 deepcode 源）
+    fs.mkdirSync(path.join(home, '.deepcode', 'skills', 'hello'), { recursive: true })
+    fs.writeFileSync(path.join(home, '.deepcode', 'skills', 'hello', 'SKILL.md'), '---\ndescription: 问好\n---\n你好')
+    // cwd/.deepcode/skills/proj（项目级）
+    fs.mkdirSync(path.join(cwd, '.deepcode', 'skills', 'proj'), { recursive: true })
+    fs.writeFileSync(path.join(cwd, '.deepcode', 'skills', 'proj', 'SKILL.md'), '---\ndescription: 项目技能\n---\n做事')
+    // cwd/.deepcode/commands/recap.md（legacy）
+    fs.mkdirSync(path.join(cwd, '.deepcode', 'commands'), { recursive: true })
+    fs.writeFileSync(path.join(cwd, '.deepcode', 'commands', 'recap.md'), '回顾')
+    return { home, cwd }
+  }
+
+  it('sources:["deepcode"] 跳过 .claude 源（干掉 cso 灌入）', () => {
+    const { home, cwd } = setup()
+    const names = loadSkills(cwd, home, { sources: ['deepcode'] }).map(s => s.name)
+    expect(names).not.toContain('cso')
+    expect(names).toEqual(expect.arrayContaining(['hello', 'proj', 'recap']))
+  })
+
+  it('deny 精确排除', () => {
+    const { home, cwd } = setup()
+    const names = loadSkills(cwd, home, { deny: ['cso', 'recap'] }).map(s => s.name)
+    expect(names).not.toContain('cso')
+    expect(names).not.toContain('recap')
+    expect(names).toEqual(expect.arrayContaining(['hello', 'proj']))
+  })
+
+  it('priority 赋值：项目 0 / user(home) 1 / legacy 2', () => {
+    const { home, cwd } = setup()
+    const byName = Object.fromEntries(loadSkills(cwd, home).map(s => [s.name, s.priority]))
+    expect(byName['proj']).toBe(0)   // 项目 skills
+    expect(byName['hello']).toBe(1)  // home/.deepcode/skills
+    expect(byName['cso']).toBe(1)    // home/.claude/skills
+    expect(byName['recap']).toBe(2)  // legacy commands
+  })
+
+  it('无 config：发现/合并语义同现状（仅多了 priority 字段）', () => {
+    const { home, cwd } = setup()
+    const names = loadSkills(cwd, home).map(s => s.name).sort()
+    expect(names).toEqual(['cso', 'hello', 'proj', 'recap'])
+  })
+})
+
 describe('substituteSkillArgs', () => {
   it('$ARGUMENTS 全文替换（legacy 向后兼容）', () => {
     expect(substituteSkillArgs('回顾 $ARGUMENTS', 'a b c', { skillDir: '/d' })).toBe('回顾 a b c')
@@ -100,6 +153,57 @@ describe('substituteSkillArgs', () => {
   it('缺参数的 $ARGn 替换成空串；无 sessionId → 空串', () => {
     expect(substituteSkillArgs('[$ARG1][$ARG2]', 'only', { skillDir: '/d' })).toBe('[only][]')
     expect(substituteSkillArgs('${DEEPCODE_SESSION_ID}', '', { skillDir: '/d' })).toBe('')
+  })
+})
+
+describe('formatSkillListing', () => {
+  const mk = (name: string, description: string, opts: Partial<{ whenToUse: string; priority: number }> = {}) => ({
+    name, description, whenToUse: opts.whenToUse, context: 'inline' as const,
+    userInvocable: true, modelInvocable: true, skillDir: '/x', isLegacy: false, body: 'b',
+    priority: opts.priority ?? 0,
+  })
+
+  it('空集合 → 空串、计数 0', () => {
+    expect(formatSkillListing([])).toEqual({ text: '', shown: 0, dropped: 0 })
+  })
+
+  it('预算够时全列、无省略行', () => {
+    const r = formatSkillListing([mk('a', '甲'), mk('b', '乙')])
+    expect(r.shown).toBe(2)
+    expect(r.dropped).toBe(0)
+    expect(r.text).toBe('- a：甲\n- b：乙')
+    expect(r.text).not.toContain('省略')
+  })
+
+  it('whenToUse 拼到行尾', () => {
+    const r = formatSkillListing([mk('a', '甲', { whenToUse: '用时' })])
+    expect(r.text).toBe('- a：甲 — 用时')
+  })
+
+  it('per-entry 250 字符截断（description 与 whenToUse 各截）', () => {
+    const long = 'x'.repeat(300)
+    const r = formatSkillListing([mk('a', long, { whenToUse: long })])
+    const descPart = 'x'.repeat(MAX_LISTING_DESC_CHARS) + '…'
+    expect(r.text).toBe(`- a：${descPart} — ${descPart}`)
+  })
+
+  it('超总预算丢尾部 + 末尾省略行（含 dropped 计数）', () => {
+    // 每行约 "- nN：" + 100 字符 ≈ 105；预算 250 只容得下约 2 行
+    const skills = [0, 1, 2, 3, 4].map(i => mk('n' + i, 'd'.repeat(100)))
+    const r = formatSkillListing(skills, { budgetChars: 250 })
+    expect(r.shown).toBeLessThan(5)
+    expect(r.dropped).toBe(5 - r.shown)
+    expect(r.text).toContain(`另有 ${r.dropped} 个`)
+  })
+
+  it('按 priority 升序排（项目 0 先于 user 1 先于 legacy 2），同级保持发现序', () => {
+    const skills = [
+      mk('legacy', 'L', { priority: 2 }),
+      mk('proj', 'P', { priority: 0 }),
+      mk('user', 'U', { priority: 1 }),
+    ]
+    const r = formatSkillListing(skills)
+    expect(r.text).toBe('- proj：P\n- user：U\n- legacy：L')
   })
 })
 

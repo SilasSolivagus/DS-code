@@ -4,7 +4,7 @@ import type OpenAI from 'openai'
 import type { Tool, ToolContext } from './types.js'
 import type { Usage } from '../api.js'
 import type { SkillDefinition } from '../skillsLoader.js'
-import { substituteSkillArgs } from '../skillsLoader.js'
+import { substituteSkillArgs, formatSkillListing } from '../skillsLoader.js'
 import { acquire, release, runSubagent } from '../subagentRunner.js'
 import { resolveAgentTools, GLOBAL_SUBAGENT_DENY, type AgentDefinition } from './agentTypes.js'
 import { SUB_MODEL } from './constants.js'
@@ -17,10 +17,10 @@ const schema = z.object({
 
 export function makeSkillTool(
   skills: SkillDefinition[],
-  deps: { client: OpenAI; onUsage: (u: Usage, model: string) => void; getModel: () => string; agents: AgentDefinition[]; skillPool: Tool<any>[] },
+  deps: { client: OpenAI; onUsage: (u: Usage, model: string) => void; getModel: () => string; agents: AgentDefinition[]; skillPool: Tool<any>[]; listingBudgetChars?: number },
 ): Tool<typeof schema> {
   const callable = skills.filter(s => s.modelInvocable)
-  const listing = callable.map(s => `- ${s.name}：${s.description}${s.whenToUse ? ` — ${s.whenToUse}` : ''}`).join('\n')
+  const { text: listing } = formatSkillListing(callable, { budgetChars: deps.listingBudgetChars })
   return {
     name: 'Skill',
     description: `调用一个技能（skill）。调用后该技能的指令会以独立消息交付给你，按其执行。可用技能：\n${listing || '（无）'}`,

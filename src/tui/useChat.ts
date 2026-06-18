@@ -219,10 +219,10 @@ export function createChatCore(opts: {
   const customCommands = loadCustomCommands(cwd)
   const agents = resolveAgents(cwd) // 内建 + 自定义合并后的注册表
   // Skills 接线：加载本地 skill 清单，建 injection buffer（inline skill 正文由此流入下一轮 user 消息）
-  const skills = loadSkills(cwd)
+  const skills = loadSkills(cwd, undefined, settings.skills)
   const injectionBuffer: string[] = []
   ctx.injectUserMessage = (c: string) => injectionBuffer.push(c)
-  const messages: any[] = [{ role: 'system', content: buildSystemPrompt(cwd, undefined, skills) }]
+  const messages: any[] = [{ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars) }]
   const usageLog: UsageRecord[] = []
   let session!: SessionHandle
   const hookDeps = makeHookRuntime({
@@ -292,7 +292,7 @@ export function createChatCore(opts: {
     todos.reset(); compacted = false; lastPromptTokens = 0
     // doCompact 崩溃在 appendCompact 与首条 re-append 之间的兜底
     if (messages.length === 0 || messages[0]?.role !== 'system') {
-      messages.unshift({ role: 'system', content: buildSystemPrompt(cwd, undefined, skills) })
+      messages.unshift({ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars) })
       session.appendMessage(messages[0])
     }
     nextTurnId = loaded.maxTurnId + 1
@@ -384,6 +384,7 @@ export function createChatCore(opts: {
       onUsage: (u, m) => { usageLog.push({ usage: u, model: m }); session.appendUsage(u, m) },
       getModel: () => model, agents,
       skillPool: [...allTools, makeWebFetchTool({ client: opts.client, onUsage: (u, m) => { usageLog.push({ usage: u, model: m }); session.appendUsage(u, m) } })],
+      listingBudgetChars: settings.skills?.listingBudgetChars,
     }),
     taskListTool,
     taskOutputTool,

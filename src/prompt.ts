@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { SkillDefinition } from './skillsLoader.js'
+import { formatSkillListing } from './skillsLoader.js'
 
 /** 从 cwd 向上逐层找 DEEPCODE.md/CLAUDE.md/AGENTS.md（每层取一个，DEEPCODE.md 优先），最后加全局 ~/.deepcode/DEEPCODE.md */
 export function findMemoryFiles(cwd: string, home: string = os.homedir()): string[] {
@@ -26,16 +27,16 @@ export function findMemoryFiles(cwd: string, home: string = os.homedir()): strin
 }
 
 /** 只在会话启动时调用一次。产物必须整个会话静态——这是 KV 缓存命中的前提。 */
-export function buildSystemPrompt(cwd: string, home: string = os.homedir(), skills?: SkillDefinition[]): string {
+export function buildSystemPrompt(cwd: string, home: string = os.homedir(), skills?: SkillDefinition[], budgetChars?: number): string {
   const memory = findMemoryFiles(cwd, home)
     .map(p => `## 项目记忆（来自 ${p}）\n${fs.readFileSync(p, 'utf8')}`)
     .join('\n\n')
 
-  // 生成 skill 清单：只列 modelInvocable 的
+  // 生成 skill 清单：只列 modelInvocable 的，经预算截断
   const callable = (skills ?? []).filter(s => s.modelInvocable)
-  const skillBlock = callable.length
-    ? `\n\n# 可用技能（Skills）\n你可以用 Skill 工具调用以下技能（也可在对话中按需触发）：\n` +
-      callable.map(s => `- ${s.name}：${s.description}${s.whenToUse ? ` — ${s.whenToUse}` : ''}`).join('\n')
+  const { text: listing } = formatSkillListing(callable, { budgetChars })
+  const skillBlock = listing
+    ? `\n\n# 可用技能（Skills）\n你可以用 Skill 工具调用以下技能（也可在对话中按需触发）：\n${listing}`
     : ''
 
   return `你是 deepcode，一个在终端中工作的编码助手。直接、准确、动手解决问题。
