@@ -60,3 +60,37 @@ export async function tavilySearch(
     .map(r => ({ title: String(r?.title ?? ''), url: String(r?.url ?? ''), snippet: String(r?.content ?? '') }))
     .filter(r => r.url)
 }
+
+export const MAX_MERGED_RESULTS = 8
+export const MAX_SNIPPET_CHARS = 200
+
+export function normalizeUrl(u: string): string {
+  try {
+    const p = new URL(u)
+    p.hash = ''
+    let s = `${p.protocol}//${p.host.toLowerCase()}${p.pathname}${p.search}`
+    if (s.endsWith('/')) s = s.slice(0, -1)
+    return s
+  } catch {
+    return u
+  }
+}
+
+/** round-robin 交错各源 → 按 normalizeUrl 去重（首次胜）→ 截 cap → snippet 截断。 */
+export function mergeResults(lists: WebSearchResult[][], cap: number = MAX_MERGED_RESULTS): WebSearchResult[] {
+  const seen = new Set<string>()
+  const out: WebSearchResult[] = []
+  const maxLen = lists.reduce((m, l) => Math.max(m, l.length), 0)
+  for (let i = 0; i < maxLen && out.length < cap; i++) {
+    for (const list of lists) {
+      if (out.length >= cap) break
+      const r = list[i]
+      if (!r) continue
+      const key = normalizeUrl(r.url)
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push({ ...r, snippet: r.snippet.length > MAX_SNIPPET_CHARS ? r.snippet.slice(0, MAX_SNIPPET_CHARS) + '…' : r.snippet })
+    }
+  }
+  return out
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { bochaSearch, tavilySearch } from '../src/webSearch.js'
+import { bochaSearch, tavilySearch, normalizeUrl, mergeResults } from '../src/webSearch.js'
 
 describe('bochaSearch', () => {
   it('解析 data.webPages.value[]，name→title，url 空跳过', async () => {
@@ -41,5 +41,35 @@ describe('tavilySearch', () => {
     await tavilySearch('k', 'q', { blockedDomains: ['bad.com'] }, fetchJson)
     expect(captured.body.exclude_domains).toEqual(['bad.com'])
     expect(captured.body.include_domains).toBeUndefined()
+  })
+})
+
+describe('normalizeUrl', () => {
+  it('host 小写 + 去 fragment + 去尾斜杠', () => {
+    expect(normalizeUrl('https://Example.com/Path/#frag')).toBe('https://example.com/Path')
+    expect(normalizeUrl('https://a.com/')).toBe('https://a.com')
+  })
+  it('非法 URL 返回原串', () => {
+    expect(normalizeUrl('not a url')).toBe('not a url')
+  })
+})
+
+describe('mergeResults', () => {
+  const mk = (u: string, t = 't', s = 's') => ({ title: t, url: u, snippet: s })
+  it('round-robin 交错 + URL 去重（首次胜）', () => {
+    const a = [mk('https://a.com'), mk('https://b.com')]
+    const b = [mk('https://b.com/'), mk('https://c.com')]   // b.com/ 归一后撞 a 的 b.com
+    const r = mergeResults([a, b])
+    expect(r.map(x => x.url)).toEqual(['https://a.com', 'https://b.com/', 'https://c.com'])
+    // 注：round-robin 序 a[0],b[0],a[1](dup 跳),b[1] → a.com, b.com/, (b.com dup), c.com
+  })
+  it('截到 cap', () => {
+    const list = Array.from({ length: 12 }, (_, i) => mk(`https://x${i}.com`))
+    expect(mergeResults([list], 8)).toHaveLength(8)
+  })
+  it('snippet 截 200 字加 …', () => {
+    const long = 'x'.repeat(300)
+    const r = mergeResults([[mk('https://a.com', 't', long)]])
+    expect(r[0].snippet).toBe('x'.repeat(200) + '…')
   })
 })
