@@ -13,6 +13,7 @@ import { runLoop, type LoopDeps, type LoopEvent } from '../loop.js'
 import { allTools } from '../tools/index.js'
 import { makeAgentTool } from '../tools/agent.js'
 import { makeWebFetchTool } from '../tools/webfetch.js'
+import { makeWebSearchTool, resolveWebSearchConfig } from '../tools/webSearchTool.js'
 import { makeAskUserQuestionTool, type Question, type Answer } from '../tools/askUserQuestion.js'
 import { bgTaskListTool, taskOutputTool, taskStopTool } from '../tools/taskTools.js'
 import { taskCreateTool, taskGetTool, taskUpdateTool, taskListTool } from '../tools/taskListTools.js'
@@ -382,6 +383,7 @@ export function createChatCore(opts: {
       client: opts.client,
       onUsage: (u, m) => { usageLog.push({ usage: u, model: m }); session.appendUsage(u, m) },
     }),
+    makeWebSearchTool({ config: resolveWebSearchConfig(settings) }),
     makeAskUserQuestionTool({ ask: questionAsk }),
     makeSkillTool(skills, {
       client: opts.client,
