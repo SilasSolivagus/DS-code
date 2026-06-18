@@ -15,9 +15,14 @@ export const BUILTIN_DENY = [
   '**/authorized_keys',
 ]
 
+/** 转义 picomatch 元字符（仅用于 homedir 字面段，不影响 glob 后缀活性）。 */
+function escapeGlob(s: string): string {
+  return s.replace(/[()[\]{}!?*+@|^$.\\]/g, m => '\\' + m)
+}
+
 function expandTilde(p: string): string {
-  if (p === '~') return os.homedir()
-  return p.startsWith('~/') ? path.join(os.homedir(), p.slice(2)) : p
+  if (p === '~') return escapeGlob(os.homedir())
+  return p.startsWith('~/') ? escapeGlob(os.homedir()) + '/' + p.slice(2) : p
 }
 
 /** absPath 命中任一 deny pattern 则返回该 pattern，否则 null。逻辑路径匹配，不解符号链接。 */

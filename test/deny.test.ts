@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import os from 'node:os'
 import path from 'node:path'
 import { BUILTIN_DENY, isDeniedPath, resolveDenyList } from '../src/deny.js'
@@ -21,11 +21,45 @@ describe('isDeniedPath', () => {
   it('普通文件不命中', () => {
     expect(isDeniedPath('/proj/src/index.ts', BUILTIN_DENY)).toBeNull()
   })
+
+  // Security: homedir 含 glob 元字符时 deny 不应静默失效
+  describe('homedir 含 glob 元字符（元字符转义）', () => {
+    afterEach(() => { vi.restoreAllMocks() })
+
+    it('home 含 () 时 ~/.ssh/** 仍命中私钥', () => {
+      vi.spyOn(os, 'homedir').mockReturnValue('/Users/foo(bar)')
+      expect(isDeniedPath('/Users/foo(bar)/.ssh/id_rsa', ['~/.ssh/**'])).not.toBeNull()
+    })
+
+    it('home 含 () 时 ~/.aws/credentials 仍命中', () => {
+      vi.spyOn(os, 'homedir').mockReturnValue('/Users/foo(bar)')
+      expect(isDeniedPath('/Users/foo(bar)/.aws/credentials', ['~/.aws/credentials'])).not.toBeNull()
+    })
+  })
+
+  // Security: .. 路径归一后仍命中
+  it('.. 归一后命中 ~/.ssh/**', () => {
+    expect(isDeniedPath(path.join(home, '.ssh/../.ssh/id_rsa'), BUILTIN_DENY)).not.toBeNull()
+  })
+
+  // 公钥不误伤
+  it('公钥 .pub 不命中 BUILTIN_DENY', () => {
+    expect(isDeniedPath('/tmp/id_rsa.pub', BUILTIN_DENY)).toBeNull()
+  })
 })
+
 describe('resolveDenyList', () => {
   it('内置与用户配置并集', () => {
     const list = resolveDenyList(['**/secret.txt'])
     expect(list).toContain('**/secret.txt')
     expect(list).toContain('~/.ssh/**')
+  })
+
+  it('undefined 返回 BUILTIN_DENY 副本', () => {
+    expect(resolveDenyList(undefined)).toEqual(BUILTIN_DENY)
+  })
+
+  it('[] 返回 BUILTIN_DENY 副本', () => {
+    expect(resolveDenyList([])).toEqual(BUILTIN_DENY)
   })
 })
