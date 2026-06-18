@@ -16,29 +16,40 @@
 
 ---
 
+## 🔄 进度更新（2026-06-18，下表状态列已同步本块）
+
+自本表 2026-06-17 快照以来合并的件（按层）：
+- **第 1 层**：✅1.1 MCP(`e93cf54`)、✅1.2 Skills(`0685ecb`+预算/scope`c882d14`)、✅1.8 Task todo-V2(`2558c61`)。
+- **第 2 层**：✅2.4 Prompt 缓存(`841b264`)、✅2.6 Cost 告警(`fa2cade`)；🟡2.1 思考预算(只做 effort 档位/ultrathink 关键词,adaptive budget/跨compact结转余)；🟡2.3 自动compact(做了熔断器+预警色,自动触发余)；⏭️2.2 Microcompact 判**不适用 DeepSeek 跳过**。
+- **第 3 层**：🟡3.7 权限 deny 规则层 —— **安全加固 B 批(`e5f403d`)做了 deny 规则(BUILTIN_DENY+permissions.deny+isDeniedPath+硬拒/降级ask+Glob/Grep输出过滤)+denial tracking(onDenied)**；还缺**来源层级**(归 3.9)+`/permissions` UI(碰TUI)。
+- **第 4 层**：✅4.1 WebSearch(`c58ff77`,双源 Bocha+Tavily)；⏭️4.2 ToolSearch **暂缓存档**(价值正比 MCP 工具数,触发=挂 30+工具 MCP)、4.3 Sleep **跳过**(`Bash(sleep)`已等价)、4.4 Brief **跳过**(CC 双输出面契约,deepcode 单面不映射)。
+- **另**：安全加固 B 批还含 #1 复合命令前缀绕过修复(shell-quote 逐段授权,关联权限层)、#2 工具结果注入守则、#4 sanitize C1 缺口+威胁模型文档——非 roadmap 单项,记入 [[deepcode-next-session]]。
+
+---
+
 ## 第 1 层 · 核心 agent 编排机制（roadmap 内，最高优先）
 
 | # | 机制 | CC 源码 | deepcode | 状态 | TUI? | 工作量 | 依赖 |
 |---|---|---|---|---|---|---|---|
 | 1.1 | **MCP 客户端（stdio MVP 已完成）** ✅ | `tools/MCPTool` `services/mcp` | `src/mcp.ts`（stdio + 工具发现注入 + 容错，真机冒烟过；http-sse/认证/资源/agent级 留 spec §5 增量） | ✅ | 否 | L | — |
-| 1.2 | **Skills**（SkillTool + 模型自主触发 + frontmatter description/allowed-tools + fork） | `tools/SkillTool` `skills/loadSkillsDir.ts` | 命令覆盖~80%(`commands.ts`) | 🟡 | 否 | M | — |
+| 1.2 | **Skills**（SkillTool + 模型自主触发 + frontmatter description/allowed-tools + fork） | `tools/SkillTool` `skills/loadSkillsDir.ts` | ✅ `skillsLoader.ts`+`skill.ts`(`0685ecb`)+预算/scope(`c882d14`) | ✅ | 否 | M | — |
 | 1.3 | **Steering/续聊**（SendMessage 工具 + 子循环回合边界消费 pendingMessages） | `tools/SendMessageTool` `tasks/InProcessTeammateTask` | pendingMessages 字段在,工具/消费无 | 🟡 | 部分 | M | L-041✅ |
 | 1.4 | **Plan mode**（EnterPlanMode/ExitPlanMode + 只读门 + 审批弹窗） | `tools/EnterPlanModeTool` `tools/ExitPlanModeTool` | 权限三模式有,plan 门无 | 🟡 | 碰TUI | M | — |
 | 1.5 | **可写 subagent + git worktree**（EnterWorktree/ExitWorktree + isolation 字段 + 类型级 deny） | `tools/EnterWorktreeTool` `utils/worktree.ts` | 强制全局只读 | ⬜ | 碰TUI | L | L-040✅ |
 | 1.6 | **多 agent 工作流**（TeamCreate/TeamDelete + TaskUpdate 依赖图 blocks/blockedBy + 成员寻址） | `tools/TeamCreateTool` `tools/TaskUpdateTool` | 仅 fan-out | ⬜ | 碰TUI | L | 1.3 |
 | 1.7 | **Hooks TUI 进度（①e）** | `hooks/` 渲染 | 引擎已全,无进度显示 | 🟡 | 碰TUI | M | L-042✅ |
-| 1.8 | **TaskCreate/TaskGet/TaskUpdate 工具暴露** | `tools/Task*Tool` | 基础设施已有(`tasks.ts`),未暴露成工具 | 🟡 | 否 | S | L-041✅ |
+| 1.8 | **TaskCreate/TaskGet/TaskUpdate 工具暴露** | `tools/Task*Tool` | ✅ `taskList.ts` System A todo-V2 替换 TodoWrite(`2558c61`) | ✅ | 否 | S | L-041✅ |
 
 ## 第 2 层 · 运行时/推理层（roadmap 外，对 DeepSeek 有意义）
 
 | # | 机制 | CC 源码 | deepcode | 状态 | TUI? | 工作量 |
 |---|---|---|---|---|---|---|
-| 2.1 | **思考预算 / ultrathink**（adaptive budget + 关键词触发 + 跨 compact 边界结转；DeepSeek reasoner 模型可对齐） | `utils/thinking.ts` | 无 | ⬜ | 否 | M |
-| 2.2 | **Microcompact**（逐消息清理旧工具结果占位，省 token） | `services/compact/microCompact.ts` | 无(仅整体 compact) | ⬜ | 否 | M |
-| 2.3 | **自动 compact 触发 + 告警 UI**（超 token 阈值自动压 + 提示） | `services/compact/autoCompact` | 手动 | 🟡 | 部分 | M |
-| 2.4 | **Prompt caching / cache_control 头** | `utils/cacheBreak.ts` | 无 | ⬜ | 否 | S |
+| 2.1 | **思考预算 / ultrathink**（adaptive budget + 关键词触发 + 跨 compact 边界结转；DeepSeek reasoner 模型可对齐） | `utils/thinking.ts` | 🟡 effort 档位/ultrathink 关键词(`fa2cade`),adaptive/跨compact 余 | 🟡 | 否 | M |
+| 2.2 | **Microcompact**（逐消息清理旧工具结果占位，省 token） | `services/compact/microCompact.ts` | 无(仅整体 compact) | ⏭️跳过(不适用 DeepSeek) | 否 | M |
+| 2.3 | **自动 compact 触发 + 告警 UI**（超 token 阈值自动压 + 提示） | `services/compact/autoCompact` | 🟡 熔断器+预警色(`fa2cade`),自动触发余 | 🟡 | 部分 | M |
+| 2.4 | **Prompt caching / cache_control 头** | `utils/cacheBreak.ts` | ✅ cacheSavings 纯函数+状态栏 cache 段(`841b264`) | ✅ | 否 | S |
 | 2.5 | **Token 计数/估算**（精确计数 + 多后端） | `services/tokenEstimation.ts` | 无 | ⬜ | 否 | M |
-| 2.6 | **Cost 告警 hook**（累计 + 阈值告警；settings 已有 costWarnUSD） | `costHook.ts` `cost-tracker.ts` | 有 pricing,无告警 | 🟡 | 部分 | S |
+| 2.6 | **Cost 告警 hook**（累计 + 阈值告警；settings 已有 costWarnUSD） | `costHook.ts` `cost-tracker.ts` | ✅ costWarnUSD 阈值告警(`fa2cade`) | ✅ | 部分 | S |
 | 2.7 | **/model /effort /fast 模型切换** | `commands/{model,effort,fast}` | 无 | ⬜ | 碰TUI | S |
 
 ## 第 3 层 · 记忆/会话/权限/配置（roadmap 外，价值高）
@@ -51,7 +62,7 @@
 | 3.4 | **autoDream**（后台记忆合并，时间/会话门槛） | `services/autoDream` | 无 | ⬜ | 否 | L |
 | 3.5 | **Checkpoint/rewind**（回合级文件备份 + content-addressable blob + /rewind 还原） | `utils/fileHistory.ts` `commands/rewind` | checkpoint.ts 存在,完整度待核实 | 🟡 | 部分 | M |
 | 3.6 | **会话管理**（/resume /branch /rename /tag /share + history） | `commands/{resume,branch,rename,tag,share}` `history.ts` | 部分(export/session) | 🟡 | 碰TUI | M |
-| 3.7 | **权限 deny 规则层 + 来源层级 + denial tracking + /permissions** | `utils/permissions/*` | 仅 allow + matchRule | 🟡 | 部分 | M |
+| 3.7 | **权限 deny 规则层 + 来源层级 + denial tracking + /permissions** | `utils/permissions/*` | 🟡 deny 规则+denial tracking(安全批`e5f403d`);缺来源层级(归 3.9)+/permissions UI | 🟡 | 部分 | M |
 | 3.8 | **Sandbox 网络隔离 + /sandbox-toggle** | `commands/sandbox-toggle` | 无 | ⬜ | 否 | M |
 | 3.9 | **Settings 分层**（user/project/local/enterprise 合并 + 校验）+ /config /env | `utils/settings/*` | 单文件 | 🟡 | 部分 | M |
 | 3.10 | **Cron 定时任务**（ScheduleCron 工具 + cronScheduler 后台执行 + 持久化） | `utils/cronScheduler.ts` `tools/ScheduleCronTool` | 无 | ⬜ | 否 | M |
@@ -60,10 +71,10 @@
 
 | # | 工具 | CC 源码 | deepcode | 状态 | TUI? | 工作量 |
 |---|---|---|---|---|---|---|
-| 4.1 | **WebSearch** | `tools/WebSearchTool` | 无 | ⬜ | 否 | M |
-| 4.2 | **ToolSearch** | `tools/ToolSearchTool` | 无 | ⬜ | 否 | S |
-| 4.3 | **Sleep**（可打断等待） | `tools/SleepTool` | 无 | ⬜ | 否 | S |
-| 4.4 | **Brief**（工具描述摘要） | `tools/BriefTool` | 无 | ⬜ | 否 | S |
+| 4.1 | **WebSearch** | `tools/WebSearchTool` | ✅ 双源 Bocha+Tavily(`c58ff77`) | ✅ | 否 | M |
+| 4.2 | **ToolSearch** | `tools/ToolSearchTool` | ⏭️暂缓存档(触发=挂 30+工具 MCP) | ⏭️ | 否 | S |
+| 4.3 | **Sleep**（可打断等待） | `tools/SleepTool` | ⏭️跳过(`Bash(sleep)`已等价) | ⏭️ | 否 | S |
+| 4.4 | **Brief**（工具描述摘要） | `tools/BriefTool` | ⏭️跳过(CC 双输出面契约,单面不映射) | ⏭️ | 否 | S |
 | 4.5 | **Config 工具**（读写配置） | `tools/ConfigTool` | 无 | ⬜ | 否 | M |
 | 4.6 | **LSP 工具 + 诊断**（代码智能/IDE 诊断） | `tools/LSPTool` `services/lsp` `services/diagnosticTracking` | 无 | ⬜ | 否 | L |
 | 4.7 | **REPL 工具**（交互式 Python/Node REPL） | `tools/REPLTool` | 无 | ⬜ | 否 | M |
