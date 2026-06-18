@@ -6,6 +6,12 @@ import React from 'react'
 import { Box, Text } from 'ink'
 import { T } from '../theme.js'
 
+export function contextBarColor(pct: number): string {
+  if (pct >= 95) return T.err
+  if (pct >= 80) return T.warn
+  return T.accent
+}
+
 export function StatusFooter(props: {
   model: string
   mode: string
@@ -43,7 +49,7 @@ export function StatusFooter(props: {
       {/* Row 2：上下文条 + 缓存命中（仅有命中时）+ 累计花费 */}
       <Text>
         <Text dimColor>Context </Text>
-        <Text color={T.accent}>{bar.fill}</Text>
+        <Text color={contextBarColor(props.contextPct)}>{bar.fill}</Text>
         <Text dimColor>{bar.empty}</Text>
         <Text dimColor>{` ${props.contextPct}%`}</Text>
         {props.hitRate > 0 && (

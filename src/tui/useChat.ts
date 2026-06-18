@@ -239,6 +239,7 @@ export function createChatCore(opts: {
   let compacted = false       // compact 后首条用户消息的一次性提醒
   let lastPromptTokens = 0    // 自动 compact 触发依据
   let costWarned = false      // $阈值提醒只发一次
+  let compactWarned = false   // 上下文≥90% 一次性提示
   const MAX_AUTO_COMPACT_FAILURES = 3
   let consecutiveCompactFailures = 0
 
@@ -299,7 +300,7 @@ export function createChatCore(opts: {
     usageLog.push(...loaded.usages)
     session = openSession(file)
     // 恢复后重置会话内状态，防止旧 todo/compact 标记/token 计数泄漏到新对话
-    taskList.bind(sessionIdFromFile(session.file)); compacted = false; lastPromptTokens = 0; consecutiveCompactFailures = 0
+    taskList.bind(sessionIdFromFile(session.file)); compacted = false; lastPromptTokens = 0; consecutiveCompactFailures = 0; compactWarned = false
     // doCompact 崩溃在 appendCompact 与首条 re-append 之间的兜底
     if (messages.length === 0 || messages[0]?.role !== 'system') {
       messages.unshift({ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars) })
@@ -433,6 +434,7 @@ export function createChatCore(opts: {
     for (const m of messages) session.appendMessage(m)
     compacted = true
     lastPromptTokens = 0
+    compactWarned = false
     if (settings.hooks) {
       await runHooks('PostCompact', {
         hook_event_name: 'PostCompact', cwd, trigger, summary, truncated,
@@ -568,6 +570,11 @@ export function createChatCore(opts: {
           if (!costWarned && sessionCost() > settings.costWarnUSD) {
             costWarned = true
             notice('warn', `[花费提醒] 本会话已超 $${settings.costWarnUSD}（/cost 查看明细，阈值在 settings.json 的 costWarnUSD）`)
+          }
+          const ctxPct = settings.compactTokens ? (lastPromptTokens / settings.compactTokens) * 100 : 0
+          if (!compactWarned && ctxPct >= 90) {
+            compactWarned = true
+            notice('warn', `上下文已用 ${Math.round(ctxPct)}%，接近自动压缩阈值`)
           }
         }
       }
@@ -707,6 +714,7 @@ export function createChatCore(opts: {
       ctx.fileState.clear()
       compacted = false
       lastPromptTokens = 0
+      compactWarned = false
       pendingSessionContext = null
       session = newSession({ cwd, model, thinking, effortLevel, permMode }, sessionDir)
       session.appendMessage(messages[0])

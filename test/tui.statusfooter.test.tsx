@@ -2,7 +2,8 @@
 import { describe, it, expect } from 'vitest'
 import React from 'react'
 import { render } from 'ink-testing-library'
-import { StatusFooter } from '../src/tui/components/StatusFooter.js'
+import { StatusFooter, contextBarColor } from '../src/tui/components/StatusFooter.js'
+import { T } from '../src/tui/theme.js'
 
 const base = {
   model: 'deepseek-v4-flash',
@@ -77,5 +78,11 @@ describe('StatusFooter', () => {
   it('thinking 关时不显示 think 段', () => {
     const f = render(<StatusFooter {...base} thinking={false} />).lastFrame()!
     expect(f).not.toContain('think:')
+  })
+
+  it('contextBarColor 分档：<80 accent, 80-94 warn, >=95 err', () => {
+    expect(contextBarColor(50)).toBe(T.accent)
+    expect(contextBarColor(85)).toBe(T.warn)
+    expect(contextBarColor(96)).toBe(T.err)
   })
 })
