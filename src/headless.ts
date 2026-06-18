@@ -102,6 +102,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     tools: [...allTools, taskCreateTool, taskGetTool, taskUpdateTool, taskListTool, makeAgentTool({ client: opts.client, onUsage: (u, _model) => addUsage(u), getModel: () => model, agents }), makeWebFetchTool({ client: opts.client, onUsage: (u, _model) => addUsage(u) }), makeWebSearchTool({ config: resolveWebSearchConfig(settings) }), bgTaskListTool, taskOutputTool, taskStopTool, ...mcpTools, makeSkillTool(skills, { client: opts.client, onUsage: (u, _m) => addUsage(u), getModel: () => model, agents, skillPool: [...allTools, makeWebFetchTool({ client: opts.client, onUsage: (u, _m) => addUsage(u) })], listingBudgetChars: settings.skills?.listingBudgetChars })],
     model,
     thinking: false,
+    maxToolResultChars: settings.maxToolResultChars,
     ctx,
     permission: {
       mode: opts.yolo ? 'yolo' : 'default',

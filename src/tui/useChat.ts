@@ -510,6 +510,7 @@ export function createChatCore(opts: {
         tools,
         model,
         thinking,
+        maxToolResultChars: settings.maxToolResultChars,
         ctx,
         permission: {
           mode: permMode,

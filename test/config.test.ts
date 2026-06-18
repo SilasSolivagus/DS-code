@@ -46,12 +46,14 @@ describe('settings 读写 round-trip', () => {
       permissions: { allow: ['Bash(ls)'] },
       compactTokens: 50_000,
       costWarnUSD: 5,
+      maxToolResultChars: 100_000,
     })
     expect(fs.existsSync(settingsFile)).toBe(true) // mock 确实生效
     const s = loadSettings()
     expect(s.permissions.allow).toEqual(['Bash(ls)'])
     expect(s.compactTokens).toBe(50_000)
     expect(s.costWarnUSD).toBe(5)
+    expect(s.maxToolResultChars).toBe(100_000)
   })
 
   it('直接写入 fakeHome 的 settings.json 也能读到（确认 mock 被命中）', () => {
