@@ -2,6 +2,8 @@
 import { z } from 'zod'
 import { execFile, spawn } from 'node:child_process'
 import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import type { Tool } from './types.js'
 import { TASKS_DIR, taskOutputPath } from '../config.js'
 import { registerTask, updateTask, getTask, enqueueNotification, generateTaskId } from '../tasks.js'
@@ -29,6 +31,15 @@ export const bashTool: Tool<typeof schema> = {
   inputSchema: schema,
   isReadOnly: false,
   needsPermission: input => input.command,
+  deniablePaths: (input, cwd) => {
+    const home = os.homedir()
+    const expand = (t: string) =>
+      t === '~' ? home : t.startsWith('~/') ? path.join(home, t.slice(2)) : path.resolve(cwd, t)
+    return input.command
+      .split(/\s+/)
+      .filter(t => t.startsWith('~') || t.includes('/'))
+      .map(expand)
+  },
   call(input, ctx) {
     const envPrefix = getSessionEnvScript(ctx.sessionId?.())
     const prefixed = (cmd: string) => (envPrefix ? `${envPrefix}\n${cmd}` : cmd)

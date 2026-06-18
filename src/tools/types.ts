@@ -24,6 +24,8 @@ export interface ToolContext {
   /** inline skill 注入：工具调用时把内容排进待注入队列，loop 在本轮 tool 结果回灌后作为 user 消息 flush。
    *  主会话/headless 顶层 ctx 注入；子代理子 ctx 不注入（forked skill 不嵌套注入）。 */
   injectUserMessage?: (content: string) => void
+  /** deny 规则列表（Glob/Grep 过滤输出用）。主会话/headless 注入；子代理可不注入。 */
+  denyPatterns?: () => string[]
 }
 
 export interface Tool<S extends z.ZodTypeAny = z.ZodTypeAny> {
@@ -36,5 +38,7 @@ export interface Tool<S extends z.ZodTypeAny = z.ZodTypeAny> {
   isReadOnly: boolean
   /** false=无需确认；string=展示给用户的操作描述（权限规则的匹配对象） */
   needsPermission(input: z.infer<S>): false | string
+  /** 本次调用会触碰的绝对路径（权限层 deny 检查用）。工具自管路径语义，无则不参与 deny。 */
+  deniablePaths?(input: z.infer<S>, cwd: string): string[]
   call(input: z.infer<S>, ctx: ToolContext): Promise<string>
 }
