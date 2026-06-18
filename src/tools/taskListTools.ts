@@ -25,6 +25,13 @@ export const taskCreateTool: Tool<typeof createSchema> = {
   async call(input, ctx: ToolContext) {
     if (!ctx.taskList) return '错误：当前会话不支持任务清单。'
     const t = ctx.taskList.create(input)
+    const outcome = await ctx.hookDispatch?.('TaskCreated', {
+      hook_event_name: 'TaskCreated', task_kind: 'todo', task_id: t.id, subject: t.subject, task_description: t.description,
+    })
+    if (outcome?.block) {
+      ctx.taskList.remove(t.id)
+      return `任务 #${t.id} 创建被 hook 拦截，已撤销。`
+    }
     return `已创建任务 #${t.id}：${t.subject}`
   },
 }
@@ -60,6 +67,13 @@ export const taskUpdateTool: Tool<typeof updateSchema> = {
   async call(input, ctx: ToolContext) {
     if (!ctx.taskList) return '错误：当前会话不支持任务清单。'
     const { taskId, ...patch } = input
+    if (!ctx.taskList.get(taskId)) return `任务 ${taskId} 不存在`
+    if (patch.status === 'completed') {
+      const outcome = await ctx.hookDispatch?.('TaskCompleted', {
+        hook_event_name: 'TaskCompleted', task_kind: 'todo', task_id: taskId, status: 'completed', subject: ctx.taskList.get(taskId)!.subject,
+      })
+      if (outcome?.block) return `任务 #${taskId} 完成被 hook 拦截，状态未变。`
+    }
     const r = ctx.taskList.update(taskId, patch)
     if (!r.ok) return `任务 ${taskId} 不存在`
     return `已更新任务 #${taskId}：${r.updatedFields.join('、') || '（无改动）'}`
