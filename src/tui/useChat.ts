@@ -603,7 +603,7 @@ export function createChatCore(opts: {
           if (recaller) {
             const readPaths = new Set(ctx.fileState.keys())
             const rem = recaller.consume(readPaths)
-            if (rem) injectionBuffer.push(rem)
+            if (rem) ctx.injectUserMessage!(rem)
           }
         } else if (ev.type === 'turn_end') {
           usageLog.push({ usage: ev.usage, model })

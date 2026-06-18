@@ -41,4 +41,13 @@ describe('createRecaller', () => {
     await new Promise(r => setTimeout(r, 0))
     expect(rec.consume(new Set([path.join(md, 'a.md')]))).toBe(null)
   })
+
+  test('consume 字节上限：多大文件总量不超标', async () => {
+    for (const n of ['a', 'b', 'c']) fs.writeFileSync(path.join(md, n + '.md'), 'x'.repeat(10000))
+    const find = vi.fn(async () => ['a.md', 'b.md', 'c.md'])
+    const rec = createRecaller({ memdir: md, find, maxResults: 10 })
+    rec.prefetch('q'); await new Promise(r => setTimeout(r, 0))
+    const out = rec.consume(new Set())!
+    expect(Buffer.byteLength(out, 'utf8')).toBeLessThanOrEqual(20000) // 修前会到 ~40KB
+  })
 })

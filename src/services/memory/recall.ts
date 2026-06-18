@@ -16,14 +16,12 @@ export interface RecallerDeps {
 
 export function createRecaller(deps: RecallerDeps) {
   let settled: string[] | null = null
-  let running = false
   const seen = new Set<string>()
 
   return {
     prefetch(query: string) {
       settled = null
-      running = true
-      deps.find(query).then(r => { settled = r }, () => { settled = [] }).finally(() => { running = false })
+      deps.find(query).then(r => { settled = r }, () => { settled = [] })
     },
     consume(alreadyRead: Set<string>): string | null {
       if (settled === null) return null // 还没好，下一轮再来
@@ -35,12 +33,14 @@ export function createRecaller(deps: RecallerDeps) {
       for (const fn of picks) {
         let content = ''
         try { content = fs.readFileSync(path.join(deps.memdir, fn), 'utf8') } catch { continue }
-        if (bytes + Buffer.byteLength(content, 'utf8') > MAX_RECALL_BYTES) {
-          content = content.slice(0, 2000) + '\n…（截断，用 Read 看全文）'
+        const remaining = MAX_RECALL_BYTES - bytes
+        if (remaining <= 0) break
+        if (Buffer.byteLength(content, 'utf8') > remaining) {
+          content = content.slice(0, Math.max(0, remaining - 60)) + '\n…（截断，用 Read 看全文）'
+          files.push({ filename: fn, content }); seen.add(fn); break
         }
         bytes += Buffer.byteLength(content, 'utf8')
-        files.push({ filename: fn, content })
-        seen.add(fn)
+        files.push({ filename: fn, content }); seen.add(fn)
       }
       return files.length ? buildRecallReminder(files) : null
     },
