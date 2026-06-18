@@ -11,9 +11,18 @@ test('truncateEntrypoint 行数上限', () => {
   expect(out).toContain('截断')
 })
 
-test('truncateEntrypoint 字节上限', () => {
+test('truncateEntrypoint 字节上限（含省略提示也不超）', () => {
   const big = 'x'.repeat(30000)
-  expect(Buffer.byteLength(truncateEntrypoint(big), 'utf8')).toBeLessThanOrEqual(25600 + 100)
+  const out = truncateEntrypoint(big)
+  expect(Buffer.byteLength(out, 'utf8')).toBeLessThanOrEqual(25600)
+  expect(out).toContain('截断')
+})
+
+test('truncateEntrypoint 多字节不裂字符且不超字节上限', () => {
+  const big = '汉'.repeat(20000) // 每字 3 字节 = 60000 字节
+  const out = truncateEntrypoint(big)
+  expect(Buffer.byteLength(out, 'utf8')).toBeLessThanOrEqual(25600)
+  expect(out.includes('�')).toBe(false) // 无替换字符
 })
 
 describe('loadMemoryPrompt', () => {
