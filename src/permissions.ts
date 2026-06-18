@@ -12,7 +12,7 @@ export function splitBashCommand(command: string): { tooComplex: boolean; comman
   if (/\$\(|`|<\(|>\(/.test(command)) return { tooComplex: true, commands: [] }
   let entries: ParseEntry[]
   try {
-    entries = parse(command, {}) // 不提供 env：$VAR 不展开，只取操作符结构
+    entries = parse(command, (v: string) => '$' + v) // 保留 $VAR 字面量；传 {} 对象时 $VAR 被展开为空串（丢失参数 token）
   } catch {
     return { tooComplex: true, commands: [] }
   }

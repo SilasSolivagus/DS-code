@@ -145,12 +145,20 @@ describe('splitBashCommand', () => {
     expect(splitBashCommand('ls > foo').commands).toEqual(['ls'])
   })
   it('引号内操作符不算分隔符', () => {
+    // shell-quote 剥除引号后 "a && b" 变为字符串 token "a && b"，是预期行为（非 bug）
     expect(splitBashCommand('echo "a && b"').commands).toEqual(['echo a && b'])
   })
   it('动态构造判 too-complex', () => {
     expect(splitBashCommand('$(cat ~/.ssh/id_rsa)').tooComplex).toBe(true)
     expect(splitBashCommand('echo `whoami`').tooComplex).toBe(true)
     expect(splitBashCommand('diff <(a) <(b)').tooComplex).toBe(true)
+  })
+  it('$VAR 参数保留为字面量，不被空对象展开丢失', () => {
+    // shell-quote 第二参传 {} 时 $HOME 被展开为 ''（丢失参数 token）
+    // 修复后传函数 v=>'$'+v，$HOME 应原样保留在 token 中
+    const r = splitBashCommand('cat $HOME/.ssh/id_rsa && echo $X')
+    expect(r.tooComplex).toBe(false)
+    expect(r.commands).toEqual(['cat $HOME/.ssh/id_rsa', 'echo $X'])
   })
 })
 
