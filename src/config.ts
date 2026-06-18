@@ -52,6 +52,10 @@ export interface Settings {
   skills?: SkillsConfig
   /** WebSearch 双源（bocha/tavily）配置；apiKey env 可覆盖（BOCHA_API_KEY/TAVILY_API_KEY）。 */
   webSearch?: WebSearchSettings
+  /** hook URL 白名单（SSRF）：undefined=不限制；[]=全禁；非空=须匹配通配模式。 */
+  allowedHttpHookUrls?: string[]
+  /** http hook header env 插值的全局白名单；设了则与每个 hook 自身 allowedEnvVars 取交集。 */
+  httpHookAllowedEnvVars?: string[]
 }
 
 const DIR = path.join(os.homedir(), '.deepcode')
@@ -104,6 +108,8 @@ export function loadSettings(): Settings {
     mcpServers: parseMcpServers(raw?.mcpServers),
     skills: parseSkillsConfig(raw?.skills),
     webSearch: parseWebSearchConfig(raw?.webSearch),
+    allowedHttpHookUrls: parseStringArray(raw?.allowedHttpHookUrls),
+    httpHookAllowedEnvVars: parseStringArray(raw?.httpHookAllowedEnvVars),
   }
 }
 
@@ -175,6 +181,12 @@ export function parseWebSearchConfig(raw: unknown): WebSearchSettings | undefine
   const t = pick(r.tavily); if (t) out.tavily = t
   if (typeof r.provider === 'string') out.provider = r.provider
   return Object.keys(out).length ? out : undefined
+}
+
+/** 解析 string[]：过滤非 string、trim、去空。非数组 → undefined；空数组保留为 []（语义区分）。 */
+export function parseStringArray(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  return raw.filter((s): s is string => typeof s === 'string').map(s => s.trim()).filter(s => s.length > 0)
 }
 
 export function saveSettings(s: Settings): void {

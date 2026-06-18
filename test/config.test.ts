@@ -24,7 +24,7 @@ vi.mock('node:os', async importOriginal => {
 import os from 'node:os'
 import fs from 'node:fs'
 import path from 'node:path'
-import { loadSettings, saveSettings, saveApiKey, hasApiKey, parseHooksConfig, parsePermissions } from '../src/config.js'
+import { loadSettings, saveSettings, saveApiKey, hasApiKey, parseHooksConfig, parsePermissions, parseStringArray } from '../src/config.js'
 
 const fakeHome = os.homedir()
 const settingsFile = path.join(fakeHome, '.deepcode', 'settings.json')
@@ -155,5 +155,18 @@ describe('parsePermissions', () => {
     const raw = { permissions: { allow: ['Bash(ls:*)'], deny: ['**/x', '', 123, '  **/y  '] } }
     const out = parsePermissions(raw)
     expect(out).toEqual({ allow: ['Bash(ls:*)'], deny: ['**/x', '**/y'] })
+  })
+})
+
+describe('parseStringArray', () => {
+  it('过滤非字符串、trim、去空', () => {
+    expect(parseStringArray(['https://a.com', '  https://b.com  ', 42, ''])).toEqual(['https://a.com', 'https://b.com'])
+  })
+  it('非数组返回 undefined', () => {
+    expect(parseStringArray('x')).toBeUndefined()
+    expect(parseStringArray(undefined)).toBeUndefined()
+  })
+  it('空数组返回空数组（区分「全禁」语义）', () => {
+    expect(parseStringArray([])).toEqual([])
   })
 })
