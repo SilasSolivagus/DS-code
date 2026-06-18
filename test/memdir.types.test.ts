@@ -6,6 +6,9 @@ test('isMemoryType', () => {
   expect(isMemoryType('feedback')).toBe(true)
   expect(isMemoryType('nope')).toBe(false)
   expect(isMemoryType(undefined)).toBe(false)
+  expect(isMemoryType(null)).toBe(false)
+  expect(isMemoryType(123)).toBe(false)
+  expect(isMemoryType({})).toBe(false)
 })
 test('四类齐全 + guide 提到四类', () => {
   expect([...MEMORY_TYPES].sort()).toEqual(['feedback', 'project', 'reference', 'user'])
