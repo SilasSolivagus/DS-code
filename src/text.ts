@@ -16,6 +16,10 @@ export function capToolResult(content: string, maxChars: number): string {
   return content.slice(0, head) + `\n…[工具结果过大，已截断 ${cut} 字符]…\n` + content.slice(content.length - tail)
 }
 
+/** 中和工具产出里伪造的 <system-reminder> 边界标签，防恶意内容伪造系统提示边界。
+ *  仅用于工具结果回灌，不作用于系统自身追加的真 reminder。 */
+export const stripSystemReminderTags = (s: string) => s.replace(/<\/?system-reminder>/gi, '')
+
 /** 检测用户输入里的「加强思考」关键词，命中返回 'high'（本轮临时升 effort 档），否则 null。 */
 export function detectEffortKeyword(text: string): 'high' | null {
   return /\bultrathink\b|\bthink\s+har(?:d|der)\b/i.test(text) ? 'high' : null

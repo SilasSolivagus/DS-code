@@ -4,7 +4,7 @@ import { chatStream, type ChatResult, type ToolCall } from './api.js'
 import type { Tool, ToolContext } from './tools/types.js'
 import { toApiTools } from './tools/index.js'
 import { checkPermission, type PermissionContext, type PermissionHooks } from './permissions.js'
-import { sanitize, capToolResult } from './text.js'
+import { sanitize, capToolResult, stripSystemReminderTags } from './text.js'
 import { drainNotifications, formatNotification } from './tasks.js'
 import { runHooks, type HooksConfig } from './hooks.js'
 
@@ -261,7 +261,7 @@ export async function* runLoop(
 
     // 工具结果必须按原始 tool_calls 顺序回灌
     for (const c of result.toolCalls) {
-      messages.push({ role: 'tool', tool_call_id: c.id, content: outcomes.get(c.id)!.content })
+      messages.push({ role: 'tool', tool_call_id: c.id, content: stripSystemReminderTags(outcomes.get(c.id)!.content) })
     }
     // system-reminder：附加到本轮最后一条 tool 消息（即将发送的最新后缀）
     const notes = deps.reminders?.() ?? []
