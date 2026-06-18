@@ -47,4 +47,44 @@ describe('runAutoDream', () => {
     })).resolves.toBeUndefined()
     expect(fs.existsSync(path.join(md, '.consolidate-lock'))).toBe(false)
   })
+
+  test('门控不过 → onStart/onDone 均不调用', async () => {
+    const onStart = vi.fn()
+    const onDone = vi.fn()
+    await runAutoDream({
+      client: {} as any, model: 'm', memdir: md, sessionsDir: sd, currentSessionFile: path.join(sd, 'c.jsonl'),
+      cfg: DEFAULT_MEMORY_CONFIG.dream, ctx: { signal: new AbortController().signal } as any,
+      now: 0, lastScanAt: 0, gate: () => ({ pass: false }), onStart, onDone,
+    })
+    expect(onStart).not.toHaveBeenCalled()
+    expect(onDone).not.toHaveBeenCalled()
+  })
+
+  test('门控过，fork 成功 → onStart 取锁后调用，onDone(true) 调用', async () => {
+    const runSub = vi.fn(async () => 'done')
+    const onStart = vi.fn()
+    const onDone = vi.fn()
+    await runAutoDream({
+      client: {} as any, model: 'm', memdir: md, sessionsDir: sd, currentSessionFile: path.join(sd, 'c.jsonl'),
+      cfg: DEFAULT_MEMORY_CONFIG.dream, ctx: { signal: new AbortController().signal } as any,
+      now: Date.now(), lastScanAt: 0, runSubagent: runSub, gate: () => ({ pass: true }),
+      onStart, onDone,
+    })
+    expect(onStart).toHaveBeenCalledTimes(1)
+    expect(onDone).toHaveBeenCalledWith(true)
+  })
+
+  test('门控过，fork 失败 → onStart 调用，onDone(false) 调用', async () => {
+    const runSub = vi.fn(async () => { throw new Error('boom') })
+    const onStart = vi.fn()
+    const onDone = vi.fn()
+    await runAutoDream({
+      client: {} as any, model: 'm', memdir: md, sessionsDir: sd, currentSessionFile: path.join(sd, 'c.jsonl'),
+      cfg: DEFAULT_MEMORY_CONFIG.dream, ctx: { signal: new AbortController().signal } as any,
+      now: Date.now(), lastScanAt: 0, runSubagent: runSub, gate: () => ({ pass: true }),
+      onStart, onDone,
+    })
+    expect(onStart).toHaveBeenCalledTimes(1)
+    expect(onDone).toHaveBeenCalledWith(false)
+  })
 })

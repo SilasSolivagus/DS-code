@@ -17,7 +17,8 @@ import { makeWebSearchTool, resolveWebSearchConfig } from '../tools/webSearchToo
 import { makeAskUserQuestionTool, type Question, type Answer } from '../tools/askUserQuestion.js'
 import { bgTaskListTool, taskOutputTool, taskStopTool } from '../tools/taskTools.js'
 import { taskCreateTool, taskGetTool, taskUpdateTool, taskListTool } from '../tools/taskListTools.js'
-import { onNotification, drainNotifications, formatNotification } from '../tasks.js'
+import { onNotification, drainNotifications, formatNotification, registerTask, updateTask, enqueueNotification, getTask, generateTaskId } from '../tasks.js'
+import { runAutoDream } from '../services/memory/autoDream.js'
 import { buildSystemPrompt, findMemoryFiles } from '../prompt.js'
 import { formatMemory } from '../memory.js'
 import { loadSettings, loadRawUserSettings, addUserAllowRule, removeUserAllowRule, listUserAllowRules, SETTINGS_FILE } from '../config.js'
@@ -398,6 +399,9 @@ export function createChatCore(opts: {
   // —— SessionMemory 状态：跨轮持久，resume/clear 时重置 ——
   let smState: SessionMemoryState = { promptTokens: 0, tokensAtLastUpdate: 0, initialized: false, toolCallsSinceUpdate: 0, lastTurnHadToolCalls: false }
 
+  // —— autoDream：记录上次触发时间，每轮末门控后 fire-and-forget ——
+  let dreamLastScanAt = 0
+
   // InstructionsLoaded：记忆文件加载记录（DEEPCODE.md/CLAUDE.md/全局）。fire-and-forget。
   if (settings.hooks) {
     const home = os.homedir()
@@ -683,6 +687,35 @@ export function createChatCore(opts: {
         smState.initialized = true
         smState.toolCallsSinceUpdate = 0
       }
+    }
+
+    // autoDream：满门控（24h/5会话/锁）时后台合并记忆，作后台任务带通知
+    if (mem.enabled && mem.dream.enabled) {
+      const now = Date.now()
+      const sessionsDir = path.join(os.homedir(), '.deepcode', 'sessions')
+      let dreamTaskId: string | undefined
+      void runAutoDream({
+        client: opts.client, model, memdir: memdirFor(cwd),
+        sessionsDir, currentSessionFile: session.file,
+        cfg: mem.dream, ctx, now, lastScanAt: dreamLastScanAt,
+        runSubagent: opts.runSubagent,
+        onStart: () => {
+          const taskId = generateTaskId('local_agent')
+          dreamTaskId = taskId
+          registerTask({
+            id: taskId, type: 'local_agent', status: 'running',
+            description: '记忆整理（dream）',
+            startTime: now, outputFile: '', outputOffset: 0, notified: false,
+          })
+        },
+        onDone: (changed) => {
+          if (!dreamTaskId) return
+          updateTask(dreamTaskId, { status: changed ? 'completed' : 'failed', endTime: Date.now() })
+          const t = getTask(dreamTaskId)
+          if (t && changed) enqueueNotification(t)
+        },
+      })
+      dreamLastScanAt = now
     }
 
     // 自动 compact（落盘之后；busy 保持 true 直到 compact 结束）

@@ -27,6 +27,10 @@ export interface AutoDreamDeps {
   now: number; lastScanAt: number; sessionCount?: number
   runSubagent?: typeof realRunSubagent
   gate?: typeof checkDreamGates
+  /** 成功取锁后（dream 工作开始前）调用 */
+  onStart?: () => void
+  /** runSubagent 成功（changed=true）或失败（changed=false）后调用 */
+  onDone?: (changed: boolean) => void
 }
 
 export async function runAutoDream(deps: AutoDreamDeps): Promise<void> {
@@ -39,6 +43,7 @@ export async function runAutoDream(deps: AutoDreamDeps): Promise<void> {
     const prior = tryAcquireConsolidationLock(deps.memdir, deps.now)
     // null = 锁被占（其他存活进程）或写锁失败，均跳过本次 dream
     if (prior === null) return
+    deps.onStart?.()
     try {
       const runSub = deps.runSubagent ?? realRunSubagent
       await runSub({
@@ -51,9 +56,11 @@ export async function runAutoDream(deps: AutoDreamDeps): Promise<void> {
       })
       // 成功：刷新锁 mtime（= lastConsolidatedAt）
       try { fs.utimesSync(path.join(deps.memdir, '.consolidate-lock'), new Date(deps.now), new Date(deps.now)) } catch {}
+      deps.onDone?.(true)
     } catch (e: any) {
       console.error('[memory] autoDream 失败：' + (e?.message ?? e))
       rollbackConsolidationLock(deps.memdir, prior)
+      deps.onDone?.(false)
     }
   } catch (e: any) { console.error('[memory] autoDream 异常：' + (e?.message ?? e)) }
 }
