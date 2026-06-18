@@ -7,8 +7,9 @@ import { grepTool } from './grep.js'
 import { bashTool } from './bash.js'
 import { editTool } from './edit.js'
 import { writeTool } from './write.js'
+import { configTool } from './configTool.js'
 
-export const allTools: Tool<any>[] = [readTool, globTool, grepTool, bashTool, editTool, writeTool]
+export const allTools: Tool<any>[] = [readTool, globTool, grepTool, bashTool, editTool, writeTool, configTool]
 
 export function toApiTools(tools: Tool<any>[]) {
   return tools.map(t => ({
