@@ -59,11 +59,11 @@ async function chatStreamMock() {
 }
 
 describe('useChat 任务工具注册', () => {
-  it('tools 数组含 TaskList/TaskOutput/TaskStop（通过一轮工具调用断言模型可用三工具）', async () => {
-    // 模型第一轮调用 TaskList → loop 执行 → 第二轮收尾
+  it('tools 数组含 BgTaskList/TaskOutput/TaskStop（通过一轮工具调用断言模型可用三工具）', async () => {
+    // 模型第一轮调用 BgTaskList → loop 执行 → 第二轮收尾
     script.push({
       deltas: [],
-      result: { content: '', toolCalls: [{ id: 'tc1', name: 'TaskList', args: '{}' }], usage, finishReason: 'tool_calls' },
+      result: { content: '', toolCalls: [{ id: 'tc1', name: 'BgTaskList', args: '{}' }], usage, finishReason: 'tool_calls' },
     })
     script.push({
       deltas: ['好的'],
@@ -71,9 +71,9 @@ describe('useChat 任务工具注册', () => {
     })
     const core = createChatCore({ client: {} as any, yolo: true, cwd: '/tmp', sessionDir, onState: () => {} })
     await core.send('列出后台任务')
-    // TaskList 工具被识别并执行（无「工具不存在」错误 preview）
+    // BgTaskList 工具被识别并执行（无「工具不存在」错误 preview）
     const tools = core.state.transcript.filter(i => i.kind === 'tool') as any[]
-    expect(tools.some(t => t.name === 'TaskList')).toBe(true)
+    expect(tools.some(t => t.name === 'BgTaskList')).toBe(true)
     expect(tools.every(t => !t.preview?.includes('不存在'))).toBe(true)
     core.dispose()
   })
@@ -111,7 +111,7 @@ describe('useChat 空闲唤醒', () => {
     script.push({
       // 第一轮：工具调用（占住 busy 期间入队通知）
       deltas: [],
-      result: { content: '', toolCalls: [{ id: 'tc1', name: 'TaskList', args: '{}' }], usage, finishReason: 'tool_calls' },
+      result: { content: '', toolCalls: [{ id: 'tc1', name: 'BgTaskList', args: '{}' }], usage, finishReason: 'tool_calls' },
     })
     script.push({
       // 第二轮：收尾（无工具调用）→ runLoop 终止点 drain 注入通知 → continue

@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { taskListTool, taskOutputTool, taskStopTool } from '../src/tools/taskTools.js'
+import { bgTaskListTool, taskOutputTool, taskStopTool } from '../src/tools/taskTools.js'
 import {
   registerTask,
   getTask,
@@ -44,23 +44,23 @@ afterEach(() => {
   fs.rmSync(tmpDir, { recursive: true, force: true })
 })
 
-describe('taskListTool', () => {
+describe('bgTaskListTool', () => {
   it('列出所有后台任务（每行 id [status] description）', async () => {
     registerTask(mkTask({ id: 'b11111111', status: 'running', description: 'sleep 5' }))
     registerTask(mkTask({ id: 'a22222222', type: 'local_agent', status: 'completed', description: '查文档' }))
-    const out = await taskListTool.call({}, ctx())
+    const out = await bgTaskListTool.call({}, ctx())
     expect(out).toContain('b11111111 [running] sleep 5')
     expect(out).toContain('a22222222 [completed] 查文档')
   })
 
   it('空列表返回友好文案', async () => {
-    const out = await taskListTool.call({}, ctx())
+    const out = await bgTaskListTool.call({}, ctx())
     expect(out).toBe('（无后台任务）')
   })
 
   it('元数据：只读、无需权限', () => {
-    expect(taskListTool.isReadOnly).toBe(true)
-    expect(taskListTool.needsPermission({})).toBe(false)
+    expect(bgTaskListTool.isReadOnly).toBe(true)
+    expect(bgTaskListTool.needsPermission({})).toBe(false)
   })
 })
 

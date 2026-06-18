@@ -55,20 +55,20 @@ export const bashTool: Tool<typeof schema> = {
         notified: false,
         startTime: Date.now(),
       })
-      ctx.hookDispatch?.('TaskCreated', { hook_event_name: 'TaskCreated', task_id: id, task_description: input.command }).catch(() => {})
+      ctx.hookDispatch?.('TaskCreated', { hook_event_name: 'TaskCreated', task_kind: 'background', task_id: id, task_description: input.command }).catch(() => {})
       child.once('exit', code => {
         ws.end()
         // 若已被 TaskStop 置为 killed，保留之——SIGTERM 触发的本 exit 回调不该把 killed 覆写成 failed。
         const t = getTask(id)
         if (t && t.status === 'killed') {
-          ctx.hookDispatch?.('TaskCompleted', { hook_event_name: 'TaskCompleted', task_id: id, status: 'killed' }).catch(() => {})
+          ctx.hookDispatch?.('TaskCompleted', { hook_event_name: 'TaskCompleted', task_kind: 'background', task_id: id, status: 'killed' }).catch(() => {})
           return
         }
         updateTask(id, { status: code === 0 ? 'completed' : 'failed', endTime: Date.now() })
         enqueueNotification(getTask(id)!)
-        ctx.hookDispatch?.('TaskCompleted', { hook_event_name: 'TaskCompleted', task_id: id, status: getTask(id)!.status }).catch(() => {})
+        ctx.hookDispatch?.('TaskCompleted', { hook_event_name: 'TaskCompleted', task_kind: 'background', task_id: id, status: getTask(id)!.status }).catch(() => {})
       })
-      return Promise.resolve(`后台任务已启动 id=${id}，输出写入 ${outputFile}。用 TaskList/TaskOutput/TaskStop 管理。`)
+      return Promise.resolve(`后台任务已启动 id=${id}，输出写入 ${outputFile}。用 BgTaskList/TaskOutput/TaskStop 管理。`)
     }
     return new Promise(resolve => {
       // session-env 前缀（hook 写的 export 行）内联在用户命令前，使其 env 生效。
