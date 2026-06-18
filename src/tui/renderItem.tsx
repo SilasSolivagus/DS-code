@@ -7,6 +7,7 @@ import { T } from './theme.js'
 import { renderMarkdown } from './markdown.js'
 import { ToolLine } from './components/ToolLine.js'
 import { withBullet } from './withBullet.js'
+import { StreamingMarkdown } from './streamingMarkdown.js'
 import type { TranscriptItem } from './useChat.js'
 
 /** 判断是否为"已完成"项（进入 Static 区）。*/
@@ -32,8 +33,8 @@ export function renderItem(item: TranscriptItem, index: number): React.ReactNode
         // 完成：markdown 渲染（ANSI 着色串），⏺ 项目符号 + 悬挂缩进
         return <Box key={index}>{withBullet(renderMarkdown(item.text))}</Box>
       }
-      // 进行中：原文（不跑 markdown，内容还不完整），同样带 ⏺ 项目符号
-      return <Box key={index}>{withBullet(item.text)}</Box>
+      // 进行中：流式增量 markdown 渲染（稳定前缀缓存 + 末尾重算）
+      return <Box key={index}><StreamingMarkdown text={item.text} /></Box>
 
     case 'reasoning':
       if (item.done) {
