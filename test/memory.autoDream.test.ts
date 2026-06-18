@@ -18,6 +18,7 @@ describe('runAutoDream', () => {
     const runSub = vi.fn(async () => 'ok')
     await runAutoDream({
       client: {} as any, model: 'm', memdir: md, sessionsDir: sd, currentSessionFile: path.join(sd, 'c.jsonl'),
+      projectKey: 'proj',
       cfg: DEFAULT_MEMORY_CONFIG.dream, ctx: { signal: new AbortController().signal } as any,
       now: 0, lastScanAt: 0, runSubagent: runSub, gate: () => ({ pass: false }),
     })
@@ -29,6 +30,7 @@ describe('runAutoDream', () => {
     const runSub = vi.fn(async () => 'done')
     await runAutoDream({
       client: {} as any, model: 'm', memdir: md, sessionsDir: sd, currentSessionFile: path.join(sd, 'c.jsonl'),
+      projectKey: 'proj',
       cfg: DEFAULT_MEMORY_CONFIG.dream, ctx: { signal: new AbortController().signal } as any,
       now, lastScanAt: 0, runSubagent: runSub, gate: () => ({ pass: true }), sessionCount: 5,
     })
@@ -42,6 +44,7 @@ describe('runAutoDream', () => {
     const runSub = vi.fn(async () => { throw new Error('x') })
     await expect(runAutoDream({
       client: {} as any, model: 'm', memdir: md, sessionsDir: sd, currentSessionFile: path.join(sd, 'c.jsonl'),
+      projectKey: 'proj',
       cfg: DEFAULT_MEMORY_CONFIG.dream, ctx: { signal: new AbortController().signal } as any,
       now: Date.now(), lastScanAt: 0, runSubagent: runSub, gate: () => ({ pass: true }), sessionCount: 5,
     })).resolves.toBeUndefined()
@@ -53,6 +56,7 @@ describe('runAutoDream', () => {
     const onDone = vi.fn()
     await runAutoDream({
       client: {} as any, model: 'm', memdir: md, sessionsDir: sd, currentSessionFile: path.join(sd, 'c.jsonl'),
+      projectKey: 'proj',
       cfg: DEFAULT_MEMORY_CONFIG.dream, ctx: { signal: new AbortController().signal } as any,
       now: 0, lastScanAt: 0, gate: () => ({ pass: false }), onStart, onDone,
     })
@@ -66,6 +70,7 @@ describe('runAutoDream', () => {
     const onDone = vi.fn()
     await runAutoDream({
       client: {} as any, model: 'm', memdir: md, sessionsDir: sd, currentSessionFile: path.join(sd, 'c.jsonl'),
+      projectKey: 'proj',
       cfg: DEFAULT_MEMORY_CONFIG.dream, ctx: { signal: new AbortController().signal } as any,
       now: Date.now(), lastScanAt: 0, runSubagent: runSub, gate: () => ({ pass: true }),
       onStart, onDone,
@@ -80,6 +85,7 @@ describe('runAutoDream', () => {
     const onDone = vi.fn()
     await runAutoDream({
       client: {} as any, model: 'm', memdir: md, sessionsDir: sd, currentSessionFile: path.join(sd, 'c.jsonl'),
+      projectKey: 'proj',
       cfg: DEFAULT_MEMORY_CONFIG.dream, ctx: { signal: new AbortController().signal } as any,
       now: Date.now(), lastScanAt: 0, runSubagent: runSub, gate: () => ({ pass: true }),
       onStart, onDone,

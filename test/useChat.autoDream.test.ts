@@ -69,6 +69,8 @@ describe('useChat autoDream 接线', () => {
     expect(typeof callArg.onDone).toBe('function')
     expect(callArg.sessionsDir).toContain('.deepcode')
     expect(callArg.sessionsDir).toContain('sessions')
+    expect(typeof callArg.projectKey).toBe('string')
+    expect(callArg.projectKey.length).toBeGreaterThan(0)
 
     dreamSpy.mockRestore()
     core.dispose()

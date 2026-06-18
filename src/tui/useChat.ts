@@ -43,7 +43,7 @@ import { attachMcpTools } from '../mcp.js'
 import { loadSkills, substituteSkillArgs } from '../skillsLoader.js'
 import { makeSkillTool } from '../tools/skill.js'
 import { detectEffortKeyword } from '../text.js'
-import { memdirFor, sessionMemoryPathFor } from '../memdir/paths.js'
+import { memdirFor, sessionMemoryPathFor, findGitRoot, sanitizeProjectKey } from '../memdir/paths.js'
 import { DEFAULT_MEMORY_CONFIG } from '../memdir/memoryConfig.js'
 import { createMemoryExtractor } from '../services/memory/extractMemories.js'
 import { createRecaller } from '../services/memory/recall.js'
@@ -693,10 +693,12 @@ export function createChatCore(opts: {
     if (mem.enabled && mem.dream.enabled) {
       const now = Date.now()
       const sessionsDir = path.join(os.homedir(), '.deepcode', 'sessions')
+      const dreamProjectKey = sanitizeProjectKey(findGitRoot(cwd) ?? cwd)
       let dreamTaskId: string | undefined
       void runAutoDream({
         client: opts.client, model, memdir: memdirFor(cwd),
         sessionsDir, currentSessionFile: session.file,
+        projectKey: dreamProjectKey,
         cfg: mem.dream, ctx, now, lastScanAt: dreamLastScanAt,
         runSubagent: opts.runSubagent,
         onStart: () => {

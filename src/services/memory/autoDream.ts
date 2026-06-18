@@ -23,6 +23,7 @@ export function buildConsolidationPrompt(sessionCount: number): string {
 export interface AutoDreamDeps {
   client: OpenAI; model: string
   memdir: string; sessionsDir: string; currentSessionFile: string
+  projectKey: string
   cfg: MemoryConfig['dream']; ctx: ToolContext
   now: number; lastScanAt: number; sessionCount?: number
   runSubagent?: typeof realRunSubagent
@@ -37,6 +38,7 @@ export async function runAutoDream(deps: AutoDreamDeps): Promise<void> {
   try {
     const gate = (deps.gate ?? checkDreamGates)({
       memdir: deps.memdir, sessionsDir: deps.sessionsDir, currentSessionFile: deps.currentSessionFile,
+      projectKey: deps.projectKey,
       cfg: deps.cfg, now: deps.now, lastScanAt: deps.lastScanAt,
     })
     if (!gate.pass) return
