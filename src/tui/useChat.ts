@@ -777,6 +777,12 @@ export function createChatCore(opts: {
       notice('info', formatMemory(findMemoryFiles(cwd), os.homedir()))
       return
     }
+    if (line === '/config') {
+      const { loadLayeredSettings } = await import('../settingsLayers.js')
+      const { formatConfigReport } = await import('../configReport.js')
+      notice('info', formatConfigReport(loadLayeredSettings(cwd, opts.flagSettingsPath)))
+      return
+    }
     if (line === '/permissions' || line.startsWith('/permissions ')) {
       const arg = line.slice('/permissions'.length).trim()
       const m = arg.match(/^rm\s+(\d+)$/)
