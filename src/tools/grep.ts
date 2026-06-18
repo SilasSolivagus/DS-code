@@ -5,6 +5,7 @@ import fg from 'fast-glob'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { Tool } from './types.js'
+import { isDeniedPath } from '../deny.js'
 
 const MAX_RESULTS = 100
 
@@ -68,9 +69,20 @@ export const grepTool: Tool<typeof schema> = {
       }
     }
     if (!result.trim()) return '没有匹配'
-    const lines = result.trim().split('\n')
-    const shown = lines.slice(0, MAX_RESULTS)
-    const note = lines.length > MAX_RESULTS ? `\n[已截断，只显示前 ${MAX_RESULTS} 条]` : ''
-    return shown.join('\n') + note
+    const deny = ctx.denyPatterns?.() ?? []
+    let allLines = result.trim().split('\n')
+    let denied = 0
+    if (deny.length) {
+      allLines = allLines.filter(l => {
+        const m = l.match(/^(.+?):\d+:/)
+        if (m && isDeniedPath(path.resolve(dir, m[1]), deny)) { denied++; return false }
+        return true
+      })
+    }
+    if (!allLines.length) return '没有匹配'
+    const shown = allLines.slice(0, MAX_RESULTS)
+    const note = allLines.length > MAX_RESULTS ? `\n[已截断，只显示前 ${MAX_RESULTS} 条]` : ''
+    const denyNote = denied ? `\n[${denied} 行被 deny 规则过滤]` : ''
+    return shown.join('\n') + note + denyNote
   },
 }

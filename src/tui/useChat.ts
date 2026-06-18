@@ -215,6 +215,7 @@ export function createChatCore(opts: {
   const ctx: ToolContext = {
     cwd: () => cwd,
     setCwd: d => { cwd = d },
+    denyPatterns: () => resolveDenyList(settings.permissions.deny),
     get signal() { return abort.signal },
     fileState: new Map(),
     taskList,

@@ -48,6 +48,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
   const ctx: ToolContext = {
     cwd: () => cwd,
     setCwd: d => { cwd = d },
+    denyPatterns: () => resolveDenyList(settings.permissions.deny),
     signal: new AbortController().signal,
     fileState: new Map(),
     taskList,
