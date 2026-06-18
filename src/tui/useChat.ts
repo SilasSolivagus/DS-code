@@ -27,7 +27,7 @@ import { isDangerous, type Decision, type PermissionMode } from '../permissions.
 import type { ToolContext } from '../tools/types.js'
 import { newSession, openSession, listSessions, loadSession, sessionIdFromFile, type SessionHandle, type UsageRecord } from '../session.js'
 import { costUSD, cacheSavingsUSD } from '../pricing.js'
-import { summarize, rebuildMessages } from '../compact.js'
+import { summarize, rebuildMessages, shouldAutoCompact } from '../compact.js'
 import { TaskListStore } from '../taskList.js'
 import { loadCustomCommands, expandCommand, INIT_PROMPT, formatContext } from '../commands.js'
 import { resolveAgents } from '../agentsLoader.js'
@@ -239,6 +239,8 @@ export function createChatCore(opts: {
   let compacted = false       // compact 后首条用户消息的一次性提醒
   let lastPromptTokens = 0    // 自动 compact 触发依据
   let costWarned = false      // $阈值提醒只发一次
+  const MAX_AUTO_COMPACT_FAILURES = 3
+  let consecutiveCompactFailures = 0
 
   // —— UI 状态 ——
   let transcript: TranscriptItem[] = []
@@ -297,7 +299,7 @@ export function createChatCore(opts: {
     usageLog.push(...loaded.usages)
     session = openSession(file)
     // 恢复后重置会话内状态，防止旧 todo/compact 标记/token 计数泄漏到新对话
-    taskList.bind(sessionIdFromFile(session.file)); compacted = false; lastPromptTokens = 0
+    taskList.bind(sessionIdFromFile(session.file)); compacted = false; lastPromptTokens = 0; consecutiveCompactFailures = 0
     // doCompact 崩溃在 appendCompact 与首条 re-append 之间的兜底
     if (messages.length === 0 || messages[0]?.role !== 'system') {
       messages.unshift({ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars) })
@@ -582,8 +584,13 @@ export function createChatCore(opts: {
     }
 
     // 自动 compact（落盘之后；busy 保持 true 直到 compact 结束）
-    if (lastPromptTokens > settings.compactTokens) {
-      try { await doCompact('auto') } catch (e: any) { notice('error', `[自动 compact 失败，将在下轮重试] ${e?.message ?? e}`) }
+    if (shouldAutoCompact(lastPromptTokens, settings.compactTokens, consecutiveCompactFailures, MAX_AUTO_COMPACT_FAILURES)) {
+      try { await doCompact('auto'); consecutiveCompactFailures = 0 }
+      catch (e: any) {
+        consecutiveCompactFailures++
+        if (consecutiveCompactFailures >= MAX_AUTO_COMPACT_FAILURES) notice('warn', '自动压缩连续失败 3 次，已暂停（用 /compact 手动重试）')
+        else notice('error', `[自动 compact 失败，将在下轮重试] ${e?.message ?? e}`)
+      }
     }
     busy = false
     turnStartAt = null
@@ -689,7 +696,7 @@ export function createChatCore(opts: {
     if (line === '/compact') {
       busy = true
       setState()
-      try { await doCompact('manual') } catch (e: any) { notice('error', `[compact 失败] ${e?.message ?? e}`) }
+      try { await doCompact('manual'); consecutiveCompactFailures = 0 } catch (e: any) { notice('error', `[compact 失败] ${e?.message ?? e}`) }
       busy = false
       setState()
       return
