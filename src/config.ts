@@ -32,8 +32,8 @@ export interface Settings {
   permissions: { allow: string[] }
   /** 自动 compact 触发阈值（上次请求的 prompt_tokens 超过即触发） */
   compactTokens: number
-  /** 本会话花费提醒阈值（USD，状态行变色一次） */
-  costWarnUSD: number
+  /** 本会话花费提醒阈值（CNY，状态行变色一次） */
+  costWarnCNY: number
   /** 工具结果字符级兜底上限，超出截断后再回灌 messages（保护上下文/前缀缓存）。缺省 100,000。 */
   maxToolResultChars: number
   /** 启动默认模型（undefined = 内置缺省 deepseek-v4-flash） */
@@ -81,7 +81,7 @@ export function loadSettings(): Settings {
   return {
     permissions: { allow: raw?.permissions?.allow ?? [] },
     compactTokens: raw?.compactTokens ?? 200_000,
-    costWarnUSD: raw?.costWarnUSD ?? 2,
+    costWarnCNY: raw?.costWarnCNY ?? raw?.costWarnUSD ?? 15,
     maxToolResultChars: raw?.maxToolResultChars ?? 100_000,
     model: raw?.model,
     baseURL: raw?.baseURL,

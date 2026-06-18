@@ -31,7 +31,7 @@ vi.mock('../src/config.js', async (orig) => {
     loadSettings: vi.fn(() => ({
       permissions: { allow: [] },
       compactTokens: 200_000,
-      costWarnUSD: 2,
+      costWarnCNY: 2,
     })),
   }
 })
@@ -94,7 +94,7 @@ describe('headless Skills 接线', () => {
     vi.mocked(loadSettings).mockReturnValueOnce({
       permissions: { allow: [] },
       compactTokens: 200_000,
-      costWarnUSD: 2,
+      costWarnCNY: 2,
       maxToolResultChars: 100_000,
       skills: { deny: ['drop'] },
     })

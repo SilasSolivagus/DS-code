@@ -53,9 +53,9 @@ export function StatusFooter(props: {
         <Text dimColor>{bar.empty}</Text>
         <Text dimColor>{` ${props.contextPct}%`}</Text>
         {props.hitRate > 0 && (
-          <Text dimColor>{` · cache ${Math.round(props.hitRate * 100)}% (−$${props.cacheSavings.toFixed(4)})`}</Text>
+          <Text dimColor>{` · cache ${Math.round(props.hitRate * 100)}% (−¥${props.cacheSavings.toFixed(4)})`}</Text>
         )}
-        <Text dimColor>{` · $${props.cost.toFixed(4)}`}</Text>
+        <Text dimColor>{` · ¥${props.cost.toFixed(4)}`}</Text>
       </Text>
 
       {/* Row 3（仅 memoryCount>0）：记忆文件数 */}

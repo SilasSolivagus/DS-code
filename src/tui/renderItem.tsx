@@ -91,7 +91,7 @@ export function renderItem(item: TranscriptItem, index: number): React.ReactNode
       // CC 式精简：轮末只用一行极简 dim 显示本轮输出 token + 累计花费（详细入/缓存/累计在底部 footer）
       return (
         <Box key={index}>
-          <Text dimColor>{item.out} tokens · ${item.cost.toFixed(4)}</Text>
+          <Text dimColor>{item.out} tokens · ¥{item.cost.toFixed(4)}</Text>
         </Box>
       )
 

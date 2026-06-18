@@ -77,7 +77,7 @@ describe('makeWebSearchTool', () => {
 })
 
 describe('resolveWebSearchConfig', () => {
-  const base = { permissions: { allow: [] }, compactTokens: 1, costWarnUSD: 1 } as any
+  const base = { permissions: { allow: [] }, compactTokens: 1, costWarnCNY: 1 } as any
   it('从 settings 取', () => {
     const c = resolveWebSearchConfig({ ...base, webSearch: { bocha: { apiKey: 'sk' }, tavily: { apiKey: 'tv' } } })
     expect(c).toEqual({ bocha: 'sk', tavily: 'tv' })

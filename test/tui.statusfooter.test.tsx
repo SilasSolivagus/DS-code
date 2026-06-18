@@ -29,7 +29,7 @@ describe('StatusFooter', () => {
     expect(f).toContain('git:(main)')
     expect(f).toContain('Context')
     expect(f).toContain('28%')
-    expect(f).toContain('$0.0042')
+    expect(f).toContain('¥0.0042')
     expect(f).toContain('2 DEEPCODE.md')
     expect(f).toContain('Read ×4')         // × 前留空（CC 样式）
     expect(f).toContain('Bash ×2')
@@ -61,14 +61,14 @@ describe('StatusFooter', () => {
   it('hitRate>0 时 Row 2 显示 cache N% 与省下金额', () => {
     const f = render(<StatusFooter {...base} hitRate={0.87} cacheSavings={0.0089} />).lastFrame()!
     expect(f).toContain('cache 87%')
-    expect(f).toContain('−$0.0089')
+    expect(f).toContain('−¥0.0089')
   })
 
   it('hitRate===0 时隐藏整个 cache 段（仍显示 Context 与花费）', () => {
     const f = render(<StatusFooter {...base} hitRate={0} cacheSavings={0} />).lastFrame()!
     expect(f).not.toContain('cache')
     expect(f).toContain('Context')
-    expect(f).toContain('$0.0042')
+    expect(f).toContain('¥0.0042')
   })
 
   it('thinking 开时 Row 1 显示 think:档位', () => {

@@ -34,7 +34,7 @@ vi.mock('../src/config.js', async (orig) => {
     loadSettings: vi.fn(() => ({
       permissions: { allow: [] },
       compactTokens: 200_000,
-      costWarnUSD: 2,
+      costWarnCNY: 15,
       hooks: {
         SessionStart: [{ matcher: '*', hooks: [] }],
         InstructionsLoaded: [{ matcher: '*', hooks: [] }],
@@ -66,7 +66,7 @@ describe('runHeadless', () => {
     expect(r.text).toContain('1 个')
     expect(r.usage.prompt_tokens).toBe(100) // 两轮累计
     expect(r.usage.completion_tokens).toBe(40)
-    expect(r.costUSD).toBeGreaterThan(0)
+    expect(r.costCNY).toBeGreaterThan(0)
     expect(r.turns).toBe(2)
     expect(r.status).toBe('done')
   })

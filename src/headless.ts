@@ -20,7 +20,7 @@ import { initMcpTools } from './mcp.js'
 import { loadSkills } from './skillsLoader.js'
 import { makeSkillTool } from './tools/skill.js'
 import { TaskListStore } from './taskList.js'
-import { costUSD } from './pricing.js'
+import { costCNY } from './pricing.js'
 import type { ToolContext } from './tools/types.js'
 import type { Usage } from './api.js'
 
@@ -29,7 +29,7 @@ export interface HeadlessResult {
   status: 'done' | 'aborted' | 'max_turns'
   turns: number
   usage: Usage
-  costUSD: number
+  costCNY: number
 }
 
 /** 单 prompt 跑完整个 loop。工具事件打到 stderr（stdout 留给最终结果，方便脚本消费）。 */
@@ -89,7 +89,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     }, settings.hooks, hookDeps)
     if (ups.block || ups.preventContinuation) {
       const extra = ups.additionalContext ? `\n\n<hook-context>\n${ups.additionalContext}\n</hook-context>` : ''
-      return { text: `输入被 hook 拦截：${ups.blockReason ?? ''}${extra}`, status: 'aborted', turns: 0, usage: total, costUSD: 0 }
+      return { text: `输入被 hook 拦截：${ups.blockReason ?? ''}${extra}`, status: 'aborted', turns: 0, usage: total, costCNY: 0 }
     }
     if (ups.additionalContext) promptText = `${opts.prompt}\n\n<hook-context>\n${ups.additionalContext}\n</hook-context>`
   }
@@ -136,6 +136,6 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     status: step!.value,
     turns,
     usage: total,
-    costUSD: costUSD(model, total.prompt_tokens, total.prompt_cache_hit_tokens, total.completion_tokens),
+    costCNY: costCNY(model, total.prompt_tokens, total.prompt_cache_hit_tokens, total.completion_tokens),
   }
 }

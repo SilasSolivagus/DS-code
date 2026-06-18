@@ -17,7 +17,7 @@ try {
     const { runHeadless } = await import('./headless.js')
     const r = await runHeadless({ client, prompt, yolo })
     if (argv.includes('--json')) {
-      console.log(JSON.stringify({ text: r.text, status: r.status, turns: r.turns, usage: r.usage, costUSD: r.costUSD }))
+      console.log(JSON.stringify({ text: r.text, status: r.status, turns: r.turns, usage: r.usage, costCNY: r.costCNY }))
     } else {
       console.log(r.text)
     }

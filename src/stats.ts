@@ -64,6 +64,6 @@ export function formatStats(stats: SessionStats, cost: number, hitRate: number):
     `  工具调用：${tools}`,
     `  Token：输入 ${stats.inTokens}（缓存命中 ${stats.hitTokens}）出 ${stats.outTokens}`,
     `  缓存命中率：${(hitRate * 100).toFixed(1)}%`,
-    `  估算花费：$${cost.toFixed(6)}`,
+    `  估算花费：¥${cost.toFixed(6)}`,
   ].join('\n')
 }
