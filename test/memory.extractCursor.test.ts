@@ -13,6 +13,7 @@ test('messagesSince 取游标后的切片', () => {
   const turns = [1, undefined, 2]
   expect(messagesSince(msgs, turns, 1)).toEqual([{ role: 'user', content: 'c' }])
   expect(messagesSince(msgs, turns, 0).length).toBe(3)
+  expect(messagesSince(msgs, turns, 5)).toEqual([])
 })
 
 test('hasMemoryWritesSince 检测 memdir 写', () => {
@@ -23,4 +24,8 @@ test('hasMemoryWritesSince 检测 memdir 写', () => {
   expect(hasMemoryWritesSince(plainWrite, md)).toBe(true)
   const noWrite = [{ role: 'assistant', tool_calls: [{ function: { name: 'Read', arguments: '{}' } }] }]
   expect(hasMemoryWritesSince(noWrite, md)).toBe(false)
+  const badJson = [{ role: 'assistant', tool_calls: [{ function: { name: 'Write', arguments: 'not json' } }] }]
+  expect(hasMemoryWritesSince(badJson, '/x/memory')).toBe(false)
+  const noArgs = [{ role: 'assistant', tool_calls: [{ function: { name: 'Write' } }] }]
+  expect(hasMemoryWritesSince(noArgs, '/x/memory')).toBe(false)
 })
