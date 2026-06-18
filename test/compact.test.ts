@@ -1,5 +1,6 @@
 // test/compact.test.ts
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { summarize, rebuildMessages, shouldAutoCompact } from '../src/compact.js'
 
 const script: Array<{ deltas?: any[]; result: any }> = []
 vi.mock('../src/api.js', () => ({
@@ -12,8 +13,6 @@ vi.mock('../src/api.js', () => ({
     })(),
   ),
 }))
-
-import { summarize, rebuildMessages } from '../src/compact.js'
 
 const usage = { prompt_tokens: 100, completion_tokens: 50, prompt_cache_hit_tokens: 0 }
 beforeEach(() => { script.length = 0 })
@@ -98,5 +97,18 @@ describe('rebuildMessages', () => {
     const messages = [sys, um(1), am(1)]
     const out = rebuildMessages(messages, 'S', 8)
     expect(out.length).toBe(1 + 1 + 2)
+  })
+})
+
+describe('shouldAutoCompact', () => {
+  it('超阈且未达失败上限 → true', () => {
+    expect(shouldAutoCompact(201_000, 200_000, 0, 3)).toBe(true)
+    expect(shouldAutoCompact(201_000, 200_000, 2, 3)).toBe(true)
+  })
+  it('欠阈 → false', () => {
+    expect(shouldAutoCompact(199_000, 200_000, 0, 3)).toBe(false)
+  })
+  it('达失败上限 → 熔断 false（即便超阈）', () => {
+    expect(shouldAutoCompact(300_000, 200_000, 3, 3)).toBe(false)
   })
 })

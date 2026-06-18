@@ -2,7 +2,8 @@
 import { describe, it, expect } from 'vitest'
 import React from 'react'
 import { render } from 'ink-testing-library'
-import { StatusFooter } from '../src/tui/components/StatusFooter.js'
+import { StatusFooter, contextBarColor } from '../src/tui/components/StatusFooter.js'
+import { T } from '../src/tui/theme.js'
 
 const base = {
   model: 'deepseek-v4-flash',
@@ -14,6 +15,8 @@ const base = {
   cost: 0.0042,
   hitRate: 0,
   cacheSavings: 0,
+  thinking: false,
+  effortLevel: 'medium' as 'low' | 'medium' | 'high',
   toolCounts: [{ name: 'Read', n: 4 }, { name: 'Bash', n: 2 }],
 }
 
@@ -66,5 +69,20 @@ describe('StatusFooter', () => {
     expect(f).not.toContain('cache')
     expect(f).toContain('Context')
     expect(f).toContain('$0.0042')
+  })
+
+  it('thinking 开时 Row 1 显示 think:档位', () => {
+    const f = render(<StatusFooter {...base} thinking={true} effortLevel="high" />).lastFrame()!
+    expect(f).toContain('think:high')
+  })
+  it('thinking 关时不显示 think 段', () => {
+    const f = render(<StatusFooter {...base} thinking={false} />).lastFrame()!
+    expect(f).not.toContain('think:')
+  })
+
+  it('contextBarColor 分档：<80 accent, 80-94 warn, >=95 err', () => {
+    expect(contextBarColor(50)).toBe(T.accent)
+    expect(contextBarColor(85)).toBe(T.warn)
+    expect(contextBarColor(96)).toBe(T.err)
   })
 })

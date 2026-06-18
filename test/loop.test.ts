@@ -664,4 +664,23 @@ describe('runLoop 前缀稳定性（缓存守卫）', () => {
     const toolMsgs = messages.filter(m => m.role === 'tool')
     expect(toolMsgs[toolMsgs.length - 1].content).toContain('前缀守卫提醒')
   })
+
+  it('超大工具结果按 maxToolResultChars 截断后再回灌 messages（缓存/上下文保护）', async () => {
+    const big = 'Z'.repeat(5000)
+    const huge = {
+      name: 'Huge', isReadOnly: true, needsPermission: () => false,
+      inputSchema: z.object({}), call: async () => big,
+    }
+    script.push(
+      { result: { content: '', toolCalls: [{ id: 'h1', name: 'Huge', args: '{}' }], usage, finishReason: 'tool_calls' } },
+      { result: { content: 'ok', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    const deps = makeDeps([huge as any])
+    deps.maxToolResultChars = 200
+    const messages: any[] = [{ role: 'user', content: 'hi' }]
+    await drain(runLoop(messages, deps))
+    const toolMsg = messages.find(m => m.role === 'tool')
+    expect(toolMsg.content.length).toBeLessThan(5000)
+    expect(toolMsg.content).toContain('已截断')
+  })
 })

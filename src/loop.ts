@@ -4,7 +4,7 @@ import { chatStream, type ChatResult, type ToolCall } from './api.js'
 import type { Tool, ToolContext } from './tools/types.js'
 import { toApiTools } from './tools/index.js'
 import { checkPermission, type PermissionContext, type PermissionHooks } from './permissions.js'
-import { sanitize } from './text.js'
+import { sanitize, capToolResult } from './text.js'
 import { drainNotifications, formatNotification } from './tasks.js'
 import { runHooks, type HooksConfig } from './hooks.js'
 
@@ -19,6 +19,7 @@ export interface LoopDeps {
   tools: Tool<any>[]
   model: string
   thinking: boolean
+  effortLevel?: 'low' | 'medium' | 'high'
   permission: PermissionContext
   ctx: ToolContext
   maxTurns?: number
@@ -38,6 +39,8 @@ export interface LoopDeps {
   /** inline skill 注入队列 drain：每轮 tool 结果回灌后调用，返回的内容各作 user 消息追加。
    *  与 ctx.injectUserMessage 接同一 buffer（caller 在 useChat/headless 接线）。 */
   drainInjections?: () => string[]
+  /** 工具结果字符级兜底上限，超出截断后再回灌 messages（保护上下文/前缀缓存）。缺省由 caller 传 settings.maxToolResultChars。 */
+  maxToolResultChars?: number
 }
 
 const CONCURRENCY = 5
@@ -119,6 +122,7 @@ async function execCall(call: ToolCall, deps: LoopDeps): Promise<{ ok: boolean; 
       if (post.updatedOutput !== undefined) content = post.updatedOutput
       if (post.additionalContext) content += `\n\n<hook-context>\n${post.additionalContext}\n</hook-context>`
     }
+    content = capToolResult(content, deps.maxToolResultChars ?? 100_000)
     return { ok: true, content, ms: Date.now() - t0 }
   } catch (e: any) {
     let content = `错误：${e?.message ?? String(e)}`
@@ -146,6 +150,7 @@ export async function* runLoop(
         messages,
         tools: apiTools,
         thinking: deps.thinking,
+        effortLevel: deps.effortLevel,
         signal: deps.ctx.signal,
       })
       while (true) {

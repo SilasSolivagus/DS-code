@@ -37,3 +37,8 @@ export function rebuildMessages(messages: any[], summary: string, keep = 8): any
   const head = sysLen ? [messages[0]] : []
   return [...head, { role: 'user', content: `<对话历史总结>\n${summary}\n</对话历史总结>` }, ...tail]
 }
+
+/** 自动 compact 决策：超阈且未达连续失败上限才触发（熔断防无限重试烧钱）。 */
+export function shouldAutoCompact(promptTokens: number, threshold: number, failures: number, maxFailures: number): boolean {
+  return promptTokens > threshold && failures < maxFailures
+}

@@ -6,6 +6,12 @@ import React from 'react'
 import { Box, Text } from 'ink'
 import { T } from '../theme.js'
 
+export function contextBarColor(pct: number): string {
+  if (pct >= 95) return T.err
+  if (pct >= 80) return T.warn
+  return T.accent
+}
+
 export function StatusFooter(props: {
   model: string
   mode: string
@@ -16,6 +22,8 @@ export function StatusFooter(props: {
   cost: number
   hitRate: number
   cacheSavings: number
+  thinking: boolean
+  effortLevel: 'low' | 'medium' | 'high'
   toolCounts: Array<{ name: string; n: number }>
 }) {
   // 上下文条：10 格，filled 用 ▓（accent），其余 ░（dim）
@@ -31,7 +39,9 @@ export function StatusFooter(props: {
       <Text>
         <Text dimColor>[</Text>
         <Text color={T.accent}>{props.model}</Text>
-        <Text dimColor>{` | ${props.mode}]`}</Text>
+        <Text dimColor>{` | ${props.mode}`}</Text>
+        {props.thinking && <Text dimColor>{` | think:${props.effortLevel}`}</Text>}
+        <Text dimColor>{`]`}</Text>
         <Text dimColor>{` | ${props.cwdBase}`}</Text>
         {props.branch && <Text dimColor>{` git:(${props.branch})`}</Text>}
       </Text>
@@ -39,7 +49,7 @@ export function StatusFooter(props: {
       {/* Row 2：上下文条 + 缓存命中（仅有命中时）+ 累计花费 */}
       <Text>
         <Text dimColor>Context </Text>
-        <Text color={T.accent}>{bar.fill}</Text>
+        <Text color={contextBarColor(props.contextPct)}>{bar.fill}</Text>
         <Text dimColor>{bar.empty}</Text>
         <Text dimColor>{` ${props.contextPct}%`}</Text>
         {props.hitRate > 0 && (

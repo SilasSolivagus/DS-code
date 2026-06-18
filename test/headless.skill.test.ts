@@ -95,6 +95,7 @@ describe('headless Skills 接线', () => {
       permissions: { allow: [] },
       compactTokens: 200_000,
       costWarnUSD: 2,
+      maxToolResultChars: 100_000,
       skills: { deny: ['drop'] },
     })
 

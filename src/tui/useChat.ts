@@ -27,7 +27,7 @@ import { isDangerous, type Decision, type PermissionMode } from '../permissions.
 import type { ToolContext } from '../tools/types.js'
 import { newSession, openSession, listSessions, loadSession, sessionIdFromFile, type SessionHandle, type UsageRecord } from '../session.js'
 import { costUSD, cacheSavingsUSD } from '../pricing.js'
-import { summarize, rebuildMessages } from '../compact.js'
+import { summarize, rebuildMessages, shouldAutoCompact } from '../compact.js'
 import { TaskListStore } from '../taskList.js'
 import { loadCustomCommands, expandCommand, INIT_PROMPT, formatContext } from '../commands.js'
 import { resolveAgents } from '../agentsLoader.js'
@@ -40,6 +40,7 @@ import { formatKeybindings } from '../keybindings.js'
 import { attachMcpTools } from '../mcp.js'
 import { loadSkills, substituteSkillArgs } from '../skillsLoader.js'
 import { makeSkillTool } from '../tools/skill.js'
+import { detectEffortKeyword } from '../text.js'
 
 /** ! 直跑：同步执行，30s 超时，stdout+stderr 合并，超 20k 截断 */
 export function runBang(cmd: string, cwd: string): { output: string; code: number } {
@@ -152,6 +153,7 @@ export interface ChatState {
   busy: boolean
   model: string
   thinking: boolean
+  effortLevel: 'low' | 'medium' | 'high'
   permMode: PermissionMode
   pendingAsk: PendingAsk | null
   pendingQuestion: PendingQuestion | null
@@ -184,7 +186,7 @@ export interface ChatCore {
 }
 
 const HELP_TEXT =
-  '/model  flash↔pro 切换\n/think  thinking 模式开关\n/accept acceptEdits 模式开关（Edit/Write 免确认，Bash 仍确认）\n/cost   本会话花费明细\n/context 上下文占比与上次 usage\n/stats  本会话统计（轮数/工具/token/缓存/花费）\n/copy   复制上条回复到剪贴板\n/memory 查看当前生效的记忆文件\n/compact 手动压缩对话历史\n/clear  清空对话（开新会话文件，花费累计保留）\n/resume 列出并恢复本目录历史会话\n/rewind 回退到某轮之前（仅对话/仅代码/两者）\n/export 导出对话到 markdown 文件\n/permissions 查看/删除已保存权限规则（/permissions rm <编号>）\n/init   分析项目生成 DEEPCODE.md\n/keybindings 查看快捷键\n/exit   退出\n自定义命令：~/.deepcode/commands/*.md 或 <项目>/.deepcode/commands/*.md（$ARGUMENTS 占位）'
+  '/model  flash↔pro 切换\n/think  thinking 模式开关\n/effort 思考档位 low/medium/high/off\n/accept acceptEdits 模式开关（Edit/Write 免确认，Bash 仍确认）\n/cost   本会话花费明细\n/context 上下文占比与上次 usage\n/stats  本会话统计（轮数/工具/token/缓存/花费）\n/copy   复制上条回复到剪贴板\n/memory 查看当前生效的记忆文件\n/compact 手动压缩对话历史\n/clear  清空对话（开新会话文件，花费累计保留）\n/resume 列出并恢复本目录历史会话\n/rewind 回退到某轮之前（仅对话/仅代码/两者）\n/export 导出对话到 markdown 文件\n/permissions 查看/删除已保存权限规则（/permissions rm <编号>）\n/init   分析项目生成 DEEPCODE.md\n/keybindings 查看快捷键\n/exit   退出\n自定义命令：~/.deepcode/commands/*.md 或 <项目>/.deepcode/commands/*.md（$ARGUMENTS 占位）'
 
 export function createChatCore(opts: {
   client: OpenAI
@@ -199,6 +201,7 @@ export function createChatCore(opts: {
   let abort = new AbortController()
   let model = settings.model ?? 'deepseek-v4-flash'
   let thinking = false
+  let effortLevel: 'low' | 'medium' | 'high' = 'medium'
   let permMode: PermissionMode = opts.yolo ? 'yolo' : 'default'
   const taskList = new TaskListStore()
   let nextTurnId = 1
@@ -236,6 +239,9 @@ export function createChatCore(opts: {
   let compacted = false       // compact 后首条用户消息的一次性提醒
   let lastPromptTokens = 0    // 自动 compact 触发依据
   let costWarned = false      // $阈值提醒只发一次
+  let compactWarned = false   // 上下文≥90% 一次性提示
+  const MAX_AUTO_COMPACT_FAILURES = 3
+  let consecutiveCompactFailures = 0
 
   // —— UI 状态 ——
   let transcript: TranscriptItem[] = []
@@ -260,7 +266,7 @@ export function createChatCore(opts: {
   // 所有状态变更走 setState：换新快照对象 → onState 回调 + 订阅者通知
   const listeners = new Set<() => void>()
   const snap = (): ChatState => ({
-    transcript, busy, model, thinking, permMode, pendingAsk, pendingQuestion, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, sessionCost, cacheHitRate, cacheSavings, contextPct,
+    transcript, busy, model, thinking, effortLevel, permMode, pendingAsk, pendingQuestion, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, sessionCost, cacheHitRate, cacheSavings, contextPct,
   })
   let state = snap()
   const setState = (): void => {
@@ -282,6 +288,7 @@ export function createChatCore(opts: {
     messages.push(...loaded.messages)
     model = loaded.meta.model
     thinking = loaded.meta.thinking
+    effortLevel = loaded.meta.effortLevel ?? 'medium'
     // yolo 必须每次启动显式 --yolo，恢复的模式只允许 default/acceptEdits（含篡改文件兜底）
     if (!opts.yolo) permMode = loaded.meta.permMode === 'acceptEdits' ? 'acceptEdits' : 'default'
     // fileState 按 mtime 校验：文件已变则丢弃该条（自动失效，迫使模型重读）
@@ -293,7 +300,7 @@ export function createChatCore(opts: {
     usageLog.push(...loaded.usages)
     session = openSession(file)
     // 恢复后重置会话内状态，防止旧 todo/compact 标记/token 计数泄漏到新对话
-    taskList.bind(sessionIdFromFile(session.file)); compacted = false; lastPromptTokens = 0
+    taskList.bind(sessionIdFromFile(session.file)); compacted = false; lastPromptTokens = 0; consecutiveCompactFailures = 0; compactWarned = false
     // doCompact 崩溃在 appendCompact 与首条 re-append 之间的兜底
     if (messages.length === 0 || messages[0]?.role !== 'system') {
       messages.unshift({ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars) })
@@ -344,7 +351,7 @@ export function createChatCore(opts: {
     notice('info', `已恢复会话（${turns} 轮对话），继续写入 ${recovered.file}`)
     fireSessionStart('resume')
   } else {
-    session = newSession({ cwd, model, thinking, permMode }, sessionDir)
+    session = newSession({ cwd, model, thinking, effortLevel, permMode }, sessionDir)
     session.appendMessage(messages[0]) // 持久化 system 消息
     checkpointer = createCheckpointer(checkpointStoreFor(session.file))
     taskList.bind(sessionIdFromFile(session.file))
@@ -427,6 +434,7 @@ export function createChatCore(opts: {
     for (const m of messages) session.appendMessage(m)
     compacted = true
     lastPromptTokens = 0
+    compactWarned = false
     if (settings.hooks) {
       await runHooks('PostCompact', {
         hook_event_name: 'PostCompact', cwd, trigger, summary, truncated,
@@ -505,11 +513,17 @@ export function createChatCore(opts: {
     const lenBefore = messages.length
     abort = new AbortController()
     try {
+      // 关键词本轮临时升档（不改持久状态）
+      const kw = detectEffortKeyword(userText)
+      const turnThinking = kw ? true : thinking
+      const turnEffort = kw ?? effortLevel
       const deps: LoopDeps = {
         client: opts.client,
         tools,
         model,
-        thinking,
+        thinking: turnThinking,
+        effortLevel: turnEffort,
+        maxToolResultChars: settings.maxToolResultChars,
         ctx,
         permission: {
           mode: permMode,
@@ -557,6 +571,11 @@ export function createChatCore(opts: {
             costWarned = true
             notice('warn', `[花费提醒] 本会话已超 $${settings.costWarnUSD}（/cost 查看明细，阈值在 settings.json 的 costWarnUSD）`)
           }
+          const ctxPct = settings.compactTokens ? (lastPromptTokens / settings.compactTokens) * 100 : 0
+          if (!compactWarned && ctxPct >= 90) {
+            compactWarned = true
+            notice('warn', `上下文已用 ${Math.round(ctxPct)}%，接近自动压缩阈值`)
+          }
         }
       }
       if (step.value === 'aborted') notice('warn', '[已中断]')
@@ -572,8 +591,13 @@ export function createChatCore(opts: {
     }
 
     // 自动 compact（落盘之后；busy 保持 true 直到 compact 结束）
-    if (lastPromptTokens > settings.compactTokens) {
-      try { await doCompact('auto') } catch (e: any) { notice('error', `[自动 compact 失败，将在下轮重试] ${e?.message ?? e}`) }
+    if (shouldAutoCompact(lastPromptTokens, settings.compactTokens, consecutiveCompactFailures, MAX_AUTO_COMPACT_FAILURES)) {
+      try { await doCompact('auto'); consecutiveCompactFailures = 0 }
+      catch (e: any) {
+        consecutiveCompactFailures++
+        if (consecutiveCompactFailures >= MAX_AUTO_COMPACT_FAILURES) notice('warn', '自动压缩连续失败 3 次，已暂停（用 /compact 手动重试）')
+        else notice('error', `[自动 compact 失败，将在下轮重试] ${e?.message ?? e}`)
+      }
     }
     busy = false
     turnStartAt = null
@@ -629,26 +653,43 @@ export function createChatCore(opts: {
         model = arg
         const isDeepSeek = arg.startsWith('deepseek')
         const suffix = isDeepSeek ? '' : '（非 deepseek 系列计价按 0 估算）'
-        session.appendMeta({ cwd, model, thinking, permMode })
+        session.appendMeta({ cwd, model, thinking, effortLevel, permMode })
         notice('info', `已切换到 ${model}${suffix}`)
       } else {
         // /model 无参：flash↔pro 轮换（从自定义模型返回时，落到 flash）
         model = model === 'deepseek-v4-flash' ? 'deepseek-v4-pro' : 'deepseek-v4-flash'
-        session.appendMeta({ cwd, model, thinking, permMode })
+        session.appendMeta({ cwd, model, thinking, effortLevel, permMode })
         notice('info', `已切换到 ${model}`)
       }
       return
     }
     if (line === '/think') {
       thinking = !thinking
-      session.appendMeta({ cwd, model, thinking, permMode })
+      session.appendMeta({ cwd, model, thinking, effortLevel, permMode })
       notice('info', `thinking 模式：${thinking ? '开' : '关'}`)
+      return
+    }
+    if (line.startsWith('/effort')) {
+      const arg = line.slice('/effort'.length).trim().toLowerCase()
+      if (arg === 'off') {
+        thinking = false
+        session.appendMeta({ cwd, model, thinking, effortLevel, permMode })
+        notice('info', 'thinking 模式：关')
+      } else if (arg === 'low' || arg === 'medium' || arg === 'high') {
+        effortLevel = arg
+        thinking = true
+        session.appendMeta({ cwd, model, thinking, effortLevel, permMode })
+        notice('info', `思考档位：${arg}（thinking 开）`)
+      } else {
+        notice('info', `当前思考档位：${thinking ? effortLevel : 'off'}。用法：/effort low|medium|high|off`)
+      }
+      setState()
       return
     }
     if (line === '/accept') {
       if (opts.yolo) { notice('info', '当前是 yolo 模式，所有操作均已放行'); return }
       permMode = permMode === 'acceptEdits' ? 'default' : 'acceptEdits'
-      session.appendMeta({ cwd, model, thinking, permMode })
+      session.appendMeta({ cwd, model, thinking, effortLevel, permMode })
       notice('info', `acceptEdits 模式：${permMode === 'acceptEdits' ? '开（Edit/Write 免确认，Bash 仍需确认）' : '关'}`)
       return
     }
@@ -662,7 +703,7 @@ export function createChatCore(opts: {
     if (line === '/compact') {
       busy = true
       setState()
-      try { await doCompact('manual') } catch (e: any) { notice('error', `[compact 失败] ${e?.message ?? e}`) }
+      try { await doCompact('manual'); consecutiveCompactFailures = 0 } catch (e: any) { notice('error', `[compact 失败] ${e?.message ?? e}`) }
       busy = false
       setState()
       return
@@ -673,8 +714,10 @@ export function createChatCore(opts: {
       ctx.fileState.clear()
       compacted = false
       lastPromptTokens = 0
+      compactWarned = false
+      consecutiveCompactFailures = 0
       pendingSessionContext = null
-      session = newSession({ cwd, model, thinking, permMode }, sessionDir)
+      session = newSession({ cwd, model, thinking, effortLevel, permMode }, sessionDir)
       session.appendMessage(messages[0])
       checkpointer = createCheckpointer(checkpointStoreFor(session.file))
       taskList.bind(sessionIdFromFile(session.file))
