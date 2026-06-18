@@ -6,6 +6,8 @@ import { Box, Text } from 'ink'
 import { T } from './theme.js'
 import { renderMarkdown } from './markdown.js'
 import { ToolLine } from './components/ToolLine.js'
+import { withBullet } from './withBullet.js'
+import { StreamingMarkdown } from './streamingMarkdown.js'
 import type { TranscriptItem } from './useChat.js'
 
 /** 判断是否为"已完成"项（进入 Static 区）。*/
@@ -14,21 +16,6 @@ export function isDone(item: TranscriptItem): boolean {
   if (item.kind === 'tool') return !item.running
   // user / usage / notice / bang 一旦出现即为完成态
   return true
-}
-
-/** CC 风格 ⏺ 项目符号：首行带 accent 圆点，续行回到 col 0 不缩进（对照 CC 真实样式：圆点悬出、正文整体左对齐）。 */
-function withBullet(content: string): React.ReactNode {
-  const lines = content.split('\n')
-  return (
-    <Box flexDirection="column">
-      {lines.map((line, i) => (
-        <Text key={i}>
-          {i === 0 ? <Text color={T.accent}>{'⏺ '}</Text> : ''}
-          {line}
-        </Text>
-      ))}
-    </Box>
-  )
 }
 
 export function renderItem(item: TranscriptItem, index: number): React.ReactNode {
@@ -46,8 +33,8 @@ export function renderItem(item: TranscriptItem, index: number): React.ReactNode
         // 完成：markdown 渲染（ANSI 着色串），⏺ 项目符号 + 悬挂缩进
         return <Box key={index}>{withBullet(renderMarkdown(item.text))}</Box>
       }
-      // 进行中：原文（不跑 markdown，内容还不完整），同样带 ⏺ 项目符号
-      return <Box key={index}>{withBullet(item.text)}</Box>
+      // 进行中：流式增量 markdown 渲染（稳定前缀缓存 + 末尾重算）
+      return <Box key={index}><StreamingMarkdown text={item.text} /></Box>
 
     case 'reasoning':
       if (item.done) {
@@ -91,7 +78,7 @@ export function renderItem(item: TranscriptItem, index: number): React.ReactNode
       // CC 式精简：轮末只用一行极简 dim 显示本轮输出 token + 累计花费（详细入/缓存/累计在底部 footer）
       return (
         <Box key={index}>
-          <Text dimColor>{item.out} tokens · ${item.cost.toFixed(4)}</Text>
+          <Text dimColor>{item.out} tokens · ¥{item.cost.toFixed(4)}</Text>
         </Box>
       )
 

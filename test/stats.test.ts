@@ -115,7 +115,7 @@ describe('formatStats', () => {
     expect(out).toContain('800')
     expect(out).toContain('250')
     expect(out).toContain('80')      // 命中率百分比
-    expect(out).toContain('$0.001234')
+    expect(out).toContain('¥0.001234')
   })
 
   it('无工具调用：显示 0', () => {

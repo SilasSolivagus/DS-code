@@ -31,7 +31,7 @@ vi.mock('../src/config.js', async (orig) => {
     loadSettings: vi.fn(() => ({
       permissions: { allow: [] },
       compactTokens: 200_000,
-      costWarnUSD: 2,
+      costWarnCNY: 15,
       mcpServers: fakeMcpServers,
     })),
   }

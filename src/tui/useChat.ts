@@ -26,7 +26,7 @@ import { makeHookRuntime } from '../hookRuntime.js'
 import { isDangerous, type Decision, type PermissionMode } from '../permissions.js'
 import type { ToolContext } from '../tools/types.js'
 import { newSession, openSession, listSessions, loadSession, sessionIdFromFile, type SessionHandle, type UsageRecord } from '../session.js'
-import { costUSD, cacheSavingsUSD } from '../pricing.js'
+import { costCNY, cacheSavingsCNY } from '../pricing.js'
 import { summarize, rebuildMessages, shouldAutoCompact } from '../compact.js'
 import { TaskListStore } from '../taskList.js'
 import { loadCustomCommands, expandCommand, INIT_PROMPT, formatContext } from '../commands.js'
@@ -163,7 +163,7 @@ export interface ChatState {
   turnOutTokens: number      // 当前轮累计输出 token（spinner 实时显示；流式估算，turn 边界用真实值校准）
   sessionCost(): number
   cacheHitRate(): number // usageLog 累计 hit/prompt，DeepSeek 状态行核心指标
-  cacheSavings(): number // usageLog 累计缓存省下金额（USD），DeepSeek 状态行
+  cacheSavings(): number // usageLog 累计缓存省下金额（CNY），DeepSeek 状态行
   contextPct(): number // 上下文占比：lastPromptTokens / compactTokens（0-100），用于状态栏上下文条
 }
 
@@ -253,13 +253,13 @@ export function createChatCore(opts: {
   let turnOutTokens = 0
 
   const sessionCost = () =>
-    usageLog.reduce((s, u) => s + costUSD(u.model, u.usage.prompt_tokens, u.usage.prompt_cache_hit_tokens, u.usage.completion_tokens), 0)
+    usageLog.reduce((s, u) => s + costCNY(u.model, u.usage.prompt_tokens, u.usage.prompt_cache_hit_tokens, u.usage.completion_tokens), 0)
   const cacheHitRate = () => {
     const prompt = usageLog.reduce((s, u) => s + u.usage.prompt_tokens, 0)
     return prompt ? usageLog.reduce((s, u) => s + u.usage.prompt_cache_hit_tokens, 0) / prompt : 0
   }
   const cacheSavings = () =>
-    usageLog.reduce((s, u) => s + cacheSavingsUSD(u.model, u.usage.prompt_cache_hit_tokens), 0)
+    usageLog.reduce((s, u) => s + cacheSavingsCNY(u.model, u.usage.prompt_cache_hit_tokens), 0)
   const contextPct = () =>
     settings.compactTokens ? Math.min(100, Math.round((lastPromptTokens / settings.compactTokens) * 100)) : 0
 
@@ -567,9 +567,9 @@ export function createChatCore(opts: {
           const totIn = usageLog.reduce((s, u) => s + u.usage.prompt_tokens, 0)
           const totOut = usageLog.reduce((s, u) => s + u.usage.completion_tokens, 0)
           dispatch({ type: 'turn_end', usage: ev.usage, totals: { in: totIn, out: totOut, cost: sessionCost() } })
-          if (!costWarned && sessionCost() > settings.costWarnUSD) {
+          if (!costWarned && sessionCost() > settings.costWarnCNY) {
             costWarned = true
-            notice('warn', `[花费提醒] 本会话已超 $${settings.costWarnUSD}（/cost 查看明细，阈值在 settings.json 的 costWarnUSD）`)
+            notice('warn', `[花费提醒] 本会话已超 ¥${settings.costWarnCNY}（/cost 查看明细，阈值在 settings.json 的 costWarnCNY）`)
           }
           const ctxPct = settings.compactTokens ? (lastPromptTokens / settings.compactTokens) * 100 : 0
           if (!compactWarned && ctxPct >= 90) {
@@ -697,7 +697,7 @@ export function createChatCore(opts: {
       const inTok = usageLog.reduce((s, u) => s + u.usage.prompt_tokens, 0)
       const hitTok = usageLog.reduce((s, u) => s + u.usage.prompt_cache_hit_tokens, 0)
       const outTok = usageLog.reduce((s, u) => s + u.usage.completion_tokens, 0)
-      notice('info', `本会话：输入 ${inTok}（缓存命中 ${hitTok}）出 ${outTok} | 估算花费 $${sessionCost().toFixed(6)}`)
+      notice('info', `本会话：输入 ${inTok}（缓存命中 ${hitTok}）出 ${outTok} | 估算花费 ¥${sessionCost().toFixed(6)}`)
       return
     }
     if (line === '/compact') {

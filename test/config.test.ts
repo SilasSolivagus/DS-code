@@ -34,8 +34,8 @@ describe('settings 默认值（hermetic：homedir 已 mock 到临时目录）', 
     expect(fs.existsSync(settingsFile)).toBe(false)
     const s = loadSettings()
     expect(s.compactTokens).toBe(200_000)
-    expect(s.costWarnUSD).toBe(2)
-    expect(s.costWarnUSD).toBeGreaterThan(0)
+    expect(s.costWarnCNY).toBe(15)
+    expect(s.costWarnCNY).toBeGreaterThan(0)
     expect(s.permissions.allow).toEqual([])
   })
 })
@@ -45,14 +45,14 @@ describe('settings 读写 round-trip', () => {
     saveSettings({
       permissions: { allow: ['Bash(ls)'] },
       compactTokens: 50_000,
-      costWarnUSD: 5,
+      costWarnCNY: 5,
       maxToolResultChars: 100_000,
     })
     expect(fs.existsSync(settingsFile)).toBe(true) // mock 确实生效
     const s = loadSettings()
     expect(s.permissions.allow).toEqual(['Bash(ls)'])
     expect(s.compactTokens).toBe(50_000)
-    expect(s.costWarnUSD).toBe(5)
+    expect(s.costWarnCNY).toBe(5)
     expect(s.maxToolResultChars).toBe(100_000)
   })
 
@@ -60,7 +60,7 @@ describe('settings 读写 round-trip', () => {
     fs.writeFileSync(settingsFile, JSON.stringify({ compactTokens: 123 }))
     const s = loadSettings()
     expect(s.compactTokens).toBe(123)
-    expect(s.costWarnUSD).toBe(2) // 缺省字段回落默认
+    expect(s.costWarnCNY).toBe(15) // 缺省字段回落默认
     expect(s.permissions.allow).toEqual([])
   })
 
@@ -70,6 +70,18 @@ describe('settings 读写 round-trip', () => {
     expect('baseURL' in s).toBe(true)
     expect(s.model).toBeUndefined()
     expect(s.baseURL).toBeUndefined()
+  })
+
+  it('向后兼容：旧键 costWarnUSD 仍被 loadSettings 读取（fallback 到 costWarnCNY）', () => {
+    fs.writeFileSync(settingsFile, JSON.stringify({ costWarnUSD: 8 }))
+    const s = loadSettings()
+    expect(s.costWarnCNY).toBe(8)
+  })
+
+  it('新键 costWarnCNY 优先于旧键 costWarnUSD', () => {
+    fs.writeFileSync(settingsFile, JSON.stringify({ costWarnCNY: 20, costWarnUSD: 8 }))
+    const s = loadSettings()
+    expect(s.costWarnCNY).toBe(20)
   })
 })
 
@@ -112,7 +124,7 @@ describe('saveApiKey Setup hook', () => {
   beforeEach(() => { hookCalls.length = 0 })
 
   it('已配置 hooks 时写 key → Setup(trigger=init) 触发', async () => {
-    saveSettings({ permissions: { allow: [] }, compactTokens: 200000, costWarnUSD: 2, hooks: { Setup: [{ hooks: [{ type: 'command', command: 'true' }] }] } } as any)
+    saveSettings({ permissions: { allow: [] }, compactTokens: 200000, costWarnCNY: 2, hooks: { Setup: [{ hooks: [{ type: 'command', command: 'true' }] }] } } as any)
     saveApiKey('sk-test')
     await new Promise(r => setImmediate(r))
     const setup = hookCalls.find(c => c.event === 'Setup')
@@ -121,14 +133,14 @@ describe('saveApiKey Setup hook', () => {
   })
 
   it('未配置 hooks 时写 key → 不触发 Setup', async () => {
-    saveSettings({ permissions: { allow: [] }, compactTokens: 200000, costWarnUSD: 2 } as any)
+    saveSettings({ permissions: { allow: [] }, compactTokens: 200000, costWarnCNY: 2 } as any)
     saveApiKey('sk-test2')
     await new Promise(r => setImmediate(r))
     expect(hookCalls.find(c => c.event === 'Setup')).toBeFalsy()
   })
 
   it('已有落盘 key 再改 → Setup(trigger=maintenance)', async () => {
-    saveSettings({ permissions: { allow: [] }, compactTokens: 200000, costWarnUSD: 2, apiKey: 'sk-old', hooks: { Setup: [{ hooks: [{ type: 'command', command: 'true' }] }] } } as any)
+    saveSettings({ permissions: { allow: [] }, compactTokens: 200000, costWarnCNY: 2, apiKey: 'sk-old', hooks: { Setup: [{ hooks: [{ type: 'command', command: 'true' }] }] } } as any)
     hookCalls.length = 0
     saveApiKey('sk-changed')
     await new Promise(r => setTimeout(r, 0))
