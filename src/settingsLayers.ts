@@ -34,3 +34,64 @@ export function isGitTracked(filePath: string, cwd: string): boolean {
     return false
   }
 }
+
+export interface ScopePartial { scope: SettingScope; partial: Record<string, unknown> }
+
+const DEFAULT_SETTINGS: Record<string, unknown> = {
+  permissions: { allow: [] as string[] },
+  compactTokens: 200_000,
+  costWarnCNY: 15,
+  maxToolResultChars: 100_000,
+}
+
+function uniq<T>(arr: T[]): T[] { return [...new Set(arr)] }
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === 'object' && !Array.isArray(v)
+}
+
+/** 深合并 src 进 target（就地）：数组 concat+去重、对象递归、标量覆盖。 */
+function deepMergeInto(target: Record<string, unknown>, src: Record<string, unknown>): void {
+  for (const [k, v] of Object.entries(src)) {
+    if (v === undefined) continue
+    const cur = target[k]
+    if (Array.isArray(cur) && Array.isArray(v)) target[k] = uniq([...cur, ...v])
+    else if (isPlainObject(cur) && isPlainObject(v)) { const c = { ...cur }; deepMergeInto(c, v); target[k] = c }
+    else target[k] = Array.isArray(v) ? [...v] : isPlainObject(v) ? { ...v } : v
+  }
+}
+
+export function mergeScopePartials(layers: ScopePartial[]): {
+  settings: any
+  provenance: Record<string, SettingScope | 'merged'>
+} {
+  const settings: Record<string, unknown> = structuredClone(DEFAULT_SETTINGS)
+  const contributors: Record<string, Set<SettingScope>> = {}
+  const isArrayOrObject: Record<string, boolean> = {}
+
+  for (const { scope, partial } of layers) {
+    for (const k of Object.keys(partial)) {
+      if (partial[k] === undefined) continue
+      const v = partial[k]
+      ;(contributors[k] ??= new Set()).add(scope)
+      isArrayOrObject[k] = Array.isArray(v) || isPlainObject(v)
+    }
+    deepMergeInto(settings, partial)
+  }
+
+  const provenance: Record<string, SettingScope | 'merged'> = {}
+  for (const [k, set] of Object.entries(contributors)) {
+    // 对于数组/对象：多 scope 贡献则 merged；对于标量：最后一个 scope 覆盖
+    if (isArrayOrObject[k] && set.size > 1) {
+      provenance[k] = 'merged'
+    } else {
+      // 找最后一个设置该 key 的 scope
+      for (let i = layers.length - 1; i >= 0; i--) {
+        if (layers[i].partial[k] !== undefined) {
+          provenance[k] = layers[i].scope
+          break
+        }
+      }
+    }
+  }
+  return { settings, provenance }
+}

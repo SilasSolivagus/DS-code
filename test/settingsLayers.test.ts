@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { stripUntrustedScope, isGitTracked } from '../src/settingsLayers.js'
+import { stripUntrustedScope, isGitTracked, mergeScopePartials } from '../src/settingsLayers.js'
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -66,5 +66,32 @@ describe('isGitTracked', () => {
       expect(isGitTracked(tracked, dir)).toBe(true)
       expect(isGitTracked(untracked, dir)).toBe(false)
     } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+})
+
+describe('mergeScopePartials', () => {
+  it('标量高优先级胜 + provenance', () => {
+    const { settings, provenance } = mergeScopePartials([
+      { scope: 'user', partial: { model: 'flash', compactTokens: 100 } },
+      { scope: 'project', partial: { model: 'pro' } },
+    ])
+    expect(settings.model).toBe('pro')
+    expect(provenance.model).toBe('project')
+    expect(provenance.compactTokens).toBe('user')
+  })
+  it('数组 concat 去重 + provenance=merged', () => {
+    const { settings, provenance } = mergeScopePartials([
+      { scope: 'user', partial: { permissions: { allow: ['A'], deny: ['D1'] } } },
+      { scope: 'project', partial: { permissions: { deny: ['D1', 'D2'] } } },
+    ])
+    expect(settings.permissions.allow).toEqual(['A'])
+    expect(settings.permissions.deny).toEqual(['D1', 'D2'])
+    expect(provenance.permissions).toBe('merged')
+  })
+  it('缺省值兜底（无 scope 设 compactTokens）', () => {
+    const { settings } = mergeScopePartials([{ scope: 'user', partial: { model: 'x' } }])
+    expect(settings.compactTokens).toBe(200000)
+    expect(settings.maxToolResultChars).toBe(100000)
+    expect(settings.permissions.allow).toEqual([])
   })
 })
