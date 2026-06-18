@@ -33,8 +33,11 @@ vi.mock('../src/config.js', async orig => {
   const actual = await orig() as any
   return {
     ...actual,
-    loadSettings: () => ({ ...actual.loadSettings(), hooks: { UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'true' }] }] } }),
-    saveSettings: vi.fn(),
+    loadSettings: () => ({ ...actual.loadSettings(), permissions: { allow: [] }, hooks: { UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'true' }] }] } }),
+    addUserAllowRule: vi.fn(() => []),
+    removeUserAllowRule: vi.fn(() => undefined),
+    listUserAllowRules: vi.fn(() => []),
+    saveRawUserSettings: vi.fn(),
   }
 })
 
