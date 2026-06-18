@@ -5,11 +5,11 @@ import path from 'node:path'
 import type OpenAI from 'openai'
 import { runLoop } from './loop.js'
 import { allTools } from './tools/index.js'
-import { todoWriteTool } from './tools/todowrite.js'
 import { makeAgentTool } from './tools/agent.js'
 import { resolveAgents } from './agentsLoader.js'
 import { makeWebFetchTool } from './tools/webfetch.js'
-import { taskListTool, taskOutputTool, taskStopTool } from './tools/taskTools.js'
+import { bgTaskListTool, taskOutputTool, taskStopTool } from './tools/taskTools.js'
+import { taskCreateTool, taskGetTool, taskUpdateTool, taskListTool } from './tools/taskListTools.js'
 import { installTaskCleanup } from './tasks.js'
 import { buildSystemPrompt, findMemoryFiles } from './prompt.js'
 import { loadSettings } from './config.js'
@@ -18,7 +18,7 @@ import { makeHookRuntime } from './hookRuntime.js'
 import { initMcpTools } from './mcp.js'
 import { loadSkills } from './skillsLoader.js'
 import { makeSkillTool } from './tools/skill.js'
-import { TodoStore } from './todo.js'
+import { TaskListStore } from './taskList.js'
 import { costUSD } from './pricing.js'
 import type { ToolContext } from './tools/types.js'
 import type { Usage } from './api.js'
@@ -40,14 +40,15 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
   const agents = resolveAgents(cwd)
   const skills = loadSkills(cwd, undefined, settings.skills)
   const injectionBuffer: string[] = []
-  const todos = new TodoStore()
+  const taskList = new TaskListStore()
   const sessionId = 'headless-' + crypto.randomBytes(4).toString('hex')
+  taskList.bind(sessionId)
   const ctx: ToolContext = {
     cwd: () => cwd,
     setCwd: d => { cwd = d },
     signal: new AbortController().signal,
     fileState: new Map(),
-    todos,
+    taskList,
     hookDispatch: (event, payload) => runHooks(event, payload, settings.hooks), // overwritten below after hookDeps is built
     sessionId: () => sessionId,
     injectUserMessage: (c: string) => injectionBuffer.push(c),
@@ -97,7 +98,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
   })
   const gen = runLoop(messages, {
     client: opts.client,
-    tools: [...allTools, todoWriteTool, makeAgentTool({ client: opts.client, onUsage: (u, _model) => addUsage(u), getModel: () => model, agents }), makeWebFetchTool({ client: opts.client, onUsage: (u, _model) => addUsage(u) }), taskListTool, taskOutputTool, taskStopTool, ...mcpTools, makeSkillTool(skills, { client: opts.client, onUsage: (u, _m) => addUsage(u), getModel: () => model, agents, skillPool: [...allTools, makeWebFetchTool({ client: opts.client, onUsage: (u, _m) => addUsage(u) })], listingBudgetChars: settings.skills?.listingBudgetChars })],
+    tools: [...allTools, taskCreateTool, taskGetTool, taskUpdateTool, taskListTool, makeAgentTool({ client: opts.client, onUsage: (u, _model) => addUsage(u), getModel: () => model, agents }), makeWebFetchTool({ client: opts.client, onUsage: (u, _model) => addUsage(u) }), bgTaskListTool, taskOutputTool, taskStopTool, ...mcpTools, makeSkillTool(skills, { client: opts.client, onUsage: (u, _m) => addUsage(u), getModel: () => model, agents, skillPool: [...allTools, makeWebFetchTool({ client: opts.client, onUsage: (u, _m) => addUsage(u) })], listingBudgetChars: settings.skills?.listingBudgetChars })],
     model,
     thinking: false,
     ctx,
@@ -108,8 +109,8 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
       ask: async () => 'no', // 无人值守：默认拒绝，拒绝理由按正常机制喂回模型
     },
     reminders: () => {
-      todos.tick()
-      const note = todos.staleReminder()
+      taskList.tick()
+      const note = taskList.staleReminder()
       return note ? [note] : []
     },
     drainInjections: () => injectionBuffer.splice(0),

@@ -23,10 +23,11 @@ describe('formatToolArg', () => {
     expect(formatToolArg('Agent', JSON.stringify({ description: '搜索代码' }))).toBe('搜索代码')
   })
 
-  it('TodoWrite → N 项', () => {
-    expect(formatToolArg('TodoWrite', JSON.stringify({ todos: [1, 2, 3, 4, 5] }))).toBe('5 项')
-    expect(formatToolArg('TodoWrite', JSON.stringify({ todos: [] }))).toBe('0 项')
-    expect(formatToolArg('TodoWrite', JSON.stringify({}))).toBe('0 项')
+  it('TaskCreate 显示 subject', () => {
+    expect(formatToolArg('TaskCreate', JSON.stringify({ subject: '修登录 bug', description: 'd' }))).toBe('修登录 bug')
+  })
+  it('TaskUpdate 显示 #id → status', () => {
+    expect(formatToolArg('TaskUpdate', JSON.stringify({ taskId: '3', status: 'completed' }))).toBe('#3 → completed')
   })
 
   it('未知工具 → 第一个字符串字段', () => {

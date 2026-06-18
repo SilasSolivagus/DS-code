@@ -11,11 +11,11 @@ import { execSync } from 'node:child_process'
 import type OpenAI from 'openai'
 import { runLoop, type LoopDeps, type LoopEvent } from '../loop.js'
 import { allTools } from '../tools/index.js'
-import { todoWriteTool } from '../tools/todowrite.js'
 import { makeAgentTool } from '../tools/agent.js'
 import { makeWebFetchTool } from '../tools/webfetch.js'
 import { makeAskUserQuestionTool, type Question, type Answer } from '../tools/askUserQuestion.js'
-import { taskListTool, taskOutputTool, taskStopTool } from '../tools/taskTools.js'
+import { bgTaskListTool, taskOutputTool, taskStopTool } from '../tools/taskTools.js'
+import { taskCreateTool, taskGetTool, taskUpdateTool, taskListTool } from '../tools/taskListTools.js'
 import { onNotification, drainNotifications, formatNotification } from '../tasks.js'
 import { buildSystemPrompt, findMemoryFiles } from '../prompt.js'
 import { formatMemory } from '../memory.js'
@@ -27,7 +27,7 @@ import type { ToolContext } from '../tools/types.js'
 import { newSession, openSession, listSessions, loadSession, sessionIdFromFile, type SessionHandle, type UsageRecord } from '../session.js'
 import { costUSD } from '../pricing.js'
 import { summarize, rebuildMessages } from '../compact.js'
-import { TodoStore } from '../todo.js'
+import { TaskListStore } from '../taskList.js'
 import { loadCustomCommands, expandCommand, INIT_PROMPT, formatContext } from '../commands.js'
 import { resolveAgents } from '../agentsLoader.js'
 import { exportTranscript } from '../export.js'
@@ -198,7 +198,7 @@ export function createChatCore(opts: {
   let model = settings.model ?? 'deepseek-v4-flash'
   let thinking = false
   let permMode: PermissionMode = opts.yolo ? 'yolo' : 'default'
-  const todos = new TodoStore()
+  const taskList = new TaskListStore()
   let nextTurnId = 1
   let currentTurnId = 0
   const turnOf = new WeakMap<object, number>()  // user 消息对象 → turnId（跨 compact 存活：rebuildMessages 用 slice 保留引用）
@@ -211,7 +211,7 @@ export function createChatCore(opts: {
     setCwd: d => { cwd = d },
     get signal() { return abort.signal },
     fileState: new Map(),
-    todos,
+    taskList,
     recordBeforeImage: (absPath: string) => { if (currentTurnId > 0) checkpointer.capture(absPath, currentTurnId) },
     hookDispatch: (event, payload) => runHooks(event, payload, settings.hooks, hookDeps),
     sessionId: () => (session ? sessionIdFromFile(session.file) : undefined),
@@ -289,7 +289,7 @@ export function createChatCore(opts: {
     usageLog.push(...loaded.usages)
     session = openSession(file)
     // 恢复后重置会话内状态，防止旧 todo/compact 标记/token 计数泄漏到新对话
-    todos.reset(); compacted = false; lastPromptTokens = 0
+    taskList.bind(sessionIdFromFile(session.file)); compacted = false; lastPromptTokens = 0
     // doCompact 崩溃在 appendCompact 与首条 re-append 之间的兜底
     if (messages.length === 0 || messages[0]?.role !== 'system') {
       messages.unshift({ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars) })
@@ -343,6 +343,7 @@ export function createChatCore(opts: {
     session = newSession({ cwd, model, thinking, permMode }, sessionDir)
     session.appendMessage(messages[0]) // 持久化 system 消息
     checkpointer = createCheckpointer(checkpointStoreFor(session.file))
+    taskList.bind(sessionIdFromFile(session.file))
     fireSessionStart('startup')
   }
 
@@ -367,7 +368,10 @@ export function createChatCore(opts: {
 
   const tools = [
     ...allTools,
-    todoWriteTool,
+    taskCreateTool,
+    taskGetTool,
+    taskUpdateTool,
+    taskListTool,
     makeAgentTool({
       client: opts.client,
       onUsage: (u, m) => { usageLog.push({ usage: u, model: m }); session.appendUsage(u, m) },
@@ -386,7 +390,7 @@ export function createChatCore(opts: {
       skillPool: [...allTools, makeWebFetchTool({ client: opts.client, onUsage: (u, m) => { usageLog.push({ usage: u, model: m }); session.appendUsage(u, m) } })],
       listingBudgetChars: settings.skills?.listingBudgetChars,
     }),
-    taskListTool,
+    bgTaskListTool,
     taskOutputTool,
     taskStopTool,
   ]
@@ -509,8 +513,8 @@ export function createChatCore(opts: {
           ask,
         },
         reminders: () => {
-          todos.tick()
-          const note = todos.staleReminder()
+          taskList.tick()
+          const note = taskList.staleReminder()
           return note ? [note] : []
         },
         injectTaskNotifications: true, // 主会话：runLoop 终止点 drain 后台完成通知续跑
@@ -662,13 +666,13 @@ export function createChatCore(opts: {
       fireSessionEnd('clear') // 旧会话结束，先于新会话 SessionStart
       messages.length = 1 // 保留 system
       ctx.fileState.clear()
-      todos.reset()
       compacted = false
       lastPromptTokens = 0
       pendingSessionContext = null
       session = newSession({ cwd, model, thinking, permMode }, sessionDir)
       session.appendMessage(messages[0])
       checkpointer = createCheckpointer(checkpointStoreFor(session.file))
+      taskList.bind(sessionIdFromFile(session.file))
       nextTurnId = 1; currentTurnId = 0
       dispatch({ type: 'clear' })
       notice('info', '对话已清空，已开新会话文件（本会话花费累计保留）')

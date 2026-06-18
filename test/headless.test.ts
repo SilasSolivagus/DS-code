@@ -86,7 +86,7 @@ describe('runHeadless', () => {
   })
 
   it('todo 过期时在工具消息中注入 system-reminder', async () => {
-    // Turn 1: TodoWrite 设置清单（in_progress 条目），lastUpdateTurn=0，tick→currentTurn=1，delta=1
+    // Turn 1: TaskCreate 建任务（pending 条目），lastUpdateTurn=0，tick→currentTurn=1，delta=1
     // Turn 2: Glob，tick→currentTurn=2，delta=2，无提醒
     // Turn 3: Glob，tick→currentTurn=3，delta=3，提醒触发
     // Turn 4: Glob，tick→currentTurn=4，delta=4（4%3≠0），无提醒
@@ -95,7 +95,7 @@ describe('runHeadless', () => {
       {
         result: {
           content: '',
-          toolCalls: [{ id: 'tw1', name: 'TodoWrite', args: JSON.stringify({ todos: [{ content: '修 bug', status: 'in_progress' }] }) }],
+          toolCalls: [{ id: 'tc1', name: 'TaskCreate', args: JSON.stringify({ subject: '修 bug', description: '修复登录问题' }) }],
           usage, finishReason: 'tool_calls',
         },
       },

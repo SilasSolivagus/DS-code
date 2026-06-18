@@ -35,8 +35,11 @@ export function formatToolArg(name: string, desc: string): string {
     case 'Agent':
       raw = String(args.description ?? '')
       break
-    case 'TodoWrite':
-      raw = `${(args.todos as unknown[] | undefined)?.length ?? 0} 项`
+    case 'TaskCreate':
+      raw = String(args.subject ?? '')
+      break
+    case 'TaskUpdate':
+      raw = `#${String(args.taskId ?? '')}${args.status ? ` → ${args.status}` : ''}`
       break
     default: {
       // 未知工具：取第一个字符串值字段
