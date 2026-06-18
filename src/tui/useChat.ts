@@ -715,6 +715,7 @@ export function createChatCore(opts: {
       compacted = false
       lastPromptTokens = 0
       compactWarned = false
+      consecutiveCompactFailures = 0
       pendingSessionContext = null
       session = newSession({ cwd, model, thinking, effortLevel, permMode }, sessionDir)
       session.appendMessage(messages[0])
