@@ -97,3 +97,13 @@ describe('buildSystemPrompt skill 清单预算', () => {
     expect(p).not.toContain('# 可用技能（Skills）')
   })
 })
+
+describe('buildSystemPrompt 前缀稳定性（缓存守卫）', () => {
+  it('同输入连调两次产物字节相同——会话内系统前缀必须静态', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'dc-pfx-'))
+    const home = mkdtempSync(path.join(tmpdir(), 'dc-pfx-home-'))
+    const a = buildSystemPrompt(root, home)
+    const b = buildSystemPrompt(root, home)
+    expect(a).toBe(b)
+  })
+})

@@ -637,3 +637,31 @@ describe('runLoop + StopFailure hook', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 })
+
+describe('runLoop 前缀稳定性（缓存守卫）', () => {
+  it('reminder 注入不修改已存在的前缀消息（缓存守卫）', async () => {
+    script.push(
+      {
+        result: {
+          content: '', toolCalls: [{ id: 'g1', name: 'Glob', args: '{"pattern":"*"}' }],
+          usage, finishReason: 'tool_calls',
+        },
+      },
+      { result: { content: 'ok', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    const { globTool } = await import('../src/tools/glob.js')
+    const deps = makeDeps([globTool])
+    deps.reminders = () => ['前缀守卫提醒']
+    const messages: any[] = [
+      { role: 'system', content: 'SYS-PREFIX' },
+      { role: 'user', content: 'hi' },
+    ]
+    await drain(runLoop(messages, deps))
+    // 前缀（system / user）字节不变——reminder 不回头改前缀，DeepSeek 自动缓存才命中
+    expect(messages[0]).toEqual({ role: 'system', content: 'SYS-PREFIX' })
+    expect(messages[1]).toEqual({ role: 'user', content: 'hi' })
+    // reminder 只落在最后一条 tool 消息
+    const toolMsgs = messages.filter(m => m.role === 'tool')
+    expect(toolMsgs[toolMsgs.length - 1].content).toContain('前缀守卫提醒')
+  })
+})
