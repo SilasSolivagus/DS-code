@@ -6,6 +6,7 @@ import { Box, Text } from 'ink'
 import { T } from './theme.js'
 import { renderMarkdown } from './markdown.js'
 import { ToolLine } from './components/ToolLine.js'
+import { withBullet } from './withBullet.js'
 import type { TranscriptItem } from './useChat.js'
 
 /** 判断是否为"已完成"项（进入 Static 区）。*/
@@ -14,21 +15,6 @@ export function isDone(item: TranscriptItem): boolean {
   if (item.kind === 'tool') return !item.running
   // user / usage / notice / bang 一旦出现即为完成态
   return true
-}
-
-/** CC 风格 ⏺ 项目符号：首行带 accent 圆点，续行回到 col 0 不缩进（对照 CC 真实样式：圆点悬出、正文整体左对齐）。 */
-function withBullet(content: string): React.ReactNode {
-  const lines = content.split('\n')
-  return (
-    <Box flexDirection="column">
-      {lines.map((line, i) => (
-        <Text key={i}>
-          {i === 0 ? <Text color={T.accent}>{'⏺ '}</Text> : ''}
-          {line}
-        </Text>
-      ))}
-    </Box>
-  )
 }
 
 export function renderItem(item: TranscriptItem, index: number): React.ReactNode {
