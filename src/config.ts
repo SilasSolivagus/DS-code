@@ -21,6 +21,13 @@ export interface SkillsConfig {
   listingBudgetChars?: number
 }
 
+export interface WebSearchSettings {
+  bocha?: { apiKey?: string }
+  tavily?: { apiKey?: string }
+  /** 向后兼容字段，双源并查不使用。 */
+  provider?: string
+}
+
 export interface Settings {
   permissions: { allow: string[] }
   /** 自动 compact 触发阈值（上次请求的 prompt_tokens 超过即触发） */
@@ -41,6 +48,8 @@ export interface Settings {
   mcpServers?: Record<string, McpStdioServerConfig>
   /** Skills 发现范围 + 清单预算配置（opt-in；缺省对齐 CC 全扫全可调用）。 */
   skills?: SkillsConfig
+  /** WebSearch 双源（bocha/tavily）配置；apiKey env 可覆盖（BOCHA_API_KEY/TAVILY_API_KEY）。 */
+  webSearch?: WebSearchSettings
 }
 
 const DIR = path.join(os.homedir(), '.deepcode')
@@ -78,6 +87,7 @@ export function loadSettings(): Settings {
     hooks: parseHooksConfig(raw?.hooks),
     mcpServers: parseMcpServers(raw?.mcpServers),
     skills: parseSkillsConfig(raw?.skills),
+    webSearch: parseWebSearchConfig(raw?.webSearch),
   }
 }
 
@@ -133,6 +143,22 @@ export function parseSkillsConfig(raw: unknown): SkillsConfig | undefined {
     out.listingBudgetChars = r.listingBudgetChars
   }
   return out
+}
+
+/** 宽松解析 settings.webSearch：bocha/tavily 须为含非空 string apiKey 的对象才留；provider 留作向后兼容。非对象→undefined。 */
+export function parseWebSearchConfig(raw: unknown): WebSearchSettings | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const r = raw as Record<string, unknown>
+  const out: WebSearchSettings = {}
+  const pick = (v: unknown): { apiKey: string } | undefined => {
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined
+    const k = (v as Record<string, unknown>).apiKey
+    return typeof k === 'string' && k ? { apiKey: k } : undefined
+  }
+  const b = pick(r.bocha); if (b) out.bocha = b
+  const t = pick(r.tavily); if (t) out.tavily = t
+  if (typeof r.provider === 'string') out.provider = r.provider
+  return Object.keys(out).length ? out : undefined
 }
 
 export function saveSettings(s: Settings): void {
