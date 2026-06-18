@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { matchRule, checkPermission, isDangerous, splitBashCommand, type PermissionContext, type Decision } from '../src/permissions.js'
+import { matchRule, checkPermission, isDangerous, splitBashCommand, bashCommandAllowed, type PermissionContext, type Decision } from '../src/permissions.js'
 
 const fakeTool = (name: string, isReadOnly: boolean, desc: false | string = 'x'): any => ({
   name,
@@ -213,5 +213,38 @@ describe('checkPermission + hooks', () => {
     const r = await checkPermission(writeTool, {}, { mode: 'default', rules: [], saveRule: () => {}, ask }, hooks)
     expect(r.ok).toBe(true)
     expect(ask).toHaveBeenCalled() // 锁定 fail-safe：hook 未明确裁决时回落到用户审批
+  })
+})
+
+describe('复合命令前缀绕过修复', () => {
+  it('ls && rm 不被 Bash(ls:*) 放行', () => {
+    expect(bashCommandAllowed('ls && rm -rf /', ['Bash(ls:*)'])).toBe(false)
+  })
+  it('每段都被覆盖才放行', () => {
+    expect(bashCommandAllowed('ls && cat foo', ['Bash(ls:*)', 'Bash(cat:*)'])).toBe(true)
+    expect(bashCommandAllowed('ls && cat foo', ['Bash(ls:*)'])).toBe(false)
+  })
+  it('单命令照旧匹配', () => {
+    expect(bashCommandAllowed('ls -la', ['Bash(ls:*)'])).toBe(true)
+    expect(bashCommandAllowed('lsof -i', ['Bash(ls:*)'])).toBe(false)
+  })
+  it('too-complex 不放行', () => {
+    expect(bashCommandAllowed('$(cat ~/.ssh/id_rsa)', ['Bash(cat:*)'])).toBe(false)
+  })
+  it('backstop：matchRule 对含操作符的 Bash desc 不前缀匹配', () => {
+    expect(matchRule('Bash(ls:*)', 'Bash', 'ls && rm -rf /')).toBe(false)
+  })
+})
+
+describe('always 存规则精确化', () => {
+  it('复合命令选 always 存完整精确规则而非危险前缀', async () => {
+    const saved: string[] = []
+    const r = await checkPermission(
+      fakeTool('Bash', false, 'ls && cat foo'),
+      { command: 'ls && cat foo' },
+      pc({ ask: async () => 'always', saveRule: s => saved.push(s) }),
+    )
+    expect(r.ok).toBe(true)
+    expect(saved).toEqual(['Bash(ls && cat foo)']) // 完整精确，不是 'Bash(ls &&:*)'
   })
 })

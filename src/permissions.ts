@@ -66,6 +66,19 @@ export function isDangerous(desc: string): boolean {
   return DANGEROUS_PATTERNS.some(re => re.test(desc))
 }
 
+/** 检测未被引号包裹的 shell 控制操作符。 */
+export function hasUnquotedOperator(s: string): boolean {
+  let q: '' | '"' | "'" = ''
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i]
+    if (q) { if (c === q) q = ''; continue }
+    if (c === '"' || c === "'") { q = c; continue }
+    if (c === ';' || c === '&') return true
+    if (c === '|') return true
+  }
+  return false
+}
+
 /** 规则形如 Bash(npm test:*)（前缀）或 Bash(ls)（精确） */
 export function matchRule(rule: string, toolName: string, desc: string): boolean {
   const m = rule.match(/^(\w+)\((.+)\)$/)
@@ -74,10 +87,20 @@ export function matchRule(rule: string, toolName: string, desc: string): boolean
   if (name !== toolName) return false
   const normDesc = desc.replace(/\n/g, ' ') // 规则存储侧同样做了 \n→空格 归一化
   if (pat.endsWith(':*')) {
+    // backstop：Bash 复合命令绝不走前缀匹配（对齐 CC bashPermissions.ts:884）
+    if (toolName === 'Bash' && hasUnquotedOperator(normDesc)) return false
     const prefix = pat.slice(0, -2)
     return normDesc === prefix || normDesc.startsWith(prefix + ' ')
   }
   return normDesc === pat
+}
+
+/** Bash 命令是否被规则集允许：too-complex→否；单命令→现匹配；复合→每段都需被覆盖。 */
+export function bashCommandAllowed(command: string, rules: string[]): boolean {
+  const { tooComplex, commands } = splitBashCommand(command)
+  if (tooComplex) return false
+  if (commands.length <= 1) return rules.some(r => matchRule(r, 'Bash', commands[0] ?? command))
+  return commands.every(s => rules.some(r => matchRule(r, 'Bash', s)))
 }
 
 export async function checkPermission(
@@ -91,7 +114,10 @@ export async function checkPermission(
   if (desc === false) return { ok: true }
   if (pc.mode === 'yolo') return { ok: true }
   if (pc.mode === 'acceptEdits' && (tool.name === 'Edit' || tool.name === 'Write')) return { ok: true }
-  if (pc.rules.some(r => matchRule(r, tool.name, desc))) return { ok: true }
+  const allowed = tool.name === 'Bash'
+    ? bashCommandAllowed(desc, pc.rules)
+    : pc.rules.some(r => matchRule(r, tool.name, desc))
+  if (allowed) return { ok: true }
   // PermissionRequest hook：交互 ask 前。allow→跳弹窗放行；deny/block→拒绝。
   if (hooks?.onRequest) {
     const out = await hooks.onRequest(tool.name, desc)
@@ -107,11 +133,11 @@ export async function checkPermission(
   }
   const decision = await pc.ask(tool.name, desc)
   if (decision === 'always') {
-    // Bash 取第一行的前两个词做前缀规则（如 "npm test:*"）；其他工具按完整描述精确匹配
     const firstLine = desc.split('\n')[0]
+    const compound = tool.name === 'Bash' && splitBashCommand(desc).commands.length > 1
     const pat = tool.name === 'Bash'
-      ? isDangerous(desc)
-        ? desc.replace(/\n/g, ' ') // 高危：完整命令精确放行（含归一化的多行）
+      ? (isDangerous(desc) || compound)
+        ? desc.replace(/\n/g, ' ')                      // 危险/复合：完整精确
         : firstLine.split(' ').slice(0, 2).join(' ') + ':*'
       : desc.replace(/\n/g, ' ')
     pc.saveRule(`${tool.name}(${pat})`)
