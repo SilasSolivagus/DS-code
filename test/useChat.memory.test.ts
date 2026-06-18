@@ -2,7 +2,7 @@
 // Task 11：验证 useChat 每轮末 fire-and-forget 触发记忆提取
 // I-2：memory.enabled=false 端到端零副作用验证
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, rmSync, readFileSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -116,9 +116,9 @@ describe('useChat memory.enabled=false 端到端零副作用', () => {
     // 若 memory.enabled=false，memdirFor 不被调用 → buildSystemPrompt 无 memdir → 无 ## 记忆索引
     // 用 vi.spyOn 捕获 buildSystemPrompt 或直接在 session 文件查 system message
     // 最简单：通过 session 文件的第一行（appendMessage(messages[0])）读取
-    const sessionFiles = require('node:fs').readdirSync(sessionDir).filter((f: string) => f.endsWith('.jsonl'))
+    const sessionFiles = readdirSync(sessionDir).filter((f: string) => f.endsWith('.jsonl'))
     expect(sessionFiles.length).toBeGreaterThan(0)
-    const sessionContent = require('node:fs').readFileSync(path.join(sessionDir, sessionFiles[0]), 'utf8')
+    const sessionContent = readFileSync(path.join(sessionDir, sessionFiles[0]), 'utf8')
     const firstLine = JSON.parse(sessionContent.split('\n')[0])
     // 第一行是 meta，第二行是 system message
     const secondLine = JSON.parse(sessionContent.split('\n').filter(Boolean)[1])

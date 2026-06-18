@@ -693,7 +693,7 @@ export function createChatCore(opts: {
     if (mem.enabled && mem.dream.enabled) {
       const now = Date.now()
       const sessionsDir = path.join(os.homedir(), '.deepcode', 'sessions')
-      const dreamProjectKey = sanitizeProjectKey(findGitRoot(cwd) ?? cwd)
+      const dreamProjectKey = sanitizeProjectKey(findGitRoot(cwd) ?? path.resolve(cwd))
       let dreamTaskId: string | undefined
       void runAutoDream({
         client: opts.client, model, memdir: memdirFor(cwd),
