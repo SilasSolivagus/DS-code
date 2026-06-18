@@ -24,6 +24,7 @@ import { loadSettings, saveSettings, SETTINGS_FILE } from '../config.js'
 import { runHooks } from '../hooks.js'
 import { makeHookRuntime } from '../hookRuntime.js'
 import { isDangerous, type Decision, type PermissionMode } from '../permissions.js'
+import { resolveDenyList } from '../deny.js'
 import type { ToolContext } from '../tools/types.js'
 import { newSession, openSession, listSessions, loadSession, sessionIdFromFile, type SessionHandle, type UsageRecord } from '../session.js'
 import { costCNY, cacheSavingsCNY } from '../pricing.js'
@@ -528,6 +529,8 @@ export function createChatCore(opts: {
         permission: {
           mode: permMode,
           rules: settings.permissions.allow,
+          deny: resolveDenyList(settings.permissions.deny),
+          cwd,
           saveRule: r => { settings.permissions.allow.push(r); saveSettings(settings); fireConfigChange() },
           ask,
         },

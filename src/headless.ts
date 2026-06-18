@@ -21,6 +21,7 @@ import { loadSkills } from './skillsLoader.js'
 import { makeSkillTool } from './tools/skill.js'
 import { TaskListStore } from './taskList.js'
 import { costCNY } from './pricing.js'
+import { resolveDenyList } from './deny.js'
 import type { ToolContext } from './tools/types.js'
 import type { Usage } from './api.js'
 
@@ -107,6 +108,8 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     permission: {
       mode: opts.yolo ? 'yolo' : 'default',
       rules: settings.permissions.allow,
+      deny: resolveDenyList(settings.permissions.deny),
+      cwd,
       saveRule: () => { /* headless 不持久化规则 */ },
       ask: async () => 'no', // 无人值守：默认拒绝，拒绝理由按正常机制喂回模型
     },

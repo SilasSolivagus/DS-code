@@ -286,3 +286,31 @@ describe('always 存规则精确化', () => {
     expect(saved).toEqual(['Bash(ls && cat foo)']) // 完整精确，不是 'Bash(ls &&:*)'
   })
 })
+
+describe('checkPermission deny', () => {
+  const denyTool = (name: string, ro: boolean, paths: string[]): any => ({
+    name, isReadOnly: ro, needsPermission: () => name === 'Bash' ? 'cat ~/.ssh/id_rsa' : 'x',
+    deniablePaths: () => paths,
+  })
+  it('Read 命中 deny 硬拒（早于 isReadOnly 放行）', async () => {
+    const r = await checkPermission(
+      denyTool('Read', true, ['/home/u/.ssh/id_rsa']),
+      {}, pc({ deny: ['**/id_rsa'] }),
+    )
+    expect(r.ok).toBe(false)
+  })
+  it('Bash 命中 deny 降级 ask（非硬拒）', async () => {
+    let asked = false
+    const r = await checkPermission(
+      denyTool('Bash', false, ['/home/u/.ssh/id_rsa']),
+      { command: 'cat ~/.ssh/id_rsa' },
+      pc({ deny: ['**/id_rsa'], mode: 'yolo', ask: async () => { asked = true; return 'no' } }),
+    )
+    expect(asked).toBe(true) // yolo 也被 deny 拦下强制问
+    expect(r.ok).toBe(false)
+  })
+  it('未命中 deny 不影响放行', async () => {
+    const r = await checkPermission(denyTool('Read', true, ['/proj/x.ts']), {}, pc({ deny: ['**/id_rsa'] }))
+    expect(r.ok).toBe(true)
+  })
+})

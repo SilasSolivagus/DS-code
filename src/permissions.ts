@@ -2,6 +2,7 @@
 import { parse, type ParseEntry } from 'shell-quote'
 import type { Tool } from './tools/types.js'
 import type { HookOutcome } from './hooks.js'
+import { isDeniedPath } from './deny.js'
 
 const SEPARATORS = new Set(['&&', '||', ';', '|', '&'])
 const REDIR = new Set(['>', '>>', '<', '>&', '<&'])
@@ -74,6 +75,8 @@ export interface PermissionContext {
   rules: string[]
   saveRule: (rule: string) => void
   ask: (toolName: string, desc: string) => Promise<Decision>
+  deny?: string[]
+  cwd?: string
 }
 
 export interface PermissionHooks {
@@ -150,15 +153,27 @@ export async function checkPermission(
   pc: PermissionContext,
   hooks?: PermissionHooks,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
-  if (tool.isReadOnly) return { ok: true }
+  // deny 最高优先级：早于 isReadOnly/yolo/acceptEdits/rules
+  let forceAsk = false
+  if (pc.deny?.length && tool.deniablePaths) {
+    for (const p of tool.deniablePaths(input as any, pc.cwd ?? process.cwd())) {
+      const hit = isDeniedPath(p, pc.deny)
+      if (!hit) continue
+      if (tool.name === 'Bash') { forceAsk = true; break } // Bash：降级 ask 防误操作
+      await hooks?.onDenied?.(tool.name, tool.needsPermission(input) || tool.name, `路径被 deny 规则拒绝（${hit}）`)
+      return { ok: false, reason: `路径被 deny 规则拒绝（${hit}）` }
+    }
+  }
+  if (tool.isReadOnly && !forceAsk) return { ok: true }
   const desc = tool.needsPermission(input)
-  if (desc === false) return { ok: true }
-  if (pc.mode === 'yolo') return { ok: true }
-  if (pc.mode === 'acceptEdits' && (tool.name === 'Edit' || tool.name === 'Write')) return { ok: true }
+  if (desc === false && !forceAsk) return { ok: true }
+  if (desc === false) return { ok: true } // forceAsk 仅对 Bash（desc 恒为 string）；其它工具 desc===false 直接放行
+  if (pc.mode === 'yolo' && !forceAsk) return { ok: true }
+  if (pc.mode === 'acceptEdits' && !forceAsk && (tool.name === 'Edit' || tool.name === 'Write')) return { ok: true }
   const allowed = tool.name === 'Bash'
     ? bashCommandAllowed(desc, pc.rules)
     : pc.rules.some(r => matchRule(r, tool.name, desc))
-  if (allowed) return { ok: true }
+  if (allowed && !forceAsk) return { ok: true }
   // PermissionRequest hook：交互 ask 前。allow→跳弹窗放行；deny/block→拒绝。
   if (hooks?.onRequest) {
     const out = await hooks.onRequest(tool.name, desc)
