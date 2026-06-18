@@ -232,12 +232,16 @@ export function createChatCore(opts: {
   const messages: any[] = [{ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars) }]
   const usageLog: UsageRecord[] = []
   let session!: SessionHandle
-  const hookDeps = makeHookRuntime({
-    client: opts.client,
-    getModel: () => model,
-    onUsage: (u, m) => { usageLog.push({ usage: u, model: m }); session.appendUsage(u, m) },
-    cwd: () => cwd,
-  })
+  const hookDeps = {
+    ...makeHookRuntime({
+      client: opts.client,
+      getModel: () => model,
+      onUsage: (u, m) => { usageLog.push({ usage: u, model: m }); session.appendUsage(u, m) },
+      cwd: () => cwd,
+    }),
+    allowedHttpHookUrls: settings.allowedHttpHookUrls,
+    httpHookAllowedEnvVars: settings.httpHookAllowedEnvVars,
+  }
   let compacted = false       // compact 后首条用户消息的一次性提醒
   let lastPromptTokens = 0    // 自动 compact 触发依据
   let costWarned = false      // $阈值提醒只发一次
