@@ -7,6 +7,7 @@ export interface SessionMeta {
   cwd: string
   model: string
   thinking: boolean
+  effortLevel?: 'low' | 'medium' | 'high'
   permMode: string
 }
 
@@ -100,6 +101,7 @@ export function loadSession(file: string): LoadedSession {
         cwd: sawMeta ? meta.cwd : (r.cwd ?? ''),
         model: r.model ?? 'deepseek-v4-flash',
         thinking: r.thinking ?? false,
+        effortLevel: r.effortLevel,
         permMode: r.permMode ?? 'default',
       }
       sawMeta = true
