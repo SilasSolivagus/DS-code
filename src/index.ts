@@ -15,7 +15,7 @@ try {
   if (pIdx !== -1) {
     const prompt = argv[pIdx + 1]
     if (!prompt || prompt.startsWith('-')) throw new Error('用法：deepcode -p "<任务>" [--json] [--yolo]')
-    const client = createClient()
+    const client = createClient(flagSettingsPath)
     const { runHeadless } = await import('./headless.js')
     const r = await runHeadless({ client, prompt, yolo, flagSettingsPath })
     if (argv.includes('--json')) {
@@ -30,7 +30,7 @@ try {
     for await (const c of process.stdin) chunks.push(c)
     const prompt = Buffer.concat(chunks).toString('utf8').trim()
     if (!prompt) throw new Error('stdin 为空。交互模式请直接运行 deepcode，或用 -p "<任务>"')
-    const client = createClient()
+    const client = createClient(flagSettingsPath)
     const { runHeadless } = await import('./headless.js')
     const r = await runHeadless({ client, prompt, yolo, flagSettingsPath })
     console.log(r.text)
@@ -41,7 +41,7 @@ try {
       const { runSetup } = await import('./tui/setup.js')
       await runSetup()
     }
-    const client = createClient()
+    const client = createClient(flagSettingsPath)
     const { startTui } = await import('./tui/index.js')
     await startTui({ client, yolo, continueSession, inline: inlineFlag || loadSettings(process.cwd(), flagSettingsPath).inline === true, flagSettingsPath })
     process.exit(0) // ink 卸载后 stdin raw 监听可能残留；显式退出兜底

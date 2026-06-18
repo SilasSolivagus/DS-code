@@ -85,8 +85,8 @@ export async function withRetry<T>(
   }
 }
 
-export function createClient(): OpenAI {
-  const settings = loadSettings()
+export function createClient(flagSettingsPath?: string): OpenAI {
+  const settings = loadSettings(process.cwd(), flagSettingsPath)
   const apiKey = process.env.DEEPSEEK_API_KEY ?? settings.apiKey
   if (!apiKey) throw new Error('缺少 DeepSeek API key。运行 deepcode 进入首跑向导配置，或 export DEEPSEEK_API_KEY=sk-...')
   // Node fetch 不读代理环境变量；显式接入，否则需走代理的网络环境下请求会超时
