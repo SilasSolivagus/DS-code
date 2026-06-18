@@ -4,6 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import type { SkillDefinition } from './skillsLoader.js'
 import { formatSkillListing } from './skillsLoader.js'
+import { loadMemoryPrompt } from './memdir/memdir.js'
 
 /** 从 cwd 向上逐层找 DEEPCODE.md/CLAUDE.md/AGENTS.md（每层取一个，DEEPCODE.md 优先），最后加全局 ~/.deepcode/DEEPCODE.md */
 export function findMemoryFiles(cwd: string, home: string = os.homedir()): string[] {
@@ -30,7 +31,7 @@ export function findMemoryFiles(cwd: string, home: string = os.homedir()): strin
 const CLAUDE_MEM_TAG = /<claude-mem-context>[\s\S]*?<\/claude-mem-context>/g
 
 /** 只在会话启动时调用一次。产物必须整个会话静态——这是 KV 缓存命中的前提。 */
-export function buildSystemPrompt(cwd: string, home: string = os.homedir(), skills?: SkillDefinition[], budgetChars?: number): string {
+export function buildSystemPrompt(cwd: string, home: string = os.homedir(), skills?: SkillDefinition[], budgetChars?: number, memdir?: string): string {
   const memory = findMemoryFiles(cwd, home)
     .map(p => ({ p, content: fs.readFileSync(p, 'utf8').replace(CLAUDE_MEM_TAG, '').trim() }))
     .filter(e => e.content) // 剥掉插件桩后为空的文件（如纯 claude-mem 占位的 AGENTS.md）不注入
@@ -43,6 +44,7 @@ export function buildSystemPrompt(cwd: string, home: string = os.homedir(), skil
   const skillBlock = listing
     ? `\n\n# 可用技能（Skills）\n你可以用 Skill 工具调用以下技能（也可在对话中按需触发）：\n${listing}`
     : ''
+  const memdirBlock = memdir ? '\n\n' + loadMemoryPrompt(memdir) : ''
 
   return `你是 deepcode，一个在终端中工作的编码助手。直接、准确、动手解决问题。
 
@@ -64,5 +66,5 @@ export function buildSystemPrompt(cwd: string, home: string = os.homedir(), skil
 - 工作目录：${cwd}
 - git 仓库：${fs.existsSync(path.join(cwd, '.git')) ? '是' : '否'}
 - 今天日期：${new Date().toISOString().slice(0, 10)}
-${memory ? '\n' + memory : ''}${skillBlock}`
+${memory ? '\n' + memory : ''}${skillBlock}${memdirBlock}`
 }

@@ -42,6 +42,8 @@ import { attachMcpTools } from '../mcp.js'
 import { loadSkills, substituteSkillArgs } from '../skillsLoader.js'
 import { makeSkillTool } from '../tools/skill.js'
 import { detectEffortKeyword } from '../text.js'
+import { memdirFor } from '../memdir/paths.js'
+import { DEFAULT_MEMORY_CONFIG } from '../memdir/memoryConfig.js'
 
 /** ! 直跑：同步执行，30s 超时，stdout+stderr 合并，超 20k 截断 */
 export function runBang(cmd: string, cwd: string): { output: string; code: number } {
@@ -230,7 +232,9 @@ export function createChatCore(opts: {
   const skills = loadSkills(cwd, undefined, settings.skills)
   const injectionBuffer: string[] = []
   ctx.injectUserMessage = (c: string) => injectionBuffer.push(c)
-  const messages: any[] = [{ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars) }]
+  const mem = settings.memory ?? DEFAULT_MEMORY_CONFIG
+  const memdir = mem.enabled && !mem.recall.enabled ? memdirFor(cwd) : undefined
+  const messages: any[] = [{ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars, memdir) }]
   const usageLog: UsageRecord[] = []
   let session!: SessionHandle
   const hookDeps = {
@@ -310,7 +314,7 @@ export function createChatCore(opts: {
     taskList.bind(sessionIdFromFile(session.file)); compacted = false; lastPromptTokens = 0; consecutiveCompactFailures = 0; compactWarned = false
     // doCompact 崩溃在 appendCompact 与首条 re-append 之间的兜底
     if (messages.length === 0 || messages[0]?.role !== 'system') {
-      messages.unshift({ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars) })
+      messages.unshift({ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars, memdir) })
       session.appendMessage(messages[0])
     }
     nextTurnId = loaded.maxTurnId + 1
