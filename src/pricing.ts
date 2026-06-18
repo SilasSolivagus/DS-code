@@ -16,3 +16,13 @@ export function costUSD(model: string, promptTokens: number, cacheHit: number, o
   const miss = Math.max(0, promptTokens - cacheHit)
   return (cacheHit * p.hit + miss * p.miss + output * p.out) / 1_000_000
 }
+
+/**
+ * 缓存命中省下的美元金额：命中的 hitTokens 若按未命中价计本要多花的钱。
+ * = hitTokens × (miss − hit) / 1e6。未知模型返回 0。
+ */
+export function cacheSavingsUSD(model: string, hitTokens: number): number {
+  const p = PRICES[model]
+  if (!p) return 0
+  return (hitTokens * (p.miss - p.hit)) / 1_000_000
+}
