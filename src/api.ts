@@ -107,6 +107,7 @@ export interface ChatOptions {
   messages: any[]
   tools: any[]
   thinking: boolean
+  effortLevel?: 'low' | 'medium' | 'high'
   signal: AbortSignal
 }
 
@@ -124,7 +125,7 @@ export async function* chatStream(client: OpenAI, opts: ChatOptions): AsyncGener
         stream_options: { include_usage: true },
         // v4 系列默认开 thinking（白烧思考 token），必须显式 disabled
         ...(opts.thinking
-          ? { reasoning_effort: 'medium', thinking: { type: 'enabled' } }
+          ? { reasoning_effort: opts.effortLevel ?? 'medium', thinking: { type: 'enabled' } }
           : { thinking: { type: 'disabled' } }),
       } as any,
       { signal: opts.signal },

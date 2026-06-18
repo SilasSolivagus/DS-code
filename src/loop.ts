@@ -19,6 +19,7 @@ export interface LoopDeps {
   tools: Tool<any>[]
   model: string
   thinking: boolean
+  effortLevel?: 'low' | 'medium' | 'high'
   permission: PermissionContext
   ctx: ToolContext
   maxTurns?: number
@@ -149,6 +150,7 @@ export async function* runLoop(
         messages,
         tools: apiTools,
         thinking: deps.thinking,
+        effortLevel: deps.effortLevel,
         signal: deps.ctx.signal,
       })
       while (true) {
