@@ -71,16 +71,16 @@ describe('checkPermission', () => {
     expect(asked).toBe(true)
   })
 
-  it('多行命令 always 后第一行前缀规则可命中', async () => {
+  it('多行命令（换行分隔）always 后存完整精确规则', async () => {
+    // 换行是命令分隔符（与 && 同级），复合命令存精确规则而非前缀
     const rules: string[] = []
     let asks = 0
     const ctx = pc({ rules, saveRule: r => rules.push(r), ask: async () => { asks++; return 'always' } })
     const tool = fakeTool('Bash', false, 'npm install\nnpm test')
     expect((await checkPermission(tool, {}, ctx)).ok).toBe(true)
-    expect(rules).toEqual(['Bash(npm install:*)'])
-    // 后续单行同前缀命令命中规则，不再询问
-    const tool2 = fakeTool('Bash', false, 'npm install lodash')
-    expect((await checkPermission(tool2, {}, ctx)).ok).toBe(true)
+    expect(rules).toEqual(['Bash(npm install npm test)']) // 精确规则（\n→空格），不做前缀放宽
+    // 完全相同的命令（\n→空格归一）第二次命中精确规则，不再询问
+    expect((await checkPermission(tool, {}, ctx)).ok).toBe(true)
     expect(asks).toBe(1)
   })
 })
@@ -233,6 +233,21 @@ describe('复合命令前缀绕过修复', () => {
   })
   it('backstop：matchRule 对含操作符的 Bash desc 不前缀匹配', () => {
     expect(matchRule('Bash(ls:*)', 'Bash', 'ls && rm -rf /')).toBe(false)
+  })
+})
+
+describe('换行符命令分隔符绕过修复', () => {
+  it('splitBashCommand 把未引号换行拆成两段', () => {
+    expect(splitBashCommand('ls\nrm -rf /').commands).toEqual(['ls', 'rm -rf /'])
+  })
+  it('bashCommandAllowed: ls\\nrm -rf / 不被 Bash(ls:*) 放行（核心绕过断言）', () => {
+    expect(bashCommandAllowed('ls\nrm -rf /', ['Bash(ls:*)'])).toBe(false)
+  })
+  it('引号内换行不拆：echo "a\\nb" 是单命令', () => {
+    // shell-quote parse('echo "a\nb"') → ["echo","a\nb"]，引号内换行保留在 token
+    const r = splitBashCommand('echo "a\nb"')
+    expect(r.tooComplex).toBe(false)
+    expect(r.commands).toEqual(['echo a\nb'])
   })
 })
 

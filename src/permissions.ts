@@ -6,13 +6,39 @@ import type { HookOutcome } from './hooks.js'
 const SEPARATORS = new Set(['&&', '||', ';', '|', '&'])
 const REDIR = new Set(['>', '>>', '<', '>&', '<&'])
 
+/**
+ * 引号感知地把未被引号包裹的 \n/\r 替换为 ';'，使 shell-quote 将其识别为命令分隔符。
+ * 引号内的换行（如 echo "a\nb"）保留原样。
+ */
+function normalizeUnquotedNewlines(s: string): string {
+  let q: '' | '"' | "'" = ''
+  let out = ''
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i]
+    if (q) {
+      if (c === q) q = ''
+      out += c
+    } else if (c === '"' || c === "'") {
+      q = c
+      out += c
+    } else if (c === '\n' || c === '\r') {
+      out += ';'
+    } else {
+      out += c
+    }
+  }
+  return out
+}
+
 /** 用 shell-quote 把命令按控制操作符拆成子命令；含动态构造/分组或解析失败 → tooComplex（不得自动放行）。 */
 export function splitBashCommand(command: string): { tooComplex: boolean; commands: string[] } {
   // 动态构造无法静态证明安全：命令替换 $()/反引号、进程替换 <()/>()
   if (/\$\(|`|<\(|>\(/.test(command)) return { tooComplex: true, commands: [] }
+  // 引号感知地把未引号换行归一成 ';'，防止换行绕过前缀匹配
+  const normalized = normalizeUnquotedNewlines(command)
   let entries: ParseEntry[]
   try {
-    entries = parse(command, (v: string) => '$' + v) // 保留 $VAR 字面量；传 {} 对象时 $VAR 被展开为空串（丢失参数 token）
+    entries = parse(normalized, (v: string) => '$' + v) // 保留 $VAR 字面量；传 {} 对象时 $VAR 被展开为空串（丢失参数 token）
   } catch {
     return { tooComplex: true, commands: [] }
   }
@@ -95,11 +121,25 @@ export function matchRule(rule: string, toolName: string, desc: string): boolean
   return normDesc === pat
 }
 
-/** Bash 命令是否被规则集允许：too-complex→否；单命令→现匹配；复合→每段都需被覆盖。 */
+/** 仅用精确规则（非前缀）匹配，供复合命令全量检查使用，防止前缀规则跨段匹配。 */
+function matchExactRule(rule: string, toolName: string, desc: string): boolean {
+  const m = rule.match(/^(\w+)\((.+)\)$/)
+  if (!m) return false
+  const [, name, pat] = m
+  if (name !== toolName) return false
+  if (pat.endsWith(':*')) return false // 复合命令全量检查不走前缀规则
+  return desc.replace(/\n/g, ' ') === pat
+}
+
+/** Bash 命令是否被规则集允许：too-complex→否；单命令→现匹配；复合→精确全量规则命中 OR 每段都被覆盖。 */
 export function bashCommandAllowed(command: string, rules: string[]): boolean {
   const { tooComplex, commands } = splitBashCommand(command)
   if (tooComplex) return false
   if (commands.length <= 1) return rules.some(r => matchRule(r, 'Bash', commands[0] ?? command))
+  // 复合命令：先尝试精确全量规则（\n→空格归一后完整匹配，对应 always 存下的复合精确规则）
+  // 注意：只走精确规则，前缀规则不得跨多段命令匹配
+  if (rules.some(r => matchExactRule(r, 'Bash', command))) return true
+  // 回退：每段都需被单独覆盖
   return commands.every(s => rules.some(r => matchRule(r, 'Bash', s)))
 }
 
