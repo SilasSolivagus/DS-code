@@ -58,3 +58,43 @@ describe('TaskListStore CRUD（内存）', () => {
     expect(s.list()).toEqual([])
   })
 })
+
+describe('TaskListStore 走神检测', () => {
+  it('有未完成项且 3 轮未更新 → 返回提醒', () => {
+    const s = new TaskListStore()
+    s.create({ subject: '甲', description: 'd' })  // lastUpdateTurn=0
+    s.tick(); s.tick(); s.tick()                    // currentTurn=3，delta=3
+    const note = s.staleReminder()
+    expect(note).toContain('#1 甲')
+    expect(note).toContain('3 轮未更新')
+  })
+  it('未到 3 轮 → null', () => {
+    const s = new TaskListStore()
+    s.create({ subject: '甲', description: 'd' })
+    s.tick(); s.tick()                              // delta=2
+    expect(s.staleReminder()).toBeNull()
+  })
+  it('全部 completed → null', () => {
+    const s = new TaskListStore()
+    s.create({ subject: '甲', description: 'd' })
+    s.update('1', { status: 'completed' })
+    s.tick(); s.tick(); s.tick()
+    expect(s.staleReminder()).toBeNull()
+  })
+  it('update 重置 delta（lastUpdateTurn 跟到 currentTurn）', () => {
+    const s = new TaskListStore()
+    s.create({ subject: '甲', description: 'd' })
+    s.tick(); s.tick()
+    s.update('1', { status: 'in_progress' })        // lastUpdateTurn=currentTurn(=2)
+    s.tick(); s.tick()                              // delta=2
+    expect(s.staleReminder()).toBeNull()
+    s.tick()                                        // delta=3
+    expect(s.staleReminder()).toContain('#1 甲')
+  })
+  it('activeForm 显示在提醒里', () => {
+    const s = new TaskListStore()
+    s.create({ subject: '甲', description: 'd', activeForm: '跑测试' })
+    s.tick(); s.tick(); s.tick()
+    expect(s.staleReminder()).toContain('（跑测试）')
+  })
+})

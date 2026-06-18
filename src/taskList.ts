@@ -75,4 +75,17 @@ export class TaskListStore {
   remove(id: string): void {
     this.tasks.delete(id)
   }
+
+  /** 每个含工具调用的 loop turn 由调用方推进一次。 */
+  tick(): void { this.currentTurn++ }
+
+  /** 到提醒节奏（每 3 轮一次、有未完成项）则返回提醒文本，否则 null。 */
+  staleReminder(): string | null {
+    const open = this.list().filter(t => t.status !== 'completed')
+    const delta = this.currentTurn - this.lastUpdateTurn
+    if (!open.length || delta < 3 || delta % 3 !== 0) return null
+    return `任务清单已 ${delta} 轮未更新。未完成项：\n` +
+      open.map(t => `- [${t.status}] #${t.id} ${t.subject}${t.activeForm ? `（${t.activeForm}）` : ''}`).join('\n') +
+      `\n请对照清单检查进度，完成一项就用 TaskUpdate 把它标 completed 并把下一项标 in_progress；计划变了就更新清单。`
+  }
 }
