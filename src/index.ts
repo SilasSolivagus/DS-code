@@ -8,6 +8,8 @@ const yolo = argv.includes('--yolo')
 const continueSession = argv.includes('--continue') || argv.includes('-c')
 const inlineFlag = argv.includes('--inline') || process.env.DEEPCODE_INLINE === '1'
 const pIdx = argv.indexOf('-p')
+const settingsFlagIdx = argv.indexOf('--settings')
+const flagSettingsPath = settingsFlagIdx >= 0 ? argv[settingsFlagIdx + 1] : undefined
 
 try {
   if (pIdx !== -1) {
@@ -15,7 +17,7 @@ try {
     if (!prompt || prompt.startsWith('-')) throw new Error('用法：deepcode -p "<任务>" [--json] [--yolo]')
     const client = createClient()
     const { runHeadless } = await import('./headless.js')
-    const r = await runHeadless({ client, prompt, yolo })
+    const r = await runHeadless({ client, prompt, yolo, flagSettingsPath })
     if (argv.includes('--json')) {
       console.log(JSON.stringify({ text: r.text, status: r.status, turns: r.turns, usage: r.usage, costCNY: r.costCNY }))
     } else {
@@ -30,7 +32,7 @@ try {
     if (!prompt) throw new Error('stdin 为空。交互模式请直接运行 deepcode，或用 -p "<任务>"')
     const client = createClient()
     const { runHeadless } = await import('./headless.js')
-    const r = await runHeadless({ client, prompt, yolo })
+    const r = await runHeadless({ client, prompt, yolo, flagSettingsPath })
     console.log(r.text)
     process.exitCode = r.status === 'done' ? 0 : 1
   } else {
@@ -41,7 +43,7 @@ try {
     }
     const client = createClient()
     const { startTui } = await import('./tui/index.js')
-    await startTui({ client, yolo, continueSession, inline: inlineFlag || loadSettings().inline === true })
+    await startTui({ client, yolo, continueSession, inline: inlineFlag || loadSettings(process.cwd(), flagSettingsPath).inline === true, flagSettingsPath })
     process.exit(0) // ink 卸载后 stdin raw 监听可能残留；显式退出兜底
   }
 } catch (e: any) {

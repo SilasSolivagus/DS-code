@@ -96,6 +96,22 @@ describe('mergeScopePartials', () => {
   })
 })
 
+describe('flag scope', () => {
+  it('--settings 文件最高优先级覆盖', () => {
+    const { mkdtempSync, writeFileSync, rmSync } = require('node:fs')
+    const { tmpdir } = require('node:os'); const { join } = require('node:path')
+    const dir = mkdtempSync(join(tmpdir(), 'dc-flag-'))
+    const flagFile = join(dir, 'flag.json')
+    try {
+      writeFileSync(flagFile, JSON.stringify({ model: 'flag-model', apiKey: 'sk-flag' }))
+      const res = loadLayeredSettings(dir, flagFile)
+      expect(res.settings.model).toBe('flag-model')
+      expect(res.settings.apiKey).toBe('sk-flag') // flag 可信，apiKey 不剥
+      expect(res.provenance.model).toBe('flag')
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+})
+
 describe('loadLayeredSettings', () => {
   it('project 危险字段被剥、安全字段生效、deny 合并', () => {
     const dir = mkdtempSync(join(tmpdir(), 'dc-layer-'))

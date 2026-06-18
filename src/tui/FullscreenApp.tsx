@@ -43,6 +43,7 @@ export function FullscreenApp(props: {
   cwd: string
   continueSession?: boolean
   sessionDir?: string
+  flagSettingsPath?: string
 }) {
   const { exit } = useApp()
   const { stdout } = useStdout()
@@ -52,6 +53,7 @@ export function FullscreenApp(props: {
     cwd: props.cwd,
     continueSession: props.continueSession,
     sessionDir: props.sessionDir,
+    flagSettingsPath: props.flagSettingsPath,
     onState: () => {},
   }), [])  // eslint-disable-line react-hooks/exhaustive-deps
   const state = useChat(core)

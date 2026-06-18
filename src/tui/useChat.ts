@@ -195,9 +195,10 @@ export function createChatCore(opts: {
   cwd: string
   continueSession?: boolean
   sessionDir?: string  // 测试注入：隔离 session 落盘目录，避免污染 ~/.deepcode/sessions
+  flagSettingsPath?: string
   onState: (s: ChatState) => void
 }): ChatCore {
-  const settings = loadSettings()
+  const settings = loadSettings(opts.cwd, opts.flagSettingsPath)
   let cwd = opts.cwd
   let abort = new AbortController()
   let model = settings.model ?? 'deepseek-v4-flash'

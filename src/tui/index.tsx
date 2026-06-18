@@ -16,6 +16,7 @@ export async function startTui(opts: {
   yolo: boolean
   continueSession?: boolean
   inline?: boolean
+  flagSettingsPath?: string
 }): Promise<void> {
   // 后台任务：退出时 kill running 任务（追加监听，不抢占下方 altscreen 清理）+ 清理超龄旧日志。
   installTaskCleanup()
@@ -48,6 +49,7 @@ export async function startTui(opts: {
         yolo={opts.yolo}
         cwd={process.cwd()}
         continueSession={opts.continueSession}
+        flagSettingsPath={opts.flagSettingsPath}
       />,
       { exitOnCtrlC: false, ...(customStdin ? { stdin: customStdin } : {}) },
     )
