@@ -69,6 +69,19 @@ function extractMappedIPv4(addr: string): string | null {
     const hi = g[6]!; const lo = g[7]!
     return `${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`
   }
+  // NAT64 well-known prefix 64:ff9b::/96 — embedded IPv4 in low 32 bits
+  if (
+    g[0] === 0x0064 &&
+    g[1] === 0xff9b &&
+    g[2] === 0 &&
+    g[3] === 0 &&
+    g[4] === 0 &&
+    g[5] === 0
+  ) {
+    const hi = g[6]!
+    const lo = g[7]!
+    return `${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`
+  }
   return null
 }
 

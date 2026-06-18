@@ -28,6 +28,13 @@ describe('isBlockedAddress', () => {
   it('放行 mapped 公网', () => {
     expect(isBlockedAddress('::ffff:8.8.8.8')).toBe(false)
   })
+  it('封 NAT64 64:ff9b::/96 内嵌私网', () => {
+    expect(isBlockedAddress('64:ff9b::a9fe:a9fe')).toBe(true)  // = 169.254.169.254
+    expect(isBlockedAddress('64:ff9b::0a00:0001')).toBe(true)  // = 10.0.0.1
+  })
+  it('放行 NAT64 64:ff9b::/96 内嵌公网', () => {
+    expect(isBlockedAddress('64:ff9b::808:808')).toBe(false)  // = 8.8.8.8
+  })
 })
 
 describe('shouldBypassProxy', () => {
