@@ -107,3 +107,32 @@ describe('buildSystemPrompt 前缀稳定性（缓存守卫）', () => {
     expect(a).toBe(b)
   })
 })
+
+describe('buildSystemPrompt 过滤 claude-mem 桩', () => {
+  it('AGENTS.md 只含 claude-mem 空壳 → 不注入该记忆段', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'dc-cm-'))
+    const home = mkdtempSync(path.join(tmpdir(), 'dc-cm-home-'))
+    writeFileSync(
+      path.join(root, 'AGENTS.md'),
+      '<claude-mem-context>\n# Memory Context\nNo previous sessions found.\n</claude-mem-context>\n',
+    )
+    const p = buildSystemPrompt(root, home)
+    expect(p).not.toContain('claude-mem-context')
+    expect(p).not.toContain('No previous sessions found')
+    expect(p).not.toContain('AGENTS.md')
+  })
+
+  it('AGENTS.md 含真实内容 + claude-mem 块 → 注入真实内容、剥掉插件块', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'dc-cm2-'))
+    const home = mkdtempSync(path.join(tmpdir(), 'dc-cm2-home-'))
+    writeFileSync(
+      path.join(root, 'AGENTS.md'),
+      '# 项目指令\n务必先跑 lint。\n<claude-mem-context>\nNo previous sessions found.\n</claude-mem-context>\n',
+    )
+    const p = buildSystemPrompt(root, home)
+    expect(p).toContain('务必先跑 lint。')
+    expect(p).toContain('AGENTS.md')
+    expect(p).not.toContain('claude-mem-context')
+    expect(p).not.toContain('No previous sessions found')
+  })
+})

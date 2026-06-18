@@ -26,10 +26,15 @@ export function findMemoryFiles(cwd: string, home: string = os.homedir()): strin
   return found
 }
 
+/** claude-mem 等插件往 AGENTS.md/CLAUDE.md 写的自动桩块——非项目记忆，注入前剥掉，避免污染系统提示。 */
+const CLAUDE_MEM_TAG = /<claude-mem-context>[\s\S]*?<\/claude-mem-context>/g
+
 /** 只在会话启动时调用一次。产物必须整个会话静态——这是 KV 缓存命中的前提。 */
 export function buildSystemPrompt(cwd: string, home: string = os.homedir(), skills?: SkillDefinition[], budgetChars?: number): string {
   const memory = findMemoryFiles(cwd, home)
-    .map(p => `## 项目记忆（来自 ${p}）\n${fs.readFileSync(p, 'utf8')}`)
+    .map(p => ({ p, content: fs.readFileSync(p, 'utf8').replace(CLAUDE_MEM_TAG, '').trim() }))
+    .filter(e => e.content) // 剥掉插件桩后为空的文件（如纯 claude-mem 占位的 AGENTS.md）不注入
+    .map(e => `## 项目记忆（来自 ${e.p}）\n${e.content}`)
     .join('\n\n')
 
   // 生成 skill 清单：只列 modelInvocable 的，经预算截断
