@@ -163,7 +163,7 @@ export interface ChatState {
   turnOutTokens: number      // 当前轮累计输出 token（spinner 实时显示；流式估算，turn 边界用真实值校准）
   sessionCost(): number
   cacheHitRate(): number // usageLog 累计 hit/prompt，DeepSeek 状态行核心指标
-  cacheSavings(): number // usageLog 累计缓存省下金额（USD），DeepSeek 状态行
+  cacheSavings(): number // usageLog 累计缓存省下金额（CNY），DeepSeek 状态行
   contextPct(): number // 上下文占比：lastPromptTokens / compactTokens（0-100），用于状态栏上下文条
 }
 
