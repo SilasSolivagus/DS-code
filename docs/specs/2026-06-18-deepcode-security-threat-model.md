@@ -77,14 +77,9 @@
 
 ### R-2：Bash deny 只挡 LLM 误操作，不挡攻击者
 
-**描述**：Bash deny 对命中路径**降级 ask**（非硬拒）。以下等价读取**绕得过**：
-- `cat $HOME/.ssh/id_rsa`（`$HOME` 不展开，token 级 `deniablePaths` 不识别 `$HOME`）
-- `xxd ~/.ssh/id_rsa`、`base64 ~/.ssh/id_rsa`、`tail ~/.ssh/id_rsa`（命令名非 cat，路径 token 可能命中，但如用 `$HOME` 则不命中）
-- 变量拼接、进程替换等等价构造
+**描述**：Bash deny 对命中路径**降级 ask**（非硬拒）。Basename 型 deny 规则（如 `**/id_rsa`）因 glob 匹配机制，即使经 `$HOME`、变量拼接或不同命令读取（`xxd`/`base64`/`tail`），仍能命中。**真正漏检的是路径锚定的非 basename 规则**（如 `~/.aws/credentials`）：当命令用 `$HOME/.aws/credentials`（shell 不展开 `$HOME`）或符号链接等价读取时，`deniablePaths` token 级提取路径后经 `path.resolve` 生成的绝对路径可能无法匹配该锚定规则。
 
-复合命令已被 #1 强制 ask；简单 `cat ~/.ssh/id_rsa` token 可命中触发 ask（降级弹窗，不自动放行），但 `$HOME` 变体漏检。
-
-**接受条件**：Bash deny 的定位是「防 LLM 在 yolo/acceptEdits 模式下的无意识高危操作」，弹窗足以提醒用户确认。不打算为 Bash 投入 AST 级 path 提取（无可靠地基），对齐 CC 不做此层防护。
+**接受条件**：Bash deny 的定位是「防 LLM 在 yolo/acceptEdits 模式下的无意识高危操作」，弹窗足以提醒用户确认。不打算为 Bash 投入 AST 级 path 提取与 `~` 守卫（无可靠地基），对齐 CC 不做此层防护。
 
 **位置**：`src/tools/bash.ts`（`deniablePaths` token 逻辑）；`src/permissions.ts:162`（降级 ask）
 
