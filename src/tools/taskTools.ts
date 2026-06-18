@@ -15,9 +15,9 @@ const TERMINAL: TaskStatus[] = ['completed', 'failed', 'killed']
 
 const listSchema = z.object({})
 
-export const taskListTool: Tool<typeof listSchema> = {
-  name: 'TaskList',
-  description: '列出所有后台任务（id/状态/描述）',
+export const bgTaskListTool: Tool<typeof listSchema> = {
+  name: 'BgTaskList',
+  description: '列出所有后台进程任务（id/状态/描述）',
   inputSchema: listSchema,
   isReadOnly: true,
   needsPermission: () => false,
