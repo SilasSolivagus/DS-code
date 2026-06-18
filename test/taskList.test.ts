@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { TaskListStore } from '../src/taskList.js'
 
 describe('TaskListStore CRUD（内存）', () => {
@@ -96,5 +99,68 @@ describe('TaskListStore 走神检测', () => {
     s.create({ subject: '甲', description: 'd', activeForm: '跑测试' })
     s.tick(); s.tick(); s.tick()
     expect(s.staleReminder()).toContain('（跑测试）')
+  })
+})
+
+describe('TaskListStore 落盘 + bind', () => {
+  function tmp() { return fs.mkdtempSync(path.join(os.tmpdir(), 'dc-tl-')) }
+
+  it('create 后磁盘有 <id>.json；bind 新 store 能加载回来', () => {
+    const base = tmp(); const sid = 'sess1'
+    const s1 = new TaskListStore(); s1.bind(sid, base)
+    s1.create({ subject: '甲', description: '做甲' })
+    expect(fs.existsSync(path.join(base, sid, '1.json'))).toBe(true)
+    const s2 = new TaskListStore(); s2.bind(sid, base)
+    expect(s2.get('1')).toMatchObject({ subject: '甲', description: '做甲' })
+  })
+
+  it('nextId = max(已加载 id)+1，防覆写', () => {
+    const base = tmp(); const sid = 'sess2'
+    const s1 = new TaskListStore(); s1.bind(sid, base)
+    s1.create({ subject: 'a', description: 'd' }) // id 1
+    s1.create({ subject: 'b', description: 'd' }) // id 2
+    const s2 = new TaskListStore(); s2.bind(sid, base)
+    const c = s2.create({ subject: 'c', description: 'd' })
+    expect(c.id).toBe('3')                                   // 不复用 1/2
+    expect(s2.get('1')).toMatchObject({ subject: 'a' })      // 旧任务未被覆写
+  })
+
+  it('坏 JSON 文件静默跳过，不崩', () => {
+    const base = tmp(); const sid = 'sess3'
+    fs.mkdirSync(path.join(base, sid), { recursive: true })
+    fs.writeFileSync(path.join(base, sid, '1.json'), '{坏 json')
+    fs.writeFileSync(path.join(base, sid, '2.json'), JSON.stringify({ id: '2', subject: '好', description: 'd', status: 'pending' }))
+    const s = new TaskListStore(); s.bind(sid, base)
+    expect(s.get('2')).toMatchObject({ subject: '好' })
+    expect(s.get('1')).toBeUndefined()
+  })
+
+  it('软删除落盘 deleted:true；reload 后 list 不含、get 仍在', () => {
+    const base = tmp(); const sid = 'sess4'
+    const s1 = new TaskListStore(); s1.bind(sid, base)
+    s1.create({ subject: 'a', description: 'd' })
+    s1.update('1', { status: 'deleted' })
+    const s2 = new TaskListStore(); s2.bind(sid, base)
+    expect(s2.list()).toEqual([])
+    expect(s2.get('1')).toBeDefined()
+  })
+
+  it('bind 清零走神计数器（resume 不瞬间刷屏）', () => {
+    const base = tmp(); const sid = 'sess5'
+    const s1 = new TaskListStore(); s1.bind(sid, base)
+    s1.create({ subject: 'a', description: 'd' })
+    const s2 = new TaskListStore(); s2.bind(sid, base)   // reload 有 1 个未完成项
+    expect(s2.staleReminder()).toBeNull()               // 计数器从 0，delta=0
+    s2.tick(); s2.tick(); s2.tick()
+    expect(s2.staleReminder()).toContain('#1 a')         // 正常 3 轮后才提醒
+  })
+
+  it('原子写：未出现 .tmp 残留', () => {
+    const base = tmp(); const sid = 'sess6'
+    const s = new TaskListStore(); s.bind(sid, base)
+    s.create({ subject: 'a', description: 'd' })
+    const files = fs.readdirSync(path.join(base, sid))
+    expect(files.some(f => f.endsWith('.tmp'))).toBe(false)
+    expect(files).toContain('1.json')
   })
 })

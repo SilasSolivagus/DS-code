@@ -52,6 +52,9 @@ export const SETTINGS_FILE = FILE
 /** 后台任务输出落盘目录（~/.deepcode/tasks） */
 export const TASKS_DIR = path.join(os.homedir(), '.deepcode', 'tasks')
 
+/** todo 任务清单落盘根目录（~/.deepcode/task-lists/<sessionId>/<id>.json） */
+export const TASK_LISTS_DIR = path.join(os.homedir(), '.deepcode', 'task-lists')
+
 /** 后台任务输出日志路径 */
 export function taskOutputPath(id: string): string {
   return path.join(TASKS_DIR, id + '.log')

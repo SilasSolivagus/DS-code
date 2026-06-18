@@ -1,4 +1,8 @@
 // src/taskList.ts —— CC 式 todo Task 模型 + store（内存 CRUD + 软删 + metadata + 走神 + 落盘）。
+import fs from 'node:fs'
+import path from 'node:path'
+import { TASK_LISTS_DIR } from './config.js'
+
 export interface Task {
   id: string
   subject: string
@@ -16,6 +20,7 @@ export class TaskListStore {
   private nextId = 1
   private lastUpdateTurn = 0
   private currentTurn = 0
+  private dir?: string
 
   private toPublic(t: StoredTask): Task {
     const { _deleted, ...pub } = t
@@ -31,6 +36,7 @@ export class TaskListStore {
     }
     this.tasks.set(id, t)
     this.lastUpdateTurn = this.currentTurn
+    this.persist(id)
     return this.toPublic(t)
   }
 
@@ -61,6 +67,7 @@ export class TaskListStore {
       updated.push('status')
     }
     this.lastUpdateTurn = this.currentTurn
+    this.persist(id)
     return { ok: true, updatedFields: updated }
   }
 
@@ -74,6 +81,7 @@ export class TaskListStore {
   /** 硬删除（用于 blocked-create 回滚）。 */
   remove(id: string): void {
     this.tasks.delete(id)
+    if (this.dir) { try { fs.unlinkSync(path.join(this.dir, `${id}.json`)) } catch { /* 已不在 */ } }
   }
 
   /** 每个含工具调用的 loop turn 由调用方推进一次。 */
@@ -87,5 +95,48 @@ export class TaskListStore {
     return `任务清单已 ${delta} 轮未更新。未完成项：\n` +
       open.map(t => `- [${t.status}] #${t.id} ${t.subject}${t.activeForm ? `（${t.activeForm}）` : ''}`).join('\n') +
       `\n请对照清单检查进度，完成一项就用 TaskUpdate 把它标 completed 并把下一项标 in_progress；计划变了就更新清单。`
+  }
+
+  /** (重)绑定到某 session 的磁盘目录：加载任务、seed nextId、计数器清零。
+   *  baseDir 默认 TASK_LISTS_DIR（可注入便测）。startup/resume/clear 都调它。 */
+  bind(sessionId: string, baseDir: string = TASK_LISTS_DIR): void {
+    this.dir = path.join(baseDir, sessionId)
+    this.tasks.clear()
+    this.nextId = 1
+    this.currentTurn = 0
+    this.lastUpdateTurn = 0
+    this.loadFromDisk()
+  }
+
+  private loadFromDisk(): void {
+    if (!this.dir) return
+    let files: string[] = []
+    try { files = fs.readdirSync(this.dir).filter(f => f.endsWith('.json')) } catch { return }
+    let maxId = 0
+    for (const f of files) {
+      try {
+        const raw = JSON.parse(fs.readFileSync(path.join(this.dir, f), 'utf8')) as StoredTask & { deleted?: boolean }
+        if (typeof raw.id !== 'string') continue
+        const t: StoredTask = { ...raw }
+        if (raw.deleted) { t._deleted = true; delete (t as any).deleted }
+        this.tasks.set(t.id, t)
+        const n = Number(t.id)
+        if (Number.isInteger(n) && n > maxId) maxId = n
+      } catch { /* 坏文件跳过 */ }
+    }
+    this.nextId = maxId + 1
+  }
+
+  private persist(id: string): void {
+    if (!this.dir) return
+    const t = this.tasks.get(id)
+    if (!t) return
+    fs.mkdirSync(this.dir, { recursive: true })
+    const { _deleted, ...rest } = t
+    const onDisk = _deleted ? { ...rest, deleted: true } : rest
+    const file = path.join(this.dir, `${id}.json`)
+    const tmp = `${file}.tmp`
+    fs.writeFileSync(tmp, JSON.stringify(onDisk, null, 2))
+    fs.renameSync(tmp, file)
   }
 }
