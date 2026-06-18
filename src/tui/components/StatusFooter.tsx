@@ -14,6 +14,8 @@ export function StatusFooter(props: {
   memoryCount: number
   contextPct: number
   cost: number
+  hitRate: number
+  cacheSavings: number
   toolCounts: Array<{ name: string; n: number }>
 }) {
   // 上下文条：10 格，filled 用 ▓（accent），其余 ░（dim）
@@ -34,12 +36,16 @@ export function StatusFooter(props: {
         {props.branch && <Text dimColor>{` git:(${props.branch})`}</Text>}
       </Text>
 
-      {/* Row 2：上下文条 + 累计花费 */}
+      {/* Row 2：上下文条 + 缓存命中（仅有命中时）+ 累计花费 */}
       <Text>
         <Text dimColor>Context </Text>
         <Text color={T.accent}>{bar.fill}</Text>
         <Text dimColor>{bar.empty}</Text>
-        <Text dimColor>{` ${props.contextPct}% · $${props.cost.toFixed(4)}`}</Text>
+        <Text dimColor>{` ${props.contextPct}%`}</Text>
+        {props.hitRate > 0 && (
+          <Text dimColor>{` · cache ${Math.round(props.hitRate * 100)}% (−$${props.cacheSavings.toFixed(4)})`}</Text>
+        )}
+        <Text dimColor>{` · $${props.cost.toFixed(4)}`}</Text>
       </Text>
 
       {/* Row 3（仅 memoryCount>0）：记忆文件数 */}
