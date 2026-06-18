@@ -753,6 +753,11 @@ export function createChatCore(opts: {
       checkpointer = createCheckpointer(checkpointStoreFor(session.file))
       taskList.bind(sessionIdFromFile(session.file))
       nextTurnId = 1; currentTurnId = 0
+      // 重建 extractor，重置游标（旧会话游标对新会话无效，防新会话首轮被静默跳过）
+      extractor = createMemoryExtractor({
+        client: opts.client, model, memdir: memdirFor(cwd), config: mem, ctx,
+        runSubagent: opts.runSubagent,
+      })
       dispatch({ type: 'clear' })
       notice('info', '对话已清空，已开新会话文件（本会话花费累计保留）')
       fireSessionStart('clear')
