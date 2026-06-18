@@ -278,6 +278,8 @@ export function FullscreenApp(props: {
           cost={state.sessionCost()}
           hitRate={state.cacheHitRate()}
           cacheSavings={state.cacheSavings()}
+          thinking={state.thinking}
+          effortLevel={state.effortLevel}
           toolCounts={toolCounts}
         />
       </Box>

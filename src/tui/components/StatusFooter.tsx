@@ -16,6 +16,8 @@ export function StatusFooter(props: {
   cost: number
   hitRate: number
   cacheSavings: number
+  thinking: boolean
+  effortLevel: 'low' | 'medium' | 'high'
   toolCounts: Array<{ name: string; n: number }>
 }) {
   // 上下文条：10 格，filled 用 ▓（accent），其余 ░（dim）
@@ -31,7 +33,9 @@ export function StatusFooter(props: {
       <Text>
         <Text dimColor>[</Text>
         <Text color={T.accent}>{props.model}</Text>
-        <Text dimColor>{` | ${props.mode}]`}</Text>
+        <Text dimColor>{` | ${props.mode}`}</Text>
+        {props.thinking && <Text dimColor>{` | think:${props.effortLevel}`}</Text>}
+        <Text dimColor>{`]`}</Text>
         <Text dimColor>{` | ${props.cwdBase}`}</Text>
         {props.branch && <Text dimColor>{` git:(${props.branch})`}</Text>}
       </Text>
