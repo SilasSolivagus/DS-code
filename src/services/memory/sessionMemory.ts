@@ -56,7 +56,10 @@ export function makeSessionFileTool(absPath: string): Tool<typeof editSchema> {
     async call(input) {
       if (path.resolve(input.file_path) !== root) return '拒绝：只能编辑当前会话的 summary.md。'
       let cur: string; try { cur = fs.readFileSync(root, 'utf8') } catch { return '错误：文件不存在。' }
-      if (!cur.includes(input.old_string)) return '错误：old_string 未匹配。'
+      if (!input.old_string) return '错误：old_string 不能为空。'
+      const occurrences = cur.split(input.old_string).length - 1
+      if (occurrences === 0) return '错误：old_string 未匹配。'
+      if (occurrences > 1) return `错误：old_string 匹配到 ${occurrences} 处，请提供更多上下文使其唯一。`
       fs.writeFileSync(root, cur.replace(input.old_string, input.new_string))
       return '已更新会话记忆。'
     },

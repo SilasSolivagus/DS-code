@@ -18,6 +18,20 @@ describe('makeSessionFileTool', () => {
     expect(r).toMatch(/拒绝|只能/)
     expect(fs.readFileSync(other, 'utf8')).toBe('z')
   })
+  test('old_string 多匹配 → 报错含多处/唯一、不改文件', async () => {
+    fs.writeFileSync(p, 'X foo X foo X')
+    const t = makeSessionFileTool(p)
+    const r = await t.call({ file_path: p, old_string: 'foo', new_string: 'bar' }, {} as any)
+    expect(r).toMatch(/匹配到 \d+ 处|请提供更多上下文/)
+    expect(fs.readFileSync(p, 'utf8')).toBe('X foo X foo X')
+  })
+  test('old_string 为空串 → 错误串、不改文件', async () => {
+    fs.writeFileSync(p, 'hello')
+    const t = makeSessionFileTool(p)
+    const r = await t.call({ file_path: p, old_string: '', new_string: 'X' }, {} as any)
+    expect(r).toMatch(/不能为空/)
+    expect(fs.readFileSync(p, 'utf8')).toBe('hello')
+  })
 })
 
 test('runSessionMemoryUpdate 调 runSubagent（fail-safe）', async () => {

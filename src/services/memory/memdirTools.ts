@@ -59,7 +59,10 @@ export function makeMemdirTools(memdir: string): Tool<any>[] {
       if (deny) return deny
       let cur: string
       try { cur = fs.readFileSync(p, 'utf8') } catch { return `错误：文件不存在 ${p}` }
-      if (!cur.includes(input.old_string)) return `错误：old_string 未匹配到。`
+      if (!input.old_string) return `错误：old_string 不能为空。`
+      const occurrences = cur.split(input.old_string).length - 1
+      if (occurrences === 0) return `错误：old_string 未匹配到。`
+      if (occurrences > 1) return `错误：old_string 匹配到 ${occurrences} 处，请提供更多上下文使其唯一。`
       try { fs.writeFileSync(p, cur.replace(input.old_string, input.new_string)) }
       catch (e: any) { return `错误：写入失败 ${p}：${e?.message ?? e}` }
       return `已编辑 ${p}。`
