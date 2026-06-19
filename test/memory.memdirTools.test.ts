@@ -68,4 +68,18 @@ describe('makeMemdirTools MemEdit', () => {
     const e = makeMemdirTools(md).find(t => t.name === 'MemEdit')!
     expect(await e.call({ file_path: 'n.md', old_string: 'ZZZ', new_string: 'y' }, ctx)).toMatch(/未匹配/)
   })
+  test('MemEdit old_string 多匹配 → 报错含多处/唯一、不改文件', async () => {
+    fs.writeFileSync(path.join(md, 'n.md'), 'A B A B A')
+    const e = makeMemdirTools(md).find(t => t.name === 'MemEdit')!
+    const r = await e.call({ file_path: 'n.md', old_string: 'A', new_string: 'X' }, ctx)
+    expect(r).toMatch(/匹配到 \d+ 处|请提供更多上下文/)
+    expect(fs.readFileSync(path.join(md, 'n.md'), 'utf8')).toBe('A B A B A')
+  })
+  test('MemEdit old_string 为空串 → 错误串、不改文件', async () => {
+    fs.writeFileSync(path.join(md, 'n.md'), 'hello')
+    const e = makeMemdirTools(md).find(t => t.name === 'MemEdit')!
+    const r = await e.call({ file_path: 'n.md', old_string: '', new_string: 'X' }, ctx)
+    expect(r).toMatch(/不能为空/)
+    expect(fs.readFileSync(path.join(md, 'n.md'), 'utf8')).toBe('hello')
+  })
 })

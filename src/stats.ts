@@ -36,14 +36,15 @@ export function sessionStats(messages: any[], usageLog: UsageRecord[]): SessionS
     }
   }
 
-  const inTokens = usageLog.reduce((s, u) => s + u.usage.prompt_tokens, 0)
-  const hitTokens = usageLog.reduce((s, u) => s + u.usage.prompt_cache_hit_tokens, 0)
-  const outTokens = usageLog.reduce((s, u) => s + u.usage.completion_tokens, 0)
+  const mainLog = usageLog.filter(u => u.kind !== 'memory')
+  const inTokens = mainLog.reduce((s, u) => s + u.usage.prompt_tokens, 0)
+  const hitTokens = mainLog.reduce((s, u) => s + u.usage.prompt_cache_hit_tokens, 0)
+  const outTokens = mainLog.reduce((s, u) => s + u.usage.completion_tokens, 0)
 
   return {
     userTurns,
     assistantTurns,
-    requests: usageLog.length,
+    requests: mainLog.length,
     totalToolCalls,
     toolCounts: order.map(name => ({ name, n: counts.get(name)! })),
     inTokens,

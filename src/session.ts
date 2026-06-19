@@ -14,6 +14,7 @@ export interface SessionMeta {
 export interface UsageRecord {
   usage: { prompt_tokens: number; completion_tokens: number; prompt_cache_hit_tokens: number }
   model: string
+  kind?: 'memory'
 }
 
 export interface SessionHandle {

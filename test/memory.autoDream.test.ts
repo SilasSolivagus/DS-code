@@ -93,4 +93,23 @@ describe('runAutoDream', () => {
     expect(onStart).toHaveBeenCalledTimes(1)
     expect(onDone).toHaveBeenCalledWith(false)
   })
+
+  test('门控过，runSubagent 成功 → onUsage 被透传（与 extract/sessionMemory 对称）', async () => {
+    const fakeUsage = { prompt_tokens: 100, completion_tokens: 20, prompt_cache_hit_tokens: 50 }
+    const onUsage = vi.fn()
+    // runSub spy 在被调用时主动调用传入的 onUsage，模拟 subagentRunner 的行为
+    const runSub = vi.fn(async (opts: { onUsage: (u: typeof fakeUsage, m: string) => void }) => {
+      opts.onUsage(fakeUsage, 'm')
+      return 'done'
+    })
+    await runAutoDream({
+      client: {} as any, model: 'm', memdir: md, sessionsDir: sd, currentSessionFile: path.join(sd, 'c.jsonl'),
+      projectKey: 'proj',
+      cfg: DEFAULT_MEMORY_CONFIG.dream, ctx: { signal: new AbortController().signal } as any,
+      now: Date.now(), lastScanAt: 0, runSubagent: runSub as any, gate: () => ({ pass: true }),
+      onUsage,
+    })
+    expect(onUsage).toHaveBeenCalledTimes(1)
+    expect(onUsage).toHaveBeenCalledWith(fakeUsage, 'm')
+  })
 })

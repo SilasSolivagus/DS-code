@@ -6,6 +6,10 @@ const u = (prompt: number, hit: number, completion: number, model = 'deepseek-v4
   usage: { prompt_tokens: prompt, completion_tokens: completion, prompt_cache_hit_tokens: hit },
   model,
 })
+const uMem = (prompt: number, hit: number, completion: number, model = 'deepseek-v4-flash'): UsageRecord => ({
+  usage: { prompt_tokens: prompt, completion_tokens: completion, prompt_cache_hit_tokens: hit },
+  model, kind: 'memory',
+})
 
 describe('sessionStats', () => {
   it('只有 system：全为 0', () => {
@@ -71,6 +75,18 @@ describe('sessionStats', () => {
     expect(s.inTokens).toBe(300)
     expect(s.hitTokens).toBe(230)
     expect(s.outTokens).toBe(70)
+  })
+
+  it('kind=memory 记录不计入 token/requests（主对话口径）', () => {
+    const s = sessionStats(
+      [{ role: 'system', content: 's' }],
+      [u(100, 80, 30), uMem(500, 400, 100)],
+    )
+    // memory 记录过滤：只算普通记录
+    expect(s.requests).toBe(1)
+    expect(s.inTokens).toBe(100)
+    expect(s.hitTokens).toBe(80)
+    expect(s.outTokens).toBe(30)
   })
 
   it('usageLog 空：token 全 0、requests 0', () => {

@@ -1,7 +1,7 @@
 import type OpenAI from 'openai'
 import type { ToolContext } from '../../tools/types.js'
 import type { MemoryConfig } from '../../memdir/memoryConfig.js'
-import { runSubagent as realRunSubagent } from '../../subagentRunner.js'
+import { runSubagent as realRunSubagent, acquireMemory, releaseMemory } from '../../subagentRunner.js'
 import { scanMemoryFiles, formatMemoryManifest } from '../../memdir/memoryScan.js'
 import { makeMemdirTools } from './memdirTools.js'
 import { buildExtractPrompt } from './extractPrompt.js'
@@ -17,6 +17,7 @@ export interface ExtractorDeps {
   ctx: ToolContext
   runSubagent?: typeof realRunSubagent
   scan?: typeof scanMemoryFiles
+  onUsage?: (u: { prompt_tokens: number; completion_tokens: number; prompt_cache_hit_tokens: number }, model: string) => void
 }
 
 export function createMemoryExtractor(deps: ExtractorDeps) {
@@ -45,15 +46,18 @@ export function createMemoryExtractor(deps: ExtractorDeps) {
       return
     }
     const manifest = formatMemoryManifest(await scan(deps.memdir))
-    await runSub({
-      client: deps.client, model: deps.model,
-      onUsage: () => {},
-      systemPrompt: '你是 deepcode 的记忆提取助手。只用提供的工具，简洁高效。',
-      userPrompt: buildExtractPrompt(recent, manifest),
-      tools: makeMemdirTools(deps.memdir),
-      ctx: deps.ctx, signal: deps.ctx.signal,
-      agentId: `extract-${++counter}`, agentType: 'extract_memories',
-    })
+    await acquireMemory()
+    try {
+      await runSub({
+        client: deps.client, model: deps.model,
+        onUsage: deps.onUsage ?? (() => {}),
+        systemPrompt: '你是 deepcode 的记忆提取助手。只用提供的工具，简洁高效。',
+        userPrompt: buildExtractPrompt(recent, manifest),
+        tools: makeMemdirTools(deps.memdir),
+        ctx: deps.ctx, signal: deps.ctx.signal,
+        agentId: `extract-${++counter}`, agentType: 'extract_memories',
+      })
+    } finally { releaseMemory() }
     cursor = snap.maxTurnId // 仅成功后推进
     if (failedAt > 0 && cursor >= failedAt) failedAt = 0
     turnsSinceLast = 0
