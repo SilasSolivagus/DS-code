@@ -2,6 +2,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
+import { estimateTextTokens } from './tokenEstimate.js'
 
 /** 自定义命令：~/.deepcode/commands/*.md 与 <项目>/.deepcode/commands/*.md（项目优先），文件名即命令名 */
 export function loadCustomCommands(cwd: string, home: string = os.homedir()): Map<string, string> {
@@ -26,20 +27,21 @@ export const INIT_PROMPT = `请分析本项目并生成 DEEPCODE.md 项目记忆
 3. 用 Write 写入 DEEPCODE.md，内容包含三节：构建/测试/运行命令（从清单文件查证，不要猜）、架构要点（主要模块及职责，带路径）、代码风格约定（从现有代码归纳）
 保持简洁：只写对后续编码任务有用的事实，不写营销性描述。`
 
-/** /context 简版：按字符数估算各部分占比（≈4 字符/token），外加上次请求的真实 usage */
+/** /context 简版：按 CJK 感知 token 估算各部分占比，外加上次请求的真实 usage */
 export function formatContext(
   messages: any[],
   lastUsage?: { prompt_tokens: number; prompt_cache_hit_tokens: number },
 ): string {
-  const len = (v: any) => (typeof v === 'string' ? v.length : v == null ? 0 : JSON.stringify(v).length)
+  const toText = (v: any): string => (typeof v === 'string' ? v : v == null ? '' : JSON.stringify(v))
+  const est = (v: any) => estimateTextTokens(toText(v))
   let sys = 0, convo = 0, tool = 0
   for (const m of messages) {
-    if (m.role === 'system') sys += len(m.content)
-    else if (m.role === 'tool') tool += len(m.content)
-    else { convo += len(m.content); if (m.tool_calls) tool += len(m.tool_calls) }
+    if (m.role === 'system') sys += est(m.content)
+    else if (m.role === 'tool') tool += est(m.content)
+    else { convo += est(m.content); if (m.tool_calls) tool += est(m.tool_calls) }
   }
   const tot = sys + convo + tool || 1
-  const row = (label: string, n: number) => `${label}：${Math.round((n / tot) * 100)}%（≈${Math.round(n / 4)} tokens）`
+  const row = (label: string, n: number) => `${label}：${Math.round((n / tot) * 100)}%（≈${n} tokens）`
   return [
     row('系统提示词', sys),
     row('对话文本', convo),

@@ -32,8 +32,8 @@ export interface WebSearchSettings {
 
 export interface Settings {
   permissions: { allow: string[]; deny?: string[] }
-  /** 自动 compact 触发阈值（上次请求的 prompt_tokens 超过即触发） */
-  compactTokens: number
+  /** 自动 compact 触发阈值（上次请求的 prompt_tokens 超过即触发；undefined = 走派生阈值） */
+  compactTokens?: number
   /** 本会话花费提醒阈值（CNY，状态行变色一次） */
   costWarnCNY: number
   /** 工具结果字符级兜底上限，超出截断后再回灌 messages（保护上下文/前缀缓存）。缺省 100,000。 */
@@ -98,7 +98,7 @@ export function loadRawUserSettings(): Settings {
   try { raw = JSON.parse(fs.readFileSync(FILE, 'utf8')) } catch { /* 用默认 */ }
   return {
     permissions: parsePermissions(raw),
-    compactTokens: raw?.compactTokens ?? 200_000,
+    compactTokens: raw?.compactTokens,
     costWarnCNY: raw?.costWarnCNY ?? raw?.costWarnUSD ?? 15,
     maxToolResultChars: raw?.maxToolResultChars ?? 100_000,
     model: raw?.model, baseURL: raw?.baseURL, apiKey: raw?.apiKey, inline: raw?.inline,

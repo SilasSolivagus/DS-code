@@ -12,13 +12,18 @@ export function contextBarColor(pct: number): string {
   return T.accent
 }
 
+function fmtK(n: number): string {
+  return n >= 1000 ? Math.round(n / 1000) + 'k' : String(n)
+}
+
 export function StatusFooter(props: {
   model: string
   mode: string
   cwdBase: string
   branch: string | null
   memoryCount: number
-  contextPct: number
+  contextUsed: number
+  contextWindow: number
   cost: number
   hitRate: number
   cacheSavings: number
@@ -26,11 +31,9 @@ export function StatusFooter(props: {
   effortLevel: 'low' | 'medium' | 'high'
   toolCounts: Array<{ name: string; n: number }>
 }) {
-  // 上下文条：10 格，filled 用 ▓（accent），其余 ░（dim）
-  const filled = Math.round(props.contextPct / 10)
-  const bar = { fill: '▓'.repeat(filled), empty: '░'.repeat(10 - filled) }
+  const usedPct = props.contextWindow > 0 ? (props.contextUsed / props.contextWindow) * 100 : 0
 
-  // 对照 CC 真实样式（图6）：`[模型 | 模式] | cwd git:(分支)` / `Context 条 N% · $花费`
+  // 对照 CC 真实样式（图6）：`[模型 | 模式] | cwd git:(分支)` / `Context used/window · $花费`
   // / `N DEEPCODE.md`（独立行，仅有时显示）/ `✓ Bash ×8 | ✓ Read ×4`（独立行，| 分隔、× 前留空）/ `/ 看命令…`。
   // 注意：记忆行/工具行按需出现 → 行数可变，App 的 IME 光标偏移须同步动态计算（footerExtraRows）。
   return (
@@ -46,12 +49,10 @@ export function StatusFooter(props: {
         {props.branch && <Text dimColor>{` git:(${props.branch})`}</Text>}
       </Text>
 
-      {/* Row 2：上下文条 + 缓存命中（仅有命中时）+ 累计花费 */}
+      {/* Row 2：上下文绝对值 used/window + 缓存命中（仅有命中时）+ 累计花费 */}
       <Text>
         <Text dimColor>Context </Text>
-        <Text color={contextBarColor(props.contextPct)}>{bar.fill}</Text>
-        <Text dimColor>{bar.empty}</Text>
-        <Text dimColor>{` ${props.contextPct}%`}</Text>
+        <Text color={contextBarColor(usedPct)}>{fmtK(props.contextUsed)} / {fmtK(props.contextWindow)}</Text>
         {props.hitRate > 0 && (
           <Text dimColor>{` · cache ${Math.round(props.hitRate * 100)}% (−¥${props.cacheSavings.toFixed(4)})`}</Text>
         )}

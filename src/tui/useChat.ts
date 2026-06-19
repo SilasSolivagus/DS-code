@@ -30,6 +30,7 @@ import type { ToolContext } from '../tools/types.js'
 import { newSession, openSession, listSessions, loadSession, sessionIdFromFile, type SessionHandle, type UsageRecord } from '../session.js'
 import { costCNY, cacheSavingsCNY } from '../pricing.js'
 import { summarize, rebuildMessages, shouldAutoCompact } from '../compact.js'
+import { estimateTextTokens, estimateMessagesTokens, effectiveThreshold } from '../tokenEstimate.js'
 import { TaskListStore } from '../taskList.js'
 import { loadCustomCommands, expandCommand, INIT_PROMPT, formatContext } from '../commands.js'
 import { resolveAgents } from '../agentsLoader.js'
@@ -172,7 +173,9 @@ export interface ChatState {
   sessionCost(): number
   cacheHitRate(): number // usageLog 累计 hit/prompt，DeepSeek 状态行核心指标
   cacheSavings(): number // usageLog 累计缓存省下金额（CNY），DeepSeek 状态行
-  contextPct(): number // 上下文占比：lastPromptTokens / compactTokens（0-100），用于状态栏上下文条
+  contextPct(): number // 上下文占比：lastPromptTokens / 生效阈值（0-100），用于状态栏上下文条
+  contextUsed(): number // 上次真实 prompt_tokens（状态栏上下文条分子）
+  contextWindow(): number // 当前模型生效阈值（状态栏上下文条分母）
 }
 
 export interface ChatCore {
@@ -268,6 +271,7 @@ export function createChatCore(opts: {
   }
   let compacted = false       // compact 后首条用户消息的一次性提醒
   let lastPromptTokens = 0    // 自动 compact 触发依据
+  let baselineLen = 0         // 与 lastPromptTokens 原子配对：lastPromptTokens 覆盖的 messages 前缀长度（发送前预估只估超出此前缀的新消息）
   let costWarned = false      // $阈值提醒只发一次
   let compactWarned = false   // 上下文≥90% 一次性提示
   const MAX_AUTO_COMPACT_FAILURES = 3
@@ -296,13 +300,17 @@ export function createChatCore(opts: {
   }
   const cacheSavings = () =>
     usageLog.filter(u => u.kind !== 'memory').reduce((s, u) => s + cacheSavingsCNY(u.model, u.usage.prompt_cache_hit_tokens), 0)
-  const contextPct = () =>
-    settings.compactTokens ? Math.min(100, Math.round((lastPromptTokens / settings.compactTokens) * 100)) : 0
+  const contextPct = () => {
+    const thr = effectiveThreshold(model, settings.compactTokens)
+    return thr ? Math.min(100, Math.round((lastPromptTokens / thr) * 100)) : 0
+  }
+  const contextUsed = () => lastPromptTokens
+  const contextWindow = () => effectiveThreshold(model, settings.compactTokens)
 
   // 所有状态变更走 setState：换新快照对象 → onState 回调 + 订阅者通知
   const listeners = new Set<() => void>()
   const snap = (): ChatState => ({
-    transcript, busy, model, thinking, effortLevel, permMode, pendingAsk, pendingQuestion, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, sessionCost, cacheHitRate, cacheSavings, contextPct,
+    transcript, busy, model, thinking, effortLevel, permMode, pendingAsk, pendingQuestion, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, sessionCost, cacheHitRate, cacheSavings, contextPct, contextUsed, contextWindow,
   })
   let state = snap()
   const setState = (): void => {
@@ -336,7 +344,7 @@ export function createChatCore(opts: {
     usageLog.push(...loaded.usages)
     session = openSession(file)
     // 恢复后重置会话内状态，防止旧 todo/compact 标记/token 计数泄漏到新对话
-    taskList.bind(sessionIdFromFile(session.file)); compacted = false; lastPromptTokens = 0; consecutiveCompactFailures = 0; compactWarned = false
+    taskList.bind(sessionIdFromFile(session.file)); compacted = false; lastPromptTokens = 0; baselineLen = 0; consecutiveCompactFailures = 0; compactWarned = false
     // doCompact 崩溃在 appendCompact 与首条 re-append 之间的兜底
     if (messages.length === 0 || messages[0]?.role !== 'system') {
       messages.unshift({ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars, memdir) })
@@ -498,6 +506,7 @@ export function createChatCore(opts: {
     for (const m of messages) session.appendMessage(m)
     compacted = true
     lastPromptTokens = 0
+    baselineLen = 0
     compactWarned = false
     if (settings.hooks) {
       await runHooks('PostCompact', {
@@ -623,8 +632,8 @@ export function createChatCore(opts: {
         const ev = step.value
         if (ev.type === 'text') {
           if (firstDeltaAt === null) firstDeltaAt = Date.now()
-          // spinner 实时输出 token 估算（非思考流；中文偏低估，仅作动态观感）
-          if (!ev.reasoning) turnOutTokens += Math.ceil(ev.delta.length / 3)
+          // spinner 实时输出 token 估算（非思考流；CJK 感知加权，仅作动态观感）
+          if (!ev.reasoning) turnOutTokens += estimateTextTokens(ev.delta)
           dispatch({ type: 'delta', delta: ev.delta, reasoning: !!ev.reasoning })
         } else if (ev.type === 'tool_start') {
           turnToolCalls++
@@ -641,6 +650,8 @@ export function createChatCore(opts: {
           usageLog.push({ usage: ev.usage, model })
           session.appendUsage(ev.usage, model)
           lastPromptTokens = ev.usage.prompt_tokens
+          // baselineLen 原子配对：lastPromptTokens 覆盖发送时的 messages 前缀（sentLen，含本轮 user，但不含本轮 assistant 产出）
+          baselineLen = ev.sentLen
           // turn 边界用真实累计输出 token 校准估算值（覆盖本 turn 期间的粗估）
           sendOutTokens += ev.usage.completion_tokens
           turnOutTokens = sendOutTokens
@@ -655,7 +666,8 @@ export function createChatCore(opts: {
             costWarned = true
             notice('warn', `[花费提醒] 本会话已超 ¥${settings.costWarnCNY}（/cost 查看明细，阈值在 settings.json 的 costWarnCNY）`)
           }
-          const ctxPct = settings.compactTokens ? (lastPromptTokens / settings.compactTokens) * 100 : 0
+          const warnThr = effectiveThreshold(model, settings.compactTokens)
+          const ctxPct = warnThr ? (lastPromptTokens / warnThr) * 100 : 0
           if (!compactWarned && ctxPct >= 90) {
             compactWarned = true
             notice('warn', `上下文已用 ${Math.round(ctxPct)}%，接近自动压缩阈值`)
@@ -727,7 +739,11 @@ export function createChatCore(opts: {
     }
 
     // 自动 compact（落盘之后；busy 保持 true 直到 compact 结束）
-    if (shouldAutoCompact(lastPromptTokens, settings.compactTokens, consecutiveCompactFailures, MAX_AUTO_COMPACT_FAILURES)) {
+    // 发送前预估：上次真实 prompt_tokens + 自 baseline 以来新增消息的估算（含本轮 assistant 产出）。
+    // clamp Math.min 守 rewind/截断（baselineLen 可能 > 当前 messages.length）。
+    const estimated = lastPromptTokens + estimateMessagesTokens(messages.slice(Math.min(baselineLen, messages.length)))
+    const thr = effectiveThreshold(model, settings.compactTokens)
+    if (shouldAutoCompact(estimated, thr, consecutiveCompactFailures, MAX_AUTO_COMPACT_FAILURES)) {
       try { await doCompact('auto'); consecutiveCompactFailures = 0 }
       catch (e: any) {
         consecutiveCompactFailures++
@@ -855,6 +871,7 @@ export function createChatCore(opts: {
       ctx.fileState.clear()
       compacted = false
       lastPromptTokens = 0
+      baselineLen = 0
       compactWarned = false
       consecutiveCompactFailures = 0
       pendingSessionContext = null

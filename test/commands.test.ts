@@ -55,6 +55,22 @@ describe('formatContext', () => {
     expect(formatContext([{ role: 'user', content: 'hi' }])).toContain('尚无')
   })
 
+  it('中文消息 token 估算显著高于旧 chars/4', () => {
+    // 样例：'这是一段纯中文内容用来测试token估算'.repeat(5)
+    // = 15 CJK×0.6 + 5 ASCII×0.3 = 10.5 weight/repeat × 5 = 52.5 → ceil = 53 tokens
+    // 旧 chars/4：round(100/4) = 25；新 ≈ 53，约 2.1×
+    const msgs = [{ role: 'user', content: '这是一段纯中文内容用来测试token估算'.repeat(5) }]
+    const out = formatContext(msgs)
+    // 找「对话文本」行，提取 token 数
+    const convoRow = out.split('\n').find(r => r.startsWith('对话文本'))!
+    expect(convoRow).toBeDefined()
+    const m = convoRow.match(/≈(\d+) tokens/)
+    expect(m).not.toBeNull()
+    const tokens = Number(m![1])
+    expect(tokens).toBe(53)          // ceil(52.5) via estimateTextTokens
+    expect(tokens).toBeGreaterThan(30) // 显著高于旧值 25
+  })
+
   it('content 为 null 的 assistant tool_calls 不崩，且计入工具调用与结果', () => {
     const messages = [
       { role: 'system', content: 'x'.repeat(400) },

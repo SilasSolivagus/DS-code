@@ -38,7 +38,7 @@ export function rebuildMessages(messages: any[], summary: string, keep = 8): any
   return [...head, { role: 'user', content: `<对话历史总结>\n${summary}\n</对话历史总结>` }, ...tail]
 }
 
-/** 自动 compact 决策：超阈且未达连续失败上限才触发（熔断防无限重试烧钱）。 */
-export function shouldAutoCompact(promptTokens: number, threshold: number, failures: number, maxFailures: number): boolean {
-  return promptTokens > threshold && failures < maxFailures
+/** 自动 compact 决策：发送前预估超派生阈值且未达连续失败上限才触发（熔断防无限重试烧钱）。 */
+export function shouldAutoCompact(estimatedTokens: number, threshold: number, failures: number, maxFailures: number): boolean {
+  return estimatedTokens > threshold && failures < maxFailures
 }

@@ -12,7 +12,7 @@ export type LoopEvent =
   | { type: 'text'; delta: string; reasoning?: boolean }
   | { type: 'tool_start'; id: string; name: string; desc: string }
   | { type: 'tool_end'; id: string; ok: boolean; preview: string; previewExtra: number; ms: number }
-  | { type: 'turn_end'; usage: ChatResult['usage'] }
+  | { type: 'turn_end'; usage: ChatResult['usage']; sentLen: number }
 
 export interface LoopDeps {
   client: OpenAI
@@ -143,6 +143,7 @@ export async function* runLoop(
   const apiTools = toApiTools(deps.tools)
   let stopHookFired = false // Stop hook block→续跑守卫：每次 runLoop 最多续跑一次，硬防无限循环
   for (let turn = 0; turn < (deps.maxTurns ?? 80); turn++) {
+    const sentLen = messages.length
     let result: ChatResult
     try {
       const stream = chatStream(deps.client, {
@@ -195,7 +196,7 @@ export async function* runLoop(
         : {}),
     })
     if (!result.toolCalls.length) {
-      yield { type: 'turn_end', usage: result.usage }
+      yield { type: 'turn_end', usage: result.usage, sentLen }
       // 被长度上限截断且无工具调用：自动追加续写请求，进入下一轮（仍受 maxTurns 约束）
       if (result.finishReason === 'length') {
         messages.push({ role: 'user', content: '（上一条回复因长度上限被截断，请继续输出剩余内容。）' })
@@ -273,7 +274,7 @@ export async function* runLoop(
     for (const inj of deps.drainInjections?.() ?? []) {
       messages.push({ role: 'user', content: inj })
     }
-    yield { type: 'turn_end', usage: result.usage }
+    yield { type: 'turn_end', usage: result.usage, sentLen }
     if (deps.ctx.signal.aborted) {
       sealMessages(messages, '（本轮已被用户中断。）')
       return 'aborted'
