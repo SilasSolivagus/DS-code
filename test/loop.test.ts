@@ -625,6 +625,45 @@ describe('drainInjections', () => {
   })
 })
 
+describe('turn_end sentLen', () => {
+  it('turn_end 事件带 sentLen = 发送前 messages 长度', async () => {
+    script.push({
+      result: { content: '回答', toolCalls: [], usage, finishReason: 'stop' },
+    })
+    const messages: any[] = [{ role: 'system', content: 's' }, { role: 'user', content: 'hi' }]
+    const { events } = await drain(runLoop(messages, makeDeps([readTool])))
+    const te = events.find(e => e.type === 'turn_end')
+    expect(te).toBeDefined()
+    // 发送时 messages.length = 2（[system, user]）；发送后 assistant push 使 messages.length = 3
+    expect(te.sentLen).toBe(2)
+    expect(messages.length).toBe(3) // 确认 assistant 已 push
+  })
+
+  it('工具调用路径 turn_end 也带正确 sentLen', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'dc-sl-'))
+    const f = path.join(dir, 'a.txt')
+    writeFileSync(f, 'content')
+    script.push(
+      {
+        result: {
+          content: '',
+          toolCalls: [{ id: 't1', name: 'Read', args: JSON.stringify({ file_path: f }) }],
+          usage,
+          finishReason: 'tool_calls',
+        },
+      },
+      { result: { content: '已读', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    const messages: any[] = [{ role: 'system', content: 's' }, { role: 'user', content: 'go' }]
+    const { events } = await drain(runLoop(messages, makeDeps([readTool])))
+    const turnEnds = events.filter(e => e.type === 'turn_end')
+    // 第一轮（含工具）：发送时 messages.length=2，sentLen=2
+    expect(turnEnds[0].sentLen).toBe(2)
+    // 第二轮（收尾）：发送时 messages 包含 [system, user, assistant(tool_calls), tool_result]，sentLen=4
+    expect(turnEnds[1].sentLen).toBe(4)
+  })
+})
+
 describe('runLoop + StopFailure hook', () => {
   it('API 抛错（非中断）→ StopFailure hook 触发后继续抛', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'dc-sf-'))

@@ -11,7 +11,7 @@ vi.mock('../src/loop.js', () => ({
   runLoop: async function* (messages: any[]) {
     lastMessages = messages
     messages.push({ role: 'assistant', content: 'MOCK 答案' })
-    yield { type: 'turn_end', usage: { prompt_tokens: 10, completion_tokens: 5, prompt_cache_hit_tokens: 0 } }
+    yield { type: 'turn_end', usage: { prompt_tokens: 10, completion_tokens: 5, prompt_cache_hit_tokens: 0 }, sentLen: messages.length }
   },
 }))
 
