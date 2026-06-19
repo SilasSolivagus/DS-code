@@ -87,6 +87,29 @@ describe('configTool 权限', () => {
   })
 })
 
+describe('configTool compactTokens 语义', () => {
+  it('GET compactTokens 未设时显示「走模型派生阈值」友好文案', async () => {
+    const before = loadRawUserSettings()
+    try {
+      // 确保 raw settings 中无 compactTokens
+      const seed = { ...before }
+      delete seed.compactTokens
+      saveRawUserSettings(seed)
+      const out = await configTool.call({ setting: 'compactTokens' }, ctx)
+      expect(out).toContain('未设')
+      expect(out).toContain('派生阈值')
+    } finally { saveRawUserSettings(before) }
+  })
+  it('GET compactTokens 显式设值时返回数字', async () => {
+    const before = loadRawUserSettings()
+    try {
+      saveRawUserSettings({ ...before, compactTokens: 200000 })
+      const out = await configTool.call({ setting: 'compactTokens' }, ctx)
+      expect(out).toBe('compactTokens = 200000')
+    } finally { saveRawUserSettings(before) }
+  })
+})
+
 describe('configTool 注册', () => {
   it('Config 工具在 allTools 中', () => {
     expect(allTools.find(t => t.name === 'Config')).toBeTruthy()

@@ -33,7 +33,7 @@ const nonEmptyStr = (v: Scalar): CoerceResult => {
 
 export const CONFIG_KEYS: Record<string, ConfigKey> = {
   model: { coerce: nonEmptyStr, read: s => s.model ?? '(默认)', write: (raw, v) => { raw.model = v as string } },
-  compactTokens: { coerce: posInt, read: s => s.compactTokens ?? '(未设，走派生阈值)', write: (raw, v) => { raw.compactTokens = v as number } },
+  compactTokens: { coerce: posInt, read: s => s.compactTokens ?? '(未设，走模型派生阈值 ~971k)', write: (raw, v) => { raw.compactTokens = v as number } },
   costWarnCNY: { coerce: posNum, read: s => s.costWarnCNY, write: (raw, v) => { raw.costWarnCNY = v as number } },
   maxToolResultChars: { coerce: posInt, read: s => s.maxToolResultChars, write: (raw, v) => { raw.maxToolResultChars = v as number } },
   inline: { coerce: boolCoerce, read: s => s.inline ?? false, write: (raw, v) => { raw.inline = v as boolean } },
@@ -51,7 +51,7 @@ const PROTECTED_TOP = new Set([
 ])
 
 const schema = z.object({
-  setting: z.string().describe('配置键名：model / compactTokens / costWarnCNY / maxToolResultChars / inline / skills.listingBudgetChars'),
+  setting: z.string().describe('配置键名：model / compactTokens（可选省钱上限，未设走模型派生阈值 ~971k）/ costWarnCNY / maxToolResultChars / inline / skills.listingBudgetChars'),
   value: z.union([z.string(), z.number(), z.boolean()]).optional().describe('省略=读取当前值；提供=写入该值'),
 })
 
@@ -59,7 +59,7 @@ export const configTool: Tool<typeof schema> = {
   name: 'Config',
   description:
     '读写 deepcode 用户级配置。省略 value=读当前合并值；提供 value=写入 user 配置。' +
-    '可用键：model, compactTokens, costWarnCNY, maxToolResultChars, inline, skills.listingBudgetChars。' +
+    '可用键：model, compactTokens（可选省钱上限 override；未设走模型派生阈值 ~971k；设了取 min(派生, compactTokens)）, costWarnCNY, maxToolResultChars, inline, skills.listingBudgetChars。' +
     '敏感/受保护设置（apiKey、baseURL、hooks、mcpServers、permissions、webSearch、SSRF 白名单）不可经此工具修改。',
   inputSchema: schema,
   isReadOnly: false,
