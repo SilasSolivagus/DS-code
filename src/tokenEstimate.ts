@@ -10,14 +10,34 @@ function isCJK(cp: number): boolean {
   )
 }
 
+/** 计算原始加权值（不 ceil）：CJK ×0.6/字、其余 ×0.3/字。空/undefined → 0，绝不抛。
+ *  基于 DeepSeek 官方比例（中文 0.6、英文 0.3 token/字符）。 */
+function rawWeight(s: string | null | undefined): number {
+  if (!s) return 0
+  let w = 0
+  for (const ch of s) { const cp = ch.codePointAt(0)!; w += isCJK(cp) ? 0.6 : 0.3 }
+  return w
+}
+
 /** CJK 感知 token 估算：CJK ×0.6/字、其余 ×0.3/字。空/undefined → 0，绝不抛。
  *  基于 DeepSeek 官方比例（中文 0.6、英文 0.3 token/字符）。over-estimate 偏安全。 */
 export function estimateTextTokens(s: string | null | undefined): number {
-  if (!s) return 0
+  return Math.ceil(rawWeight(s))
+}
+
+/** 按 deepcode 扁平 OpenAI 消息结构逐条累加 token 估算。
+ *  content 永远是 string|null；assistant.tool_calls[].function 的 name+arguments 计入。
+ *  无 Anthropic block 数组、无图像分支（V4 纯文本）。整体一次 ceil 避免逐条 ceil 累积偏高。 */
+export function estimateMessagesTokens(messages: any[]): number {
   let weighted = 0
-  for (const ch of s) {
-    const cp = ch.codePointAt(0)!
-    weighted += isCJK(cp) ? 0.6 : 0.3
+  for (const m of messages ?? []) {
+    weighted += rawWeight(typeof m?.content === 'string' ? m.content : '')
+    if (Array.isArray(m?.tool_calls)) {
+      for (const tc of m.tool_calls) {
+        const fn = tc?.function ?? {}
+        weighted += rawWeight((fn.name ?? '') + (fn.arguments ?? ''))
+      }
+    }
   }
   return Math.ceil(weighted)
 }
