@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { estimateTextTokens, estimateMessagesTokens, resolveContextWindow, computeCompactThreshold } from '../src/tokenEstimate.js'
+import { estimateTextTokens, estimateMessagesTokens, resolveContextWindow, computeCompactThreshold, effectiveThreshold } from '../src/tokenEstimate.js'
 
 describe('estimateTextTokens', () => {
   it('空/undefined/null → 0', () => {
@@ -77,5 +77,17 @@ describe('computeCompactThreshold', () => {
   })
   it('未知模型 = 200k − 29k = 171k', () => {
     expect(computeCompactThreshold('x')).toBe(171_000)
+  })
+})
+
+describe('effectiveThreshold', () => {
+  it('未设 compactTokens → 派生 971k', () => {
+    expect(effectiveThreshold('deepseek-v4-flash', undefined)).toBe(971_000)
+  })
+  it('设了更小 → 取 compactTokens', () => {
+    expect(effectiveThreshold('deepseek-v4-flash', 200_000)).toBe(200_000)
+  })
+  it('设了更大 → 取派生', () => {
+    expect(effectiveThreshold('deepseek-v4-flash', 5_000_000)).toBe(971_000)
   })
 })

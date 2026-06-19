@@ -61,3 +61,9 @@ export function resolveContextWindow(model: string): number {
 export function computeCompactThreshold(model: string): number {
   return resolveContextWindow(model) - OUTPUT_RESERVE - AUTOCOMPACT_BUFFER
 }
+
+/** 生效阈值：compactTokens 未设走派生；设了取 min（更紧省钱上限）。 */
+export function effectiveThreshold(model: string, compactTokens?: number): number {
+  const derived = computeCompactThreshold(model)
+  return compactTokens != null ? Math.min(derived, compactTokens) : derived
+}
