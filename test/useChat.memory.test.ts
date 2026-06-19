@@ -69,6 +69,48 @@ describe('useChat 记忆提取接线', () => {
   })
 })
 
+describe('usageLog kind:memory 计费与过滤', () => {
+  it('memory 记录计入 sessionCost，不计入 cacheHitRate/cacheSavings', async () => {
+    script.push({
+      deltas: ['ok'],
+      result: { content: 'ok', toolCalls: [], usage, finishReason: 'stop' },
+    })
+    const core = createChatCore({ client: {} as any, yolo: true, cwd: '/tmp', sessionDir, onState: () => {} })
+    await core.send('test')
+
+    // usageLog 已有主对话记录
+    const log = core.state.usageLog
+    expect(log.length).toBeGreaterThan(0)
+
+    const mainCost = core.state.sessionCost()
+    const mainCacheHit = core.state.cacheHitRate()
+    const mainSavings = core.state.cacheSavings()
+
+    // 注入一条 kind:'memory' 记录（模拟记忆 fork 推入）
+    log.push({ usage: { prompt_tokens: 100, completion_tokens: 50, prompt_cache_hit_tokens: 80 }, model: 'deepseek-v4-flash', kind: 'memory' })
+
+    // sessionCost 包含 memory 记录（成本全部可见）
+    expect(core.state.sessionCost()).toBeGreaterThan(mainCost)
+
+    // cacheHitRate 不包含 memory 记录（80/100 会极大拉高比率，应保持主对话值）
+    expect(core.state.cacheHitRate()).toBeCloseTo(mainCacheHit)
+
+    // cacheSavings 不包含 memory 记录
+    expect(core.state.cacheSavings()).toBeCloseTo(mainSavings)
+
+    core.dispose()
+  })
+
+  it('只有 memory 记录时 cacheHitRate 返回 0（无主对话 prompt_tokens）', () => {
+    const core = createChatCore({ client: {} as any, yolo: true, cwd: '/tmp', sessionDir, onState: () => {} })
+    const log = core.state.usageLog
+    log.push({ usage: { prompt_tokens: 100, completion_tokens: 50, prompt_cache_hit_tokens: 80 }, model: 'deepseek-v4-flash', kind: 'memory' })
+    // 无主对话记录，分母为 0 → 返回 0
+    expect(core.state.cacheHitRate()).toBe(0)
+    core.dispose()
+  })
+})
+
 describe('useChat memory.enabled=false 端到端零副作用', () => {
   it('disabled 时：subagent 零调用、无 dream 任务、系统提示无记忆索引', async () => {
     // 准备 settings 文件，注入 memory.enabled=false

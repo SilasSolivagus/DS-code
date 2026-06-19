@@ -284,17 +284,18 @@ export function createChatCore(opts: {
 
   const sessionCost = () =>
     usageLog.reduce((s, u) => s + costCNY(u.model, u.usage.prompt_tokens, u.usage.prompt_cache_hit_tokens, u.usage.completion_tokens), 0)
-  // memory fork 使用记录回调：带 kind:'memory' 标签，用于成本含 memory、token/请求数过滤 memory
+  // memory fork 使用记录回调：带 kind:'memory' 标签，仅驻内存不落盘
+  // （appendUsage 无 kind 字段，落盘后 resume 读回会变普通 usage 绕过过滤，破坏闭合）
   const memoryOnUsage = (u: UsageRecord['usage'], m: string) => {
     usageLog.push({ usage: u, model: m, kind: 'memory' })
-    session.appendUsage(u, m)
   }
   const cacheHitRate = () => {
-    const prompt = usageLog.reduce((s, u) => s + u.usage.prompt_tokens, 0)
-    return prompt ? usageLog.reduce((s, u) => s + u.usage.prompt_cache_hit_tokens, 0) / prompt : 0
+    const main = usageLog.filter(u => u.kind !== 'memory')
+    const prompt = main.reduce((s, u) => s + u.usage.prompt_tokens, 0)
+    return prompt ? main.reduce((s, u) => s + u.usage.prompt_cache_hit_tokens, 0) / prompt : 0
   }
   const cacheSavings = () =>
-    usageLog.reduce((s, u) => s + cacheSavingsCNY(u.model, u.usage.prompt_cache_hit_tokens), 0)
+    usageLog.filter(u => u.kind !== 'memory').reduce((s, u) => s + cacheSavingsCNY(u.model, u.usage.prompt_cache_hit_tokens), 0)
   const contextPct = () =>
     settings.compactTokens ? Math.min(100, Math.round((lastPromptTokens / settings.compactTokens) * 100)) : 0
 
