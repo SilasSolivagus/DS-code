@@ -1,7 +1,9 @@
-import { describe, it, expect } from 'vitest'
-import { acquire, release, acquireMemory, releaseMemory } from '../src/subagentRunner.js'
+import { describe, it, expect, afterEach } from 'vitest'
+import { acquire, release, acquireMemory, releaseMemory, __resetSubagentSemaphoreForTest, __resetMemorySemaphoreForTest } from '../src/subagentRunner.js'
 
 describe('subagentRunner 信号量', () => {
+  afterEach(() => __resetSubagentSemaphoreForTest())
+
   it('并发上限 4：第 5 个 acquire 阻塞直到 release', async () => {
     for (let i = 0; i < 4; i++) await acquire() // 占满 4 个许可
     let fifthGranted = false
@@ -16,6 +18,8 @@ describe('subagentRunner 信号量', () => {
 })
 
 describe('subagentRunner 记忆信号量', () => {
+  afterEach(() => __resetMemorySemaphoreForTest())
+
   it('并发上限 2：第 3 个 acquireMemory 阻塞直到 releaseMemory', async () => {
     for (let i = 0; i < 2; i++) await acquireMemory() // 占满 2 个许可
     let thirdGranted = false

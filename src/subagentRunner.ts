@@ -22,6 +22,12 @@ export function release(): void {
   else active--
 }
 
+/** 仅测试用：重置子代理信号量状态（active/waiters）。 */
+export function __resetSubagentSemaphoreForTest(): void {
+  active = 0
+  waiters.length = 0
+}
+
 // 记忆 fork 专用信号量（独立于用户 subagent 池，防三连点火打爆限流）。
 // MAX_MEMORY_ACTIVE=2：extract+sessionMemory+dream 最多 2 个并发，不饿死用户主动起的 Task。
 const MAX_MEMORY_ACTIVE = 2
@@ -35,6 +41,12 @@ export function releaseMemory(): void {
   const next = memWaiters.shift()
   if (next) next() // 移交许可：memActive 不变
   else memActive--
+}
+
+/** 仅测试用：重置记忆信号量状态（memActive/memWaiters）。 */
+export function __resetMemorySemaphoreForTest(): void {
+  memActive = 0
+  memWaiters.length = 0
 }
 
 export interface RunSubagentOpts {
