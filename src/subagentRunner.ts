@@ -22,6 +22,21 @@ export function release(): void {
   else active--
 }
 
+// 记忆 fork 专用信号量（独立于用户 subagent 池，防三连点火打爆限流）。
+// MAX_MEMORY_ACTIVE=2：extract+sessionMemory+dream 最多 2 个并发，不饿死用户主动起的 Task。
+const MAX_MEMORY_ACTIVE = 2
+let memActive = 0
+const memWaiters: Array<() => void> = []
+export async function acquireMemory(): Promise<void> {
+  if (memActive < MAX_MEMORY_ACTIVE) { memActive++; return }
+  await new Promise<void>(r => memWaiters.push(r)) // 许可由 releaseMemory 移交，不再自增
+}
+export function releaseMemory(): void {
+  const next = memWaiters.shift()
+  if (next) next() // 移交许可：memActive 不变
+  else memActive--
+}
+
 export interface RunSubagentOpts {
   client: OpenAI
   onUsage: (u: Usage, model: string) => void

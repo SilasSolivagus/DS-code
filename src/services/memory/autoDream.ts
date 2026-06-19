@@ -1,7 +1,7 @@
 import type OpenAI from 'openai'
 import type { ToolContext } from '../../tools/types.js'
 import type { MemoryConfig } from '../../memdir/memoryConfig.js'
-import { runSubagent as realRunSubagent } from '../../subagentRunner.js'
+import { runSubagent as realRunSubagent, acquireMemory, releaseMemory } from '../../subagentRunner.js'
 import { makeMemdirTools } from './memdirTools.js'
 import { checkDreamGates } from './dreamGate.js'
 import { tryAcquireConsolidationLock, rollbackConsolidationLock } from './consolidationLock.js'
@@ -49,14 +49,17 @@ export async function runAutoDream(deps: AutoDreamDeps): Promise<void> {
     deps.onStart?.()
     try {
       const runSub = deps.runSubagent ?? realRunSubagent
-      await runSub({
-        client: deps.client, model: deps.model, onUsage: deps.onUsage ?? (() => {}),
-        systemPrompt: '你是 deepcode 的记忆整理助手。只用提供的工具，谨慎合并、勿丢信息。',
-        userPrompt: buildConsolidationPrompt(deps.sessionCount ?? 0),
-        tools: makeMemdirTools(deps.memdir),
-        ctx: deps.ctx, signal: deps.ctx.signal,
-        agentId: 'auto-dream', agentType: 'auto_dream',
-      })
+      await acquireMemory()
+      try {
+        await runSub({
+          client: deps.client, model: deps.model, onUsage: deps.onUsage ?? (() => {}),
+          systemPrompt: '你是 deepcode 的记忆整理助手。只用提供的工具，谨慎合并、勿丢信息。',
+          userPrompt: buildConsolidationPrompt(deps.sessionCount ?? 0),
+          tools: makeMemdirTools(deps.memdir),
+          ctx: deps.ctx, signal: deps.ctx.signal,
+          agentId: 'auto-dream', agentType: 'auto_dream',
+        })
+      } finally { releaseMemory() }
       // 成功：刷新锁 mtime（= lastConsolidatedAt）
       try { fs.utimesSync(path.join(deps.memdir, '.consolidate-lock'), new Date(deps.now), new Date(deps.now)) } catch {}
       deps.onDone?.(true)
