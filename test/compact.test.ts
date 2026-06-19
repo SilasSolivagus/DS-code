@@ -101,14 +101,13 @@ describe('rebuildMessages', () => {
 })
 
 describe('shouldAutoCompact', () => {
-  it('超阈且未达失败上限 → true', () => {
-    expect(shouldAutoCompact(201_000, 200_000, 0, 3)).toBe(true)
-    expect(shouldAutoCompact(201_000, 200_000, 2, 3)).toBe(true)
+  it('预估 > 阈值 且 未达熔断 → true', () => {
+    expect(shouldAutoCompact(972_000, 971_000, 0, 3)).toBe(true)
   })
-  it('欠阈 → false', () => {
-    expect(shouldAutoCompact(199_000, 200_000, 0, 3)).toBe(false)
+  it('预估 ≤ 阈值 → false', () => {
+    expect(shouldAutoCompact(971_000, 971_000, 0, 3)).toBe(false)
   })
-  it('达失败上限 → 熔断 false（即便超阈）', () => {
-    expect(shouldAutoCompact(300_000, 200_000, 3, 3)).toBe(false)
+  it('达到连续失败上限 → false（熔断）', () => {
+    expect(shouldAutoCompact(999_999, 971_000, 3, 3)).toBe(false)
   })
 })
