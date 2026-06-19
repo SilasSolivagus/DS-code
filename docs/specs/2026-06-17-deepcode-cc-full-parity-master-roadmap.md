@@ -20,7 +20,7 @@
 
 自本表 2026-06-17 快照以来合并的件（按层）：
 - **第 1 层**：✅1.1 MCP(`e93cf54`)、✅1.2 Skills(`0685ecb`+预算/scope`c882d14`)、✅1.8 Task todo-V2(`2558c61`)。
-- **第 2 层**：✅2.4 Prompt 缓存(`841b264`)、✅2.6 Cost 告警(`fa2cade`)；🟡2.1 思考预算(只做 effort 档位/ultrathink 关键词,adaptive budget/跨compact结转余)；🟡2.3 自动compact(做了熔断器+预警色,自动触发余)；⏭️2.2 Microcompact 判**不适用 DeepSeek 跳过**。
+- **第 2 层**：✅2.4 Prompt 缓存(`841b264`)、✅2.5 Token 计数(`7dc78ea`,CJK 感知估算+模型感知 window+发送前预估,CC countTokens API/多后端 N/A)、✅2.6 Cost 告警(`fa2cade`)；🟡2.1 思考预算(只做 effort 档位/ultrathink 关键词,adaptive budget/跨compact结转余)；🟡2.3 自动compact(做了熔断器+预警色,自动触发余)；⏭️2.2 Microcompact 判**不适用 DeepSeek 跳过**。
 - **第 3 层**：🟡3.7 权限 deny 规则层 —— **安全加固 B 批(`e5f403d`)做了 deny 规则(BUILTIN_DENY+permissions.deny+isDeniedPath+硬拒/降级ask+Glob/Grep输出过滤)+denial tracking(onDenied)**；还缺**来源层级**(归 3.9)+`/permissions` UI(碰TUI)。
 - **第 4 层**：✅4.1 WebSearch(`c58ff77`,双源 Bocha+Tavily)；⏭️4.2 ToolSearch **暂缓存档**(价值正比 MCP 工具数,触发=挂 30+工具 MCP)、4.3 Sleep **跳过**(`Bash(sleep)`已等价)、4.4 Brief **跳过**(CC 双输出面契约,deepcode 单面不映射)。
 - **另**：安全加固 B 批还含 #1 复合命令前缀绕过修复(shell-quote 逐段授权,关联权限层)、#2 工具结果注入守则、#4 sanitize C1 缺口+威胁模型文档——非 roadmap 单项,记入 [[deepcode-next-session]]。
@@ -48,7 +48,7 @@
 | 2.2 | **Microcompact**（逐消息清理旧工具结果占位，省 token） | `services/compact/microCompact.ts` | 无(仅整体 compact) | ⏭️跳过(不适用 DeepSeek) | 否 | M |
 | 2.3 | **自动 compact 触发 + 告警 UI**（超 token 阈值自动压 + 提示） | `services/compact/autoCompact` | 🟡 熔断器+预警色(`fa2cade`),自动触发余 | 🟡 | 部分 | M |
 | 2.4 | **Prompt caching / cache_control 头** | `utils/cacheBreak.ts` | ✅ cacheSavings 纯函数+状态栏 cache 段(`841b264`) | ✅ | 否 | S |
-| 2.5 | **Token 计数/估算**（精确计数 + 多后端） | `services/tokenEstimation.ts` | 无 | ⬜ | 否 | M |
+| 2.5 | **Token 计数/估算**（精确计数 + 多后端） | `services/tokenEstimation.ts` | ✅ CJK 感知估算+模型感知 window+发送前预估 compact(`7dc78ea`)。CC 的 countTokens API/多后端 N/A(DeepSeek 无此端点) | ✅ | 否 | M |
 | 2.6 | **Cost 告警 hook**（累计 + 阈值告警；settings 已有 costWarnUSD） | `costHook.ts` `cost-tracker.ts` | ✅ costWarnUSD 阈值告警(`fa2cade`) | ✅ | 部分 | S |
 | 2.7 | **/model /effort /fast 模型切换** | `commands/{model,effort,fast}` | 无 | ⬜ | 碰TUI | S |
 
