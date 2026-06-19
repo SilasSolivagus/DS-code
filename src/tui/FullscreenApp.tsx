@@ -276,7 +276,8 @@ export function FullscreenApp(props: {
           cwdBase={cwdBase}
           branch={branch}
           memoryCount={memoryCount}
-          contextPct={state.contextPct()}
+          contextUsed={state.contextUsed()}
+          contextWindow={state.contextWindow()}
           cost={state.sessionCost()}
           hitRate={state.cacheHitRate()}
           cacheSavings={state.cacheSavings()}

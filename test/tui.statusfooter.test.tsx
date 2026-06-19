@@ -11,7 +11,8 @@ const base = {
   cwdBase: 'deepcode',
   branch: 'main' as string | null,
   memoryCount: 2,
-  contextPct: 28,
+  contextUsed: 28000,
+  contextWindow: 100000,
   cost: 0.0042,
   hitRate: 0,
   cacheSavings: 0,
@@ -28,15 +29,12 @@ describe('StatusFooter', () => {
     expect(f).toContain('deepcode')
     expect(f).toContain('git:(main)')
     expect(f).toContain('Context')
-    expect(f).toContain('28%')
+    expect(f).toContain('28k / 100k')
     expect(f).toContain('¥0.0042')
     expect(f).toContain('2 DEEPCODE.md')
     expect(f).toContain('Read ×4')         // × 前留空（CC 样式）
     expect(f).toContain('Bash ×2')
     expect(f).toContain('看命令')
-    // 上下文条同时有 filled 与 empty 字符
-    expect(f).toContain('▓')
-    expect(f).toContain('░')
   })
 
   it('无 git 分支时省略 git:() 段', () => {
@@ -78,6 +76,17 @@ describe('StatusFooter', () => {
   it('thinking 关时不显示 think 段', () => {
     const f = render(<StatusFooter {...base} thinking={false} />).lastFrame()!
     expect(f).not.toContain('think:')
+  })
+
+  it('上下文段显绝对值 used / window', () => {
+    const f = render(<StatusFooter {...base} contextUsed={132_000} contextWindow={971_000} />).lastFrame()!
+    expect(f).toContain('132k / 971k')
+  })
+
+  it('used/window ≥95% 时红色（比值变色）', () => {
+    // used=960000 window=971000 → 98.9% → 红 → contextBarColor returns T.err
+    // 小值也走同一分支：验证 contextBarColor 函数本身
+    expect(contextBarColor(960_000 / 971_000 * 100)).toBe(T.err)
   })
 
   it('contextBarColor 分档：<80 accent, 80-94 warn, >=95 err', () => {
