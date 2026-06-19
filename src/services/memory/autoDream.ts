@@ -32,6 +32,7 @@ export interface AutoDreamDeps {
   onStart?: () => void
   /** runSubagent 成功（changed=true）或失败（changed=false）后调用 */
   onDone?: (changed: boolean) => void
+  onUsage?: (u: { prompt_tokens: number; completion_tokens: number; prompt_cache_hit_tokens: number }, model: string) => void
 }
 
 export async function runAutoDream(deps: AutoDreamDeps): Promise<void> {
@@ -49,7 +50,7 @@ export async function runAutoDream(deps: AutoDreamDeps): Promise<void> {
     try {
       const runSub = deps.runSubagent ?? realRunSubagent
       await runSub({
-        client: deps.client, model: deps.model, onUsage: () => {},
+        client: deps.client, model: deps.model, onUsage: deps.onUsage ?? (() => {}),
         systemPrompt: '你是 deepcode 的记忆整理助手。只用提供的工具，谨慎合并、勿丢信息。',
         userPrompt: buildConsolidationPrompt(deps.sessionCount ?? 0),
         tools: makeMemdirTools(deps.memdir),

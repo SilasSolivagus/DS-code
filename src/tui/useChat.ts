@@ -284,6 +284,11 @@ export function createChatCore(opts: {
 
   const sessionCost = () =>
     usageLog.reduce((s, u) => s + costCNY(u.model, u.usage.prompt_tokens, u.usage.prompt_cache_hit_tokens, u.usage.completion_tokens), 0)
+  // memory fork 使用记录回调：带 kind:'memory' 标签，用于成本含 memory、token/请求数过滤 memory
+  const memoryOnUsage = (u: UsageRecord['usage'], m: string) => {
+    usageLog.push({ usage: u, model: m, kind: 'memory' })
+    session.appendUsage(u, m)
+  }
   const cacheHitRate = () => {
     const prompt = usageLog.reduce((s, u) => s + u.usage.prompt_tokens, 0)
     return prompt ? usageLog.reduce((s, u) => s + u.usage.prompt_cache_hit_tokens, 0) / prompt : 0
@@ -393,7 +398,7 @@ export function createChatCore(opts: {
   // —— 记忆提取器：每轮末 fire-and-forget onTurnEnd，退出/清空时 drain ——
   let extractor = createMemoryExtractor({
     client: opts.client, model, memdir: memdirFor(cwd), config: mem, ctx,
-    runSubagent: opts.runSubagent,
+    runSubagent: opts.runSubagent, onUsage: memoryOnUsage,
   })
 
   // —— SessionMemory 状态：跨轮持久，resume/clear 时重置 ——
@@ -642,8 +647,8 @@ export function createChatCore(opts: {
             lastTokPerSec = ev.usage.completion_tokens / Math.max((Date.now() - firstDeltaAt) / 1000, 0.001)
             firstDeltaAt = null
           }
-          const totIn = usageLog.reduce((s, u) => s + u.usage.prompt_tokens, 0)
-          const totOut = usageLog.reduce((s, u) => s + u.usage.completion_tokens, 0)
+          const totIn = usageLog.filter(u => u.kind !== 'memory').reduce((s, u) => s + u.usage.prompt_tokens, 0)
+          const totOut = usageLog.filter(u => u.kind !== 'memory').reduce((s, u) => s + u.usage.completion_tokens, 0)
           dispatch({ type: 'turn_end', usage: ev.usage, totals: { in: totIn, out: totOut, cost: sessionCost() } })
           if (!costWarned && sessionCost() > settings.costWarnCNY) {
             costWarned = true
@@ -682,7 +687,7 @@ export function createChatCore(opts: {
       const sid = ctx.sessionId?.()
       if (sid) {
         const smPath = sessionMemoryPathFor(cwd, sid, os.homedir())
-        void runSessionMemoryUpdate({ client: opts.client, model, absPath: smPath, ctx, runSubagent: opts.runSubagent })
+        void runSessionMemoryUpdate({ client: opts.client, model, absPath: smPath, ctx, runSubagent: opts.runSubagent, onUsage: memoryOnUsage })
         smState.tokensAtLastUpdate = smState.promptTokens
         smState.initialized = true
         smState.toolCallsSinceUpdate = 0
@@ -700,7 +705,7 @@ export function createChatCore(opts: {
         sessionsDir, currentSessionFile: session.file,
         projectKey: dreamProjectKey,
         cfg: mem.dream, ctx, now, lastScanAt: dreamLastScanAt,
-        runSubagent: opts.runSubagent,
+        runSubagent: opts.runSubagent, onUsage: memoryOnUsage,
         onStart: () => {
           const taskId = generateTaskId('local_agent')
           dreamTaskId = taskId
@@ -824,10 +829,15 @@ export function createChatCore(opts: {
       return
     }
     if (line === '/cost') {
-      const inTok = usageLog.reduce((s, u) => s + u.usage.prompt_tokens, 0)
-      const hitTok = usageLog.reduce((s, u) => s + u.usage.prompt_cache_hit_tokens, 0)
-      const outTok = usageLog.reduce((s, u) => s + u.usage.completion_tokens, 0)
-      notice('info', `本会话：输入 ${inTok}（缓存命中 ${hitTok}）出 ${outTok} | 估算花费 ¥${sessionCost().toFixed(6)}`)
+      const mainLog = usageLog.filter(u => u.kind !== 'memory')
+      const inTok = mainLog.reduce((s, u) => s + u.usage.prompt_tokens, 0)
+      const hitTok = mainLog.reduce((s, u) => s + u.usage.prompt_cache_hit_tokens, 0)
+      const outTok = mainLog.reduce((s, u) => s + u.usage.completion_tokens, 0)
+      const totalCost = sessionCost()
+      const memCost = usageLog.filter(u => u.kind === 'memory').reduce(
+        (s, u) => s + costCNY(u.model, u.usage.prompt_tokens, u.usage.prompt_cache_hit_tokens, u.usage.completion_tokens), 0)
+      const memLine = memCost > 0 ? `（其中记忆 fork：¥${memCost.toFixed(6)}）` : ''
+      notice('info', `本会话：输入 ${inTok}（缓存命中 ${hitTok}）出 ${outTok} | 估算花费 ¥${totalCost.toFixed(6)} ${memLine}`.trimEnd())
       return
     }
     if (line === '/compact') {
@@ -855,7 +865,7 @@ export function createChatCore(opts: {
       // 重建 extractor，重置游标（旧会话游标对新会话无效，防新会话首轮被静默跳过）
       extractor = createMemoryExtractor({
         client: opts.client, model, memdir: memdirFor(cwd), config: mem, ctx,
-        runSubagent: opts.runSubagent,
+        runSubagent: opts.runSubagent, onUsage: memoryOnUsage,
       })
       smState = { promptTokens: 0, tokensAtLastUpdate: 0, initialized: false, toolCallsSinceUpdate: 0, lastTurnHadToolCalls: false }
       dispatch({ type: 'clear' })
@@ -993,7 +1003,7 @@ export function createChatCore(opts: {
       // 换会话时重建 extractor，重置游标（上一会话的游标对新会话无效）
       extractor = createMemoryExtractor({
         client: opts.client, model, memdir: memdirFor(cwd), config: mem, ctx,
-        runSubagent: opts.runSubagent,
+        runSubagent: opts.runSubagent, onUsage: memoryOnUsage,
       })
       smState = { promptTokens: 0, tokensAtLastUpdate: 0, initialized: false, toolCallsSinceUpdate: 0, lastTurnHadToolCalls: false }
       dispatch({ type: 'clear' }) // 换了会话，旧 transcript 不再对应当前 messages

@@ -69,6 +69,7 @@ export function makeSessionFileTool(absPath: string): Tool<typeof editSchema> {
 export interface SessionMemoryUpdateDeps {
   client: OpenAI; model: string; absPath: string; ctx: ToolContext
   runSubagent?: typeof realRunSubagent
+  onUsage?: (u: { prompt_tokens: number; completion_tokens: number; prompt_cache_hit_tokens: number }, model: string) => void
 }
 
 export async function runSessionMemoryUpdate(deps: SessionMemoryUpdateDeps): Promise<void> {
@@ -76,7 +77,7 @@ export async function runSessionMemoryUpdate(deps: SessionMemoryUpdateDeps): Pro
     const cur = setupSessionMemoryFile(deps.absPath)
     const runSub = deps.runSubagent ?? realRunSubagent
     await runSub({
-      client: deps.client, model: deps.model, onUsage: () => {},
+      client: deps.client, model: deps.model, onUsage: deps.onUsage ?? (() => {}),
       systemPrompt: '你维护一份会话进度笔记。只用 Edit 工具更新给定文件，保持各节简洁。',
       userPrompt: `更新这份会话记忆，把最新进展/错误/学习并入对应章节（结构保持）。当前内容：\n\n${cur}\n\n文件路径：${deps.absPath}`,
       tools: [makeSessionFileTool(deps.absPath)],

@@ -17,6 +17,7 @@ export interface ExtractorDeps {
   ctx: ToolContext
   runSubagent?: typeof realRunSubagent
   scan?: typeof scanMemoryFiles
+  onUsage?: (u: { prompt_tokens: number; completion_tokens: number; prompt_cache_hit_tokens: number }, model: string) => void
 }
 
 export function createMemoryExtractor(deps: ExtractorDeps) {
@@ -47,7 +48,7 @@ export function createMemoryExtractor(deps: ExtractorDeps) {
     const manifest = formatMemoryManifest(await scan(deps.memdir))
     await runSub({
       client: deps.client, model: deps.model,
-      onUsage: () => {},
+      onUsage: deps.onUsage ?? (() => {}),
       systemPrompt: '你是 deepcode 的记忆提取助手。只用提供的工具，简洁高效。',
       userPrompt: buildExtractPrompt(recent, manifest),
       tools: makeMemdirTools(deps.memdir),
