@@ -33,7 +33,7 @@ const nonEmptyStr = (v: Scalar): CoerceResult => {
 
 export const CONFIG_KEYS: Record<string, ConfigKey> = {
   model: { coerce: nonEmptyStr, read: s => s.model ?? '(默认)', write: (raw, v) => { raw.model = v as string } },
-  compactTokens: { coerce: posInt, read: s => s.compactTokens, write: (raw, v) => { raw.compactTokens = v as number } },
+  compactTokens: { coerce: posInt, read: s => s.compactTokens ?? '(未设，走派生阈值)', write: (raw, v) => { raw.compactTokens = v as number } },
   costWarnCNY: { coerce: posNum, read: s => s.costWarnCNY, write: (raw, v) => { raw.costWarnCNY = v as number } },
   maxToolResultChars: { coerce: posInt, read: s => s.maxToolResultChars, write: (raw, v) => { raw.maxToolResultChars = v as number } },
   inline: { coerce: boolCoerce, read: s => s.inline ?? false, write: (raw, v) => { raw.inline = v as boolean } },

@@ -47,7 +47,6 @@ export interface ScopePartial { scope: SettingScope; partial: Record<string, unk
 
 const DEFAULT_SETTINGS: Record<string, unknown> = {
   permissions: { allow: [] as string[] },
-  compactTokens: 200_000,
   costWarnCNY: 15,
   maxToolResultChars: 100_000,
 }

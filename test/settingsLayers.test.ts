@@ -88,9 +88,9 @@ describe('mergeScopePartials', () => {
     expect(settings.permissions.deny).toEqual(['D1', 'D2'])
     expect(provenance.permissions).toBe('merged')
   })
-  it('缺省值兜底（无 scope 设 compactTokens）', () => {
+  it('缺省值兜底（无 scope 设 compactTokens → undefined，走派生阈值）', () => {
     const { settings } = mergeScopePartials([{ scope: 'user', partial: { model: 'x' } }])
-    expect(settings.compactTokens).toBe(200000)
+    expect(settings.compactTokens).toBeUndefined()
     expect(settings.maxToolResultChars).toBe(100000)
     expect(settings.permissions.allow).toEqual([])
   })

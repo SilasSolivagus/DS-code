@@ -33,10 +33,33 @@ describe('settings 默认值（hermetic：homedir 已 mock 到临时目录）', 
   it('文件缺失时给出精确默认值', () => {
     expect(fs.existsSync(settingsFile)).toBe(false)
     const s = loadSettings()
-    expect(s.compactTokens).toBe(200_000)
+    expect(s.compactTokens).toBeUndefined()
     expect(s.costWarnCNY).toBe(15)
     expect(s.costWarnCNY).toBeGreaterThan(0)
     expect(s.permissions.allow).toEqual([])
+  })
+})
+
+describe('compactTokens optional（Task4）', () => {
+  it('未设 compactTokens → loadSettings 返回 undefined（不再注默认 200k）', () => {
+    fs.mkdirSync(path.dirname(settingsFile), { recursive: true })
+    fs.writeFileSync(settingsFile, JSON.stringify({ costWarnCNY: 15 }))
+    const s = loadSettings()
+    expect(s.compactTokens).toBeUndefined()
+  })
+
+  it('显式设 compactTokens 保留', () => {
+    fs.mkdirSync(path.dirname(settingsFile), { recursive: true })
+    fs.writeFileSync(settingsFile, JSON.stringify({ compactTokens: 200_000 }))
+    const s = loadSettings()
+    expect(s.compactTokens).toBe(200_000)
+  })
+
+  it('loadRawUserSettings 未设 compactTokens → undefined', () => {
+    fs.mkdirSync(path.dirname(settingsFile), { recursive: true })
+    fs.writeFileSync(settingsFile, JSON.stringify({ costWarnCNY: 5 }))
+    const s = loadRawUserSettings()
+    expect(s.compactTokens).toBeUndefined()
   })
 })
 
