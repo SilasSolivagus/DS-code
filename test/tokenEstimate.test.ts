@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { estimateTextTokens, estimateMessagesTokens } from '../src/tokenEstimate.js'
+import { describe, it, expect, afterEach } from 'vitest'
+import { estimateTextTokens, estimateMessagesTokens, resolveContextWindow, computeCompactThreshold } from '../src/tokenEstimate.js'
 
 describe('estimateTextTokens', () => {
   it('空/undefined/null → 0', () => {
@@ -48,5 +48,34 @@ describe('estimateMessagesTokens', () => {
   it('tool 消息 content 计入', () => {
     const msgs = [{ role: 'tool', tool_call_id: 'x', content: 'abcdefghij' }] // 3
     expect(estimateMessagesTokens(msgs)).toBe(3)
+  })
+})
+
+describe('resolveContextWindow', () => {
+  const ORIG = process.env.DEEPCODE_MAX_CONTEXT_TOKENS
+  afterEach(() => { if (ORIG === undefined) delete process.env.DEEPCODE_MAX_CONTEXT_TOKENS; else process.env.DEEPCODE_MAX_CONTEXT_TOKENS = ORIG })
+  it('flash/pro → 1M', () => {
+    expect(resolveContextWindow('deepseek-v4-flash')).toBe(1_000_000)
+    expect(resolveContextWindow('deepseek-v4-pro')).toBe(1_000_000)
+  })
+  it('未知模型 → 默认 200k', () => {
+    expect(resolveContextWindow('some-other-model')).toBe(200_000)
+  })
+  it('env 覆盖优先', () => {
+    process.env.DEEPCODE_MAX_CONTEXT_TOKENS = '500000'
+    expect(resolveContextWindow('deepseek-v4-flash')).toBe(500_000)
+  })
+  it('env 非法值忽略，回落模型表', () => {
+    process.env.DEEPCODE_MAX_CONTEXT_TOKENS = 'abc'
+    expect(resolveContextWindow('deepseek-v4-flash')).toBe(1_000_000)
+  })
+})
+
+describe('computeCompactThreshold', () => {
+  it('flash = 1M − 16k − 13k = 971k', () => {
+    expect(computeCompactThreshold('deepseek-v4-flash')).toBe(971_000)
+  })
+  it('未知模型 = 200k − 29k = 171k', () => {
+    expect(computeCompactThreshold('x')).toBe(171_000)
   })
 })
