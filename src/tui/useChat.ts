@@ -22,10 +22,11 @@ import { runAutoDream } from '../services/memory/autoDream.js'
 import { buildSystemPrompt, findMemoryFiles } from '../prompt.js'
 import { formatMemory } from '../memory.js'
 import { loadSettings, loadRawUserSettings, addUserAllowRule, removeUserAllowRule, listUserAllowRules, SETTINGS_FILE } from '../config.js'
+import { loadLayeredSettings } from '../settingsLayers.js'
 import { runHooks } from '../hooks.js'
 import { makeHookRuntime } from '../hookRuntime.js'
-import { isDangerous, type Decision, type PermissionMode } from '../permissions.js'
-import { resolveDenyList } from '../deny.js'
+import { isDangerous, type Decision, type PermissionMode, type PermissionDecisionReason } from '../permissions.js'
+import { resolveDenyList, buildDenySourceMap } from '../deny.js'
 import type { ToolContext } from '../tools/types.js'
 import { newSession, openSession, listSessions, loadSession, sessionIdFromFile, type SessionHandle, type UsageRecord } from '../session.js'
 import { costCNY, cacheSavingsCNY } from '../pricing.js'
@@ -155,7 +156,7 @@ export function transcriptReducer(state: TranscriptItem[], a: ReducerAction): Tr
   return [] // clear
 }
 
-export interface PendingAsk { toolName: string; desc: string; dangerous: boolean; resolve: (d: Decision) => void }
+export interface PendingAsk { toolName: string; desc: string; dangerous: boolean; reason?: PermissionDecisionReason; resolve: (d: Decision) => void }
 export interface PendingQuestion { questions: Question[]; resolve: (a: Answer[] | null) => void }
 
 export interface ChatState {
@@ -213,7 +214,10 @@ export function createChatCore(opts: {
   /** 测试注入：替换 extractMemories 内的 runSubagent，用 spy 验证触发 */
   runSubagent?: import('../services/memory/extractMemories.js').ExtractorDeps['runSubagent']
 }): ChatCore {
-  const settings = loadSettings(opts.cwd, opts.flagSettingsPath)
+  const layered = loadLayeredSettings(opts.cwd, opts.flagSettingsPath)
+  const settings = layered.settings
+  const ruleSources = layered.permissionSources.allow
+  const denySources = buildDenySourceMap(layered.permissionSources.deny)
   let cwd = opts.cwd
   let abort = new AbortController()
   let model = settings.model ?? 'deepseek-v4-flash'
@@ -526,7 +530,7 @@ export function createChatCore(opts: {
   }
 
   // 权限确认桥：挂起 Promise + pendingAsk 状态，UI 用 resolveAsk 回答
-  const ask = (toolName: string, desc: string): Promise<Decision> =>
+  const ask = (toolName: string, desc: string, reason?: PermissionDecisionReason): Promise<Decision> =>
     new Promise<Decision>(res => {
       // Notification hook：权限弹窗浮现给用户时通知（桌面通知转发等）。fire-and-forget。
       if (settings.hooks) {
@@ -535,7 +539,7 @@ export function createChatCore(opts: {
           notification_type: 'permission', title: 'deepcode 需要确认', message: `${toolName}: ${desc}`,
         }, settings.hooks, hookDeps).catch(() => {})
       }
-      pendingAsk = { toolName, desc, dangerous: isDangerous(desc), resolve: res }
+      pendingAsk = { toolName, desc, dangerous: isDangerous(desc), reason, resolve: res }
       setState()
     })
 
@@ -619,9 +623,12 @@ export function createChatCore(opts: {
           saveRule: r => {
             addUserAllowRule(r)        // 持久化到 user scope（raw RMW）
             if (!settings.permissions.allow.includes(r)) settings.permissions.allow.push(r) // 内存合并即时生效
+            ruleSources[r] = 'user'
             fireConfigChange()
           },
           ask,
+          ruleSources,
+          denySources,
         },
         reminders: () => {
           taskList.tick()
