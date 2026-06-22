@@ -33,6 +33,40 @@ describe('InputBox steering 按键', () => {
     expect(onSteer).not.toHaveBeenCalled()
   })
 
+  it('steerQueueItems 非空时渲染排队预览文本', async () => {
+    const { lastFrame } = render(React.createElement(InputBox, {
+      onSubmit: vi.fn(), onInterrupt: () => {}, onSteer: vi.fn(), onSteerPop: vi.fn(),
+      steerQueueSize: 1, history: [], busy: true,
+      steerQueueItems: [{ value: '只看 src 目录就行', priority: 'next' }],
+    }))
+    await delay()
+    expect(lastFrame()).toContain('⏵ 排队')
+    expect(lastFrame()).toContain('只看 src 目录就行')
+  })
+
+  it('steerQueueItems 空时不渲染排队预览', async () => {
+    const { lastFrame } = render(React.createElement(InputBox, {
+      onSubmit: vi.fn(), onInterrupt: () => {}, onSteer: vi.fn(), onSteerPop: vi.fn(),
+      steerQueueSize: 0, history: [], busy: true,
+      steerQueueItems: [],
+    }))
+    await delay()
+    expect(lastFrame()).not.toContain('⏵ 排队')
+  })
+
+  it('steerQueueItems 值超 60 字时截断并加省略号', async () => {
+    const longText = 'A'.repeat(70)
+    const { lastFrame } = render(React.createElement(InputBox, {
+      onSubmit: vi.fn(), onInterrupt: () => {}, onSteer: vi.fn(), onSteerPop: vi.fn(),
+      steerQueueSize: 1, history: [], busy: true,
+      steerQueueItems: [{ value: longText }],
+    }))
+    await delay()
+    expect(lastFrame()).toContain('⏵ 排队')
+    expect(lastFrame()).toContain('…')
+    expect(lastFrame()).not.toContain(longText)
+  })
+
   it('busy 时 ESC 在队列非空时调 onSteerPop、空时调 onInterrupt', async () => {
     const onInterrupt = vi.fn(), onSteerPop = vi.fn()
     const r1 = render(React.createElement(InputBox, {

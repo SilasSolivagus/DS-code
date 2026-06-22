@@ -25,6 +25,8 @@ export function InputBox(props: {
   onSteerPop?: () => void
   /** 当前 steer 队列长度（决定 ESC busy 语义） */
   steerQueueSize?: number
+  /** 当前 steer 队列项（展示排队预览） */
+  steerQueueItems?: readonly { value: string; priority?: string }[]
 }) {
   const [value, setValue] = useState('')
   const [pending, setPending] = useState('')        // \ 续行累积
@@ -116,6 +118,16 @@ export function InputBox(props: {
 
   return (
     <Box flexDirection="column">
+      {(props.steerQueueItems?.length ?? 0) > 0 && (
+        <Box flexDirection="column">
+          {props.steerQueueItems!.map((it, i) => (
+            <Text key={i} dimColor>
+              {'⏵ 排队 '}
+              {it.value.length > 60 ? it.value.slice(0, 60) + '…' : it.value}
+            </Text>
+          ))}
+        </Box>
+      )}
       {pending !== '' && <Text dimColor>…续行中（{pending.split('\n').length} 行）</Text>}
       <Box borderStyle="round" borderColor={T.accent} borderLeft={false} borderRight={false} paddingX={1}>
         <Text color={T.accent}>{'❯ '}</Text>
