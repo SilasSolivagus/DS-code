@@ -7,6 +7,7 @@
 **策略（用户 2026-06-17 钦定）：** 非 TUI 件先做；碰 TUI 件全攒最后一批一起真机冒烟。
 
 图例：状态 ✅完成 / 🟡部分 / ⬜无　｜　TUI? 标「碰TUI」者留最后批　｜　工作量 S/M/L
+**⚠️ 状态列语义：✅/🟡/⬜ 描述的是 **deepcode 的对齐进度**，不是 CC 是否存在该机制。`⬜无` = deepcode 还没建（CC 一定有，否则不会上表）。复审时勿误读为"CC 没有"。**
 
 ---
 
@@ -27,6 +28,8 @@
 **⭐⭐拐点（2026-06-22，C5 Steering 收官后）：CC 第 1-5 层「非 TUI 件」全部做完或已裁决（跳过/推迟）。** 非 TUI 对齐件清单：第1层 1.1/1.2/1.3/1.8 ✅；第2层 2.1/2.3/2.4/2.5/2.6 ✅（2.2 跳过）；第3层 3.1-3.4/3.5主干/3.7deny/3.9 ✅（3.8/3.10 推迟）；第4层 4.1/4.5/4.8 ✅（4.2/4.3/4.4 跳过，4.6/4.7/4.9 推迟/跳过，4.10→第6层）；第5层 5.6 ✅。**前置满足：⏳2.8 多 provider（当初钦定"等第1-5层做完才做"）现已解锁。** 下一会话三候选：①**2.8 通用多 provider/GLM**（底层抽象非 TUI 可全做）②**TUI 攒最后批**（1.4/1.5/1.6[依赖刚做完的1.3]/1.7/2.7/3.6/4.11/第5层）③回捡 C4 推迟件(LSP/Cron/Sandbox)或第6层云平台单独立项。**开新会话与用户确认挑哪个。**
 
 **✅✅C5 1.3 Steering 详情（merge `32612a1`，2026-06-22）：** 采纳 **CC 真实模型**（两次实读 pivot：①Alt+Enter=`\x1b\r` 经实读 ink `parse-keypress.js` 是死键 ②实读 CC 触发机制发现 CC 无 now 热键、Enter 恒入队 next、有 in-flight tool 时 Enter 同时 abort('interrupt')）。**实现**：新模块 `src/steering.ts`（SteeringQueue FIFO + formatSteeringMessage `<queued-user-message>`）；busy Enter→入队 next + toolInFlight 时软中断（abort 'interrupt'）；loop 按原生 `signal.reason` 二分 interrupt 续跑/user-cancel 硬中断 + `ctx.resetSignal` 重建信号 + mid-stream partial 保留；**三点 drain**（tool 边界/no-tool turn-end/中断点，drainAll 互斥不重复不丢，no-tool turn-end 那点是冒烟前置核对挖出的真缺口）；ESC 双语义（队列非空→拉回编辑/空→硬中断）；列队展示。spec/plan `docs/{specs,plans}/2026-06-22-deepcode-1.3-steering*`（spec §1 有设计修订段记录 pivot）。SDD 全仪式 6 任务+CC 模型 rework+gap fix，Task3 架构件+全分支 opus 终审 READY，**真机冒烟 PASS**（sleep20 软中断被杀退出码1+转向/纯文本无-tool 续跑答补充/ESC 拉回+列队展示三路验证）。**教训**：①TUI 触发键先实读 ink `parse-keypress.js` 验可达性 ②交互模型先实读 CC 真实做法别照直觉/roadmap ③冒烟前置核对能挖出设计缺口。**follow-up 非阻塞**：toolsRunning hook 异常 mid-RO-batch 理论泄漏（崩溃级前置，留 hardening）；Point A mid-stream 中断分支经 Enter 不可达=将来 SDK now 预留。
+
+**🔍 完整性重审（2026-06-22，C5 收官后用户发起，派 4 agent 分区重扫 CC 源码 commands/tools/services/顶层 双向 diff）：结论=roadmap ~96-97% 完整，无重大机制缺失（Plan mode=1.4 在、thinking/MCP/hooks/记忆/compact/steering/权限/会话全在）。** 原始 4-agent 初扫经得起复核。**修正落地**：①4.5 Config 表格行陈旧（标 ⬜ 实已 `87a1dab` 完成）→ 已改 ✅。②补图例：状态列 ⬜=deepcode 未建，非 CC 无（复审者易误读，本次 4 agent 里 2 个踩了）。③真遗漏小件补表：3.9b Settings/模型版本迁移(`migrations/` 11 脚本,S,低优先)、5.10 spinner tips 轮播(`services/tips/`,S)、5.11 吉祥物伴侣 gamified(`buddy/`,可选趣味,最低优先)、5.9 补 /btw 旁问不打断+/clear+/summary+/ctx_viz。④6.2 /rate-limit 已改名 /rate-limit-options + rateLimitMessages 文案中心。**确认非遗漏（agent 误报已澄清）**：MCP auth/资源(McpAuth/List/ReadMcpResource)=1.1 已记"留 spec §5 增量"；Config/LSP/PowerShell/Cron 的 ⬜=deepcode 状态非 CC 缺失；TaskOutput/Team/StructuredOutput 已覆盖(L-041/1.6/L-044)。**基础设施层**（bootstrap/cli 主循环/query 编排）=CC 与 deepcode 各有等价实现（deepcode loop.ts/state），非待对齐 CC 专属机制，不单列。internalLogging=Anthropic 专属，超范围。
 
 **⭐C4 工具批 ROI 复评（2026-06-22，6 agent 实读 CC+摸现状，用户拍板「只做 Notebook 其余归档」）：6 件坍缩成 1 件。**①**✅已完成 = Notebook（NotebookRead+NotebookEdit，编辑版不执行）merge `54a8ff9`**：`src/notebook.ts`(parse/serialize indent1/generateCellId/resolveCellIndex/applyCellEdit replace·insert·delete 无 kernel/formatNotebookForRead cell 视图+图像文本占位+大输出 jq 截断)+Read 检测 .ipynb→cell 视图(解析失败回退纯文本)+NotebookEdit 工具(复用 read-before-edit 闸门)+Edit 拒绝 .ipynb 重定向+注册 allTools+**NotebookEdit 加 GLOBAL_SUBAGENT_DENY(集成期发现写工具泄漏子代理缺口,已修)**。6 任务 TDD+opus 全分支终审 READY(4 命名风险全 PASS:安全边界三装配路径无法绕过/path-key 一致/round-trip 完整/优雅降级),1037 测试,零依赖纯逻辑免冒烟。**教训:新增写工具务必同步 GLOBAL_SUBAGENT_DENY+既有工具计数/列表断言测试(tools.registry/agent.test)。**②**⏭️推迟 LSP**：全套 LSP infra(server manager+vscode-jsonrpc+诊断聚合 7 文件,~1500-2000 行+3 依赖+**常驻进程**)，CLI↔daemon **架构冲突**(CC 靠 IDE daemon，deepcode 一次性会话)。③**⏭️推迟 Cron**：本地 tick loop 靠 REPL 保活；deepcode 会话型 CLI 退出即死、**无会话外触发**(需守护进程/systemd)，架构冲突，归预留。④**⏭️推迟 Sandbox**：@anthropic-ai/sandbox-runtime(mac Sandbox.framework/Linux bwrap+socat)；deepcode 已有 deny+权限+sanitize 三层防御，OS 级边际收益低+平台依赖重。⑤**🚫跳过 PowerShell**：CC 独立工具但**仅 Windows 门控**，darwin/linux/WSL 用户零价值。⑥**🚫跳过代码 REPL/PTY**：CC 的"REPL"其实是工具隐藏层+WebSocket bridge **非代码解释器**，CC 自己都不做 PTY；真 PTY 需 node-pty 原生编译，市场信号=一次性执行已够。**净结论：C4 实质=Notebook 一件，做完 C4 收尾→C5 1.3 Steering。** main=origin=`e203ff9` 全同步。**
 
@@ -96,7 +99,8 @@
 | 3.6 | **会话管理**（/resume /branch /rename /tag /share + history） | `commands/{resume,branch,rename,tag,share}` `history.ts` | 部分(export/session) | 🟡 | 碰TUI | M |
 | 3.7 | **权限 deny 规则层 + 来源层级 + denial tracking + /permissions** | `utils/permissions/*` | 🟡 deny 规则+denial tracking(安全批`e5f403d`);缺来源层级(归 3.9)+/permissions UI | 🟡 | 部分 | M |
 | 3.8 | **Sandbox 网络隔离 + /sandbox-toggle** | `commands/sandbox-toggle` | 无 | ⬜ | 否 | M |
-| 3.9 | **Settings 分层**（user/project/local/enterprise 合并 + 校验）+ /config /env | `utils/settings/*` | 单文件 | 🟡 | 部分 | M |
+| 3.9 | **Settings 分层**（user/project/local/enterprise 合并 + 校验）+ /config /env | `utils/settings/*` | ✅ 4 层合并+SSRF（`c24ed0e`） | ✅ | 部分 | M |
+| 3.9b | **Settings/模型版本迁移**（schema 升级脚本，如 migrateSonnet45ToSonnet46 / migrateOpusToOpus1m / 旧 settings 字段迁移） | `migrations/`（11 脚本） | 无 | ⬜ | 否 | S | ⭐重审补遗(2026-06-22)：deepcode 单 provider 暂无版本漂移压力，但做 2.8 多 provider/将来加模型档时需要轻量迁移机制。低优先。 |
 | 3.10 | **Cron 定时任务**（ScheduleCron 工具 + cronScheduler 后台执行 + 持久化） | `utils/cronScheduler.ts` `tools/ScheduleCronTool` | 无 | ⬜ | 否 | M |
 
 ## 第 4 层 · 工具扩展（roadmap 外）
@@ -107,7 +111,7 @@
 | 4.2 | **ToolSearch** | `tools/ToolSearchTool` | ⏭️暂缓存档(触发=挂 30+工具 MCP) | ⏭️ | 否 | S |
 | 4.3 | **Sleep**（可打断等待） | `tools/SleepTool` | ⏭️跳过(`Bash(sleep)`已等价) | ⏭️ | 否 | S |
 | 4.4 | **Brief**（工具描述摘要） | `tools/BriefTool` | ⏭️跳过(CC 双输出面契约,单面不映射) | ⏭️ | 否 | S |
-| 4.5 | **Config 工具**（读写配置） | `tools/ConfigTool` | 无 | ⬜ | 否 | M |
+| 4.5 | **Config 工具**（读写配置） | `tools/ConfigTool` | ✅ `src/tools/configTool.ts`(6 键白名单 deny-by-default GET/SET，合 main `87a1dab`，837 测试) | ✅ | 否 | M |
 | 4.6 | **LSP 工具 + 诊断**（代码智能/IDE 诊断） | `tools/LSPTool` `services/lsp` `services/diagnosticTracking` | 无 | ⬜ | 否 | L |
 | 4.7 | **REPL 工具**（交互式 Python/Node REPL） | `tools/REPLTool` | 无 | ⬜ | 否 | M |
 | 4.8 | **NotebookEdit + NotebookRead**（Jupyter 单元格编辑/读取，不执行） | `tools/NotebookEditTool` | ✅ **完成**（merge `54a8ff9`：src/notebook.ts + Read 检测 .ipynb + NotebookEdit 工具 + Edit 拒绝 .ipynb + GLOBAL_SUBAGENT_DENY；6 任务+opus 终审，1037 测试） | ✅ | 否 | ✅ |
@@ -127,7 +131,9 @@
 | 5.6 | **权限弹窗 UI**（always/yes/no 决策 + 规则记忆 + deny/来源展示） | `components/PermissionPrompt.tsx` | ✅ **完成**（PermissionDialog 三态+快捷键+always 写 user 规则+危险警告+diff；**+deny/来源层级展示 merge `31e5deb`**：PermissionDecisionReason 联合+settingsLayers per-rule provenance+buildDenySourceMap+checkPermission 携带/透传 decisionReason+硬拒绝文本带来源+弹窗渲染来源行；镜像 CC PermissionRuleExplanation，源 builtin/user/project/local/flag）。**余 3×S 文案(always 写哪层反馈/规则粒度预览/Tab-amend)留将来** | ✅ | 碰TUI | ✅ |
 | 5.7 | **Statusline**（成本/token/模型/模式/任务进度实时栏 + /statusline） | `commands/statusline.tsx` | 极简状态行 | 🟡 | 碰TUI | M |
 | 5.8 | **AI 辅助摘要**（AgentSummary 子代理进度 / toolUseSummary / awaySummary / PromptSuggestion 下一步建议） | `services/{AgentSummary,toolUseSummary,awaySummary,PromptSuggestion}` | 无 | ⬜ | 碰TUI | M |
-| 5.9 | **交互小命令**（/copy /good-claude /context viz /files /add-dir /status /help 增强） | `commands/*` | 部分 | 🟡 | 碰TUI | S |
+| 5.9 | **交互小命令**（/copy /good-claude /context viz /files /add-dir /status /help /btw[旁问不打断] /clear /summary /ctx_viz 增强） | `commands/*` | 部分 | 🟡 | 碰TUI | S |
+| 5.10 | **Spinner tips 轮播**（CLI spinner 上按会话轮播提示 + 历史去重） | `services/tips/`（tipScheduler/tipRegistry/tipHistory） | 无 | ⬜ | 碰TUI | S | ⭐重审补遗(2026-06-22)。纯 UX 增强，低优先，TUI 批。 |
+| 5.11 | **吉祥物伴侣**（gamified companion：稀有度/帽子/属性的 ASCII 宠物 + 通知） | `buddy/`（companion/CompanionSprite/sprites） | 🟡 已有蓝鲸 mascot 静态图 | 🟡 | 碰TUI | M | ⭐重审补遗(2026-06-22)。纯装饰彩蛋；deepcode 已有静态蓝鲸欢迎图，gamified 版属可选趣味件，最低优先（可不做）。 |
 
 ## 第 6 层 · Anthropic 云/平台专属（记录在案；做 = 改造成 DeepSeek/自建后端的「云管平台」版）
 
@@ -136,7 +142,7 @@
 | # | 机制 | CC 源码 | 云管平台改造方向 | 工作量 |
 |---|---|---|---|---|
 | 6.1 | **OAuth 登录/账户**（/login /logout /oauth-refresh + PKCE） | `services/oauth` `commands/login` | 接自建账户体系 | L |
-| 6.2 | **用量/限额**（claudeAiLimits/policyLimits/usage/extra-usage/rate-limit） | `services/{claudeAiLimits,policyLimits}` | 接自建计量/配额 | L |
+| 6.2 | **用量/限额**（claudeAiLimits/policyLimits/usage/extra-usage/`/rate-limit-options`[原 /rate-limit 已改名]/rateLimitMessages 文案中心） | `services/{claudeAiLimits,policyLimits}` | 接自建计量/配额 | L |
 | 6.3 | **遥测/可观测**（OTel + BigQuery + Perfetto + analytics/Datadog + diagnosticTracking） | `utils/telemetry/` `services/analytics` | 接自建数据管道 | L |
 | 6.4 | **Plugins 市场**（发现/加载/版本/依赖 + marketplace + /plugin /reload-plugins） | `plugins/` `services/plugins` | 自建插件市场 | L |
 | 6.5 | **IDE 集成**（/ide + bridge/ + DesignSync + diff 面板） | `bridge/` `commands/{ide,diff}` | VS Code/JetBrains 桥 | L |
