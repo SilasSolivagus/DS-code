@@ -78,6 +78,15 @@ describe('StatusFooter', () => {
     expect(f).not.toContain('think:')
   })
 
+  it('tokenBudget 有值时 Row 2 显示 budget 已用/目标', () => {
+    const f = render(<StatusFooter {...base} tokenBudget={500_000} budgetUsed={320_000} />).lastFrame()!
+    expect(f).toContain('budget 320k/500k')
+  })
+  it('tokenBudget 未设时不显示 budget 段', () => {
+    const f = render(<StatusFooter {...base} tokenBudget={null} />).lastFrame()!
+    expect(f).not.toContain('budget')
+  })
+
   it('上下文段显绝对值 used / window', () => {
     const f = render(<StatusFooter {...base} contextUsed={132_000} contextWindow={971_000} />).lastFrame()!
     expect(f).toContain('132k / 971k')

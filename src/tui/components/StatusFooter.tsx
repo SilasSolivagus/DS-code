@@ -34,6 +34,8 @@ export function StatusFooter(props: {
   cost: number
   hitRate: number
   cacheSavings: number
+  tokenBudget?: number | null  // 2.1 sticky 预算目标（null/undefined=未设，不显示该段）
+  budgetUsed?: number          // 2.1 本次 send 累计输出 token
   thinking: boolean
   effortLevel: 'low' | 'medium' | 'high'
   toolCounts: Array<{ name: string; n: number }>
@@ -66,6 +68,9 @@ export function StatusFooter(props: {
         {props.hitRate > 0 && (
           <Text dimColor>{` · cache ${Math.round(props.hitRate * 100)}% (−¥${props.cacheSavings.toFixed(4)})`}</Text>
         )}
+        {props.tokenBudget ? (
+          <Text dimColor>{` · budget ${fmtK(props.budgetUsed ?? 0)}/${fmtK(props.tokenBudget)}`}</Text>
+        ) : null}
         <Text dimColor>{` · ¥${props.cost.toFixed(4)}`}</Text>
       </Text>
 

@@ -44,6 +44,7 @@ import { attachMcpTools } from '../mcp.js'
 import { loadSkills, substituteSkillArgs } from '../skillsLoader.js'
 import { makeSkillTool } from '../tools/skill.js'
 import { detectEffortKeyword } from '../text.js'
+import { parseTokenBudget } from '../tokenBudget.js'
 import { memdirFor, sessionMemoryPathFor, findGitRoot, sanitizeProjectKey } from '../memdir/paths.js'
 import { DEFAULT_MEMORY_CONFIG } from '../memdir/memoryConfig.js'
 import { createMemoryExtractor } from '../services/memory/extractMemories.js'
@@ -176,6 +177,8 @@ export interface ChatState {
   contextPct(): number // 上下文占比：lastPromptTokens / 生效阈值（0-100），用于状态栏上下文条
   contextUsed(): number // 上次真实 prompt_tokens（状态栏上下文条分子）
   contextWindow(): number // 当前模型生效阈值（状态栏上下文条分母）
+  tokenBudget(): number | null // 2.1 sticky token 预算目标（null=未设）
+  budgetUsed(): number // 2.1 本次/上次 send 累计输出 token（状态栏 budget 段分子）
 }
 
 export interface ChatCore {
@@ -214,6 +217,8 @@ export function createChatCore(opts: {
   let cwd = opts.cwd
   let abort = new AbortController()
   let model = settings.model ?? 'deepseek-v4-flash'
+  let tokenBudget: number | null = null // 2.1 sticky 预算（进程内，不落 session；+0k 清除）
+  let budgetUsed = 0                     // 2.1 本次 send 累计输出 token（状态栏 budget 段分子）
   let thinking = false
   let effortLevel: 'low' | 'medium' | 'high' = 'medium'
   let permMode: PermissionMode = opts.yolo ? 'yolo' : 'default'
@@ -306,11 +311,13 @@ export function createChatCore(opts: {
   }
   const contextUsed = () => lastPromptTokens
   const contextWindow = () => effectiveThreshold(model, settings.compactTokens)
+  const tokenBudgetGet = () => tokenBudget
+  const budgetUsedGet = () => budgetUsed
 
   // 所有状态变更走 setState：换新快照对象 → onState 回调 + 订阅者通知
   const listeners = new Set<() => void>()
   const snap = (): ChatState => ({
-    transcript, busy, model, thinking, effortLevel, permMode, pendingAsk, pendingQuestion, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, sessionCost, cacheHitRate, cacheSavings, contextPct, contextUsed, contextWindow,
+    transcript, busy, model, thinking, effortLevel, permMode, pendingAsk, pendingQuestion, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, sessionCost, cacheHitRate, cacheSavings, contextPct, contextUsed, contextWindow, tokenBudget: tokenBudgetGet, budgetUsed: budgetUsedGet,
   })
   let state = snap()
   const setState = (): void => {
@@ -590,6 +597,10 @@ export function createChatCore(opts: {
       const kw = detectEffortKeyword(userText)
       const turnThinking = kw ? true : thinking
       const turnEffort = kw ?? effortLevel
+      // 2.1 Token budget：解析输入更新 sticky（+0k 清除/显式新值覆盖/无指令沿用），重置本 send 用量
+      const parsedBudget = parseTokenBudget(userText)
+      if (parsedBudget !== null) tokenBudget = parsedBudget === 0 ? null : parsedBudget
+      budgetUsed = 0
       // recall: 用户提交后、跑 loop 前启动后台召回
       if (recaller) recaller.prefetch(userText)
       const deps: LoopDeps = {
@@ -621,6 +632,7 @@ export function createChatCore(opts: {
         hooks: settings.hooks,
         hookDeps,
         drainInjections: () => injectionBuffer.splice(0),
+        ...(tokenBudget ? { tokenBudget } : {}), // 2.1 sticky 预算（有值才传）
       }
       const gen = runLoop(messages, deps)
       let firstDeltaAt: number | null = null // 本 turn 首个流式分片时间戳（tok/s 计算）
@@ -655,6 +667,7 @@ export function createChatCore(opts: {
           // turn 边界用真实累计输出 token 校准估算值（覆盖本 turn 期间的粗估）
           sendOutTokens += ev.usage.completion_tokens
           turnOutTokens = sendOutTokens
+          budgetUsed = sendOutTokens // 2.1 状态栏 budget 段分子（与本 send 输出累计同步）
           if (firstDeltaAt !== null) {
             lastTokPerSec = ev.usage.completion_tokens / Math.max((Date.now() - firstDeltaAt) / 1000, 0.001)
             firstDeltaAt = null

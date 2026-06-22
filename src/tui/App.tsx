@@ -266,6 +266,8 @@ export function App(props: {
         cost={state.sessionCost()}
         hitRate={state.cacheHitRate()}
         cacheSavings={state.cacheSavings()}
+        tokenBudget={state.tokenBudget()}
+        budgetUsed={state.budgetUsed()}
         thinking={state.thinking}
         effortLevel={state.effortLevel}
         toolCounts={toolCounts}

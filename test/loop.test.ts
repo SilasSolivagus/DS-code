@@ -241,6 +241,52 @@ describe('runLoop', () => {
     expect(continueMsg).toBeDefined()
   })
 
+  it('token budget：未达目标→注入续跑 nudge，下一轮达标后 done', async () => {
+    const small = { prompt_tokens: 10, completion_tokens: 1000, prompt_cache_hit_tokens: 0 }   // 第1轮远未达标
+    const big = { prompt_tokens: 10, completion_tokens: 460_000, prompt_cache_hit_tokens: 0 }   // 第2轮累计达标×90%
+    script.push(
+      { deltas: ['第一段'], result: { content: '第一段', toolCalls: [], usage: small, finishReason: 'stop' } },
+      { deltas: ['第二段'], result: { content: '第二段', toolCalls: [], usage: big, finishReason: 'stop' } },
+    )
+    const deps = makeDeps([readTool]); deps.tokenBudget = 500_000
+    const messages: any[] = [{ role: 'user', content: '大任务 +500k' }]
+    const { ret } = await drain(runLoop(messages, deps))
+    expect(ret).toBe('done')
+    const nudge = messages.find(m => m.role === 'user' && typeof m.content === 'string' && m.content.includes('token 预算'))
+    expect(nudge).toBeDefined() // 第1轮后注入了一次续跑
+  })
+
+  it('token budget：达目标×90%→不续跑直接 done', async () => {
+    const u = { prompt_tokens: 10, completion_tokens: 460_000, prompt_cache_hit_tokens: 0 }
+    script.push({ deltas: ['一大段'], result: { content: '一大段', toolCalls: [], usage: u, finishReason: 'stop' } })
+    const deps = makeDeps([readTool]); deps.tokenBudget = 500_000
+    const messages: any[] = [{ role: 'user', content: 'do it +500k' }]
+    const { ret } = await drain(runLoop(messages, deps))
+    expect(ret).toBe('done')
+    expect(messages.find(m => m.role === 'user' && typeof m.content === 'string' && m.content.includes('token 预算'))).toBeUndefined()
+  })
+
+  it('token budget：收益递减→续跑≥3 且最近两次小 delta 时熔断停', async () => {
+    const big = { prompt_tokens: 10, completion_tokens: 10_000, prompt_cache_hit_tokens: 0 }
+    const tiny = { prompt_tokens: 10, completion_tokens: 100, prompt_cache_hit_tokens: 0 }
+    // 4 轮：big, big, tiny, tiny —— 第 4 轮后 continuations≥3 且最近两 delta<500 熔断
+    script.push(
+      { result: { content: 'a', toolCalls: [], usage: big, finishReason: 'stop' } },
+      { result: { content: 'b', toolCalls: [], usage: big, finishReason: 'stop' } },
+      { result: { content: 'c', toolCalls: [], usage: tiny, finishReason: 'stop' } },
+      { result: { content: 'd', toolCalls: [], usage: tiny, finishReason: 'stop' } },
+    )
+    const deps = makeDeps([readTool]); deps.tokenBudget = 5_000_000 // 高目标，逼熔断而非达标
+    const { ret } = await drain(runLoop([{ role: 'user', content: 'x +5m' }], deps))
+    expect(ret).toBe('done') // 熔断后正常结束，未跑满 maxTurns
+  })
+
+  it('token budget 未设：行为不变（回归，单轮 done）', async () => {
+    script.push({ result: { content: 'ok', toolCalls: [], usage, finishReason: 'stop' } })
+    const { ret } = await drain(runLoop([{ role: 'user', content: 'hi' }], makeDeps([readTool])))
+    expect(ret).toBe('done')
+  })
+
   it('reminders 返回非空时，附加到本轮最后一条 tool 消息（不另起消息）', async () => {
     script.push(
       {

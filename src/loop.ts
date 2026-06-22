@@ -7,6 +7,7 @@ import { checkPermission, type PermissionContext, type PermissionHooks } from '.
 import { sanitize, capToolResult, stripSystemReminderTags } from './text.js'
 import { drainNotifications, formatNotification } from './tasks.js'
 import { runHooks, type HooksConfig } from './hooks.js'
+import { shouldContinueForBudget } from './tokenBudget.js'
 
 export type LoopEvent =
   | { type: 'text'; delta: string; reasoning?: boolean }
@@ -41,6 +42,10 @@ export interface LoopDeps {
   drainInjections?: () => string[]
   /** 工具结果字符级兜底上限，超出截断后再回灌 messages（保护上下文/前缀缓存）。缺省由 caller 传 settings.maxToolResultChars。 */
   maxToolResultChars?: number
+  /** 2.1 Token budget：本次 send 的输出 token 目标（用户 +500k 设的 sticky 值）。
+   *  模型本轮自然结束但累计输出未达目标×90% 且仍有进展时，自动注入 nudge 续跑（受 maxTurns + 收益递减熔断约束）。
+   *  仅主会话传入；子代理子循环不传（不参与 budget 续跑）。*/
+  tokenBudget?: number
 }
 
 const CONCURRENCY = 5
@@ -142,6 +147,10 @@ export async function* runLoop(
 ): AsyncGenerator<LoopEvent, 'done' | 'aborted' | 'max_turns'> {
   const apiTools = toApiTools(deps.tools)
   let stopHookFired = false // Stop hook block→续跑守卫：每次 runLoop 最多续跑一次，硬防无限循环
+  // 2.1 Token budget 续跑状态（本次 runLoop=一次 send 内累计；不跨 send）
+  let budgetOutputSoFar = 0
+  let budgetContinuations = 0
+  const budgetDeltas: number[] = []
   for (let turn = 0; turn < (deps.maxTurns ?? 80); turn++) {
     const sentLen = messages.length
     let result: ChatResult
@@ -195,11 +204,24 @@ export async function* runLoop(
           }
         : {}),
     })
+    // 2.1 Token budget：累计本次 send 全部 output token（含 tool-call turn 的 reasoning+参数）
+    budgetOutputSoFar += result.usage.completion_tokens
+    budgetDeltas.push(result.usage.completion_tokens)
     if (!result.toolCalls.length) {
       yield { type: 'turn_end', usage: result.usage, sentLen }
       // 被长度上限截断且无工具调用：自动追加续写请求，进入下一轮（仍受 maxTurns 约束）
       if (result.finishReason === 'length') {
         messages.push({ role: 'user', content: '（上一条回复因长度上限被截断，请继续输出剩余内容。）' })
+        continue
+      }
+      // 2.1 Token budget 续跑：未达目标×90% 且仍有进展（收益未递减）→ 注入 nudge 续跑。
+      // 在 length 截断之后（截断必续写优先、其 continue 已跳过此处不会双重注入），任务通知之前。
+      if (deps.tokenBudget && shouldContinueForBudget({
+        budget: deps.tokenBudget, outputSoFar: budgetOutputSoFar,
+        continuations: budgetContinuations, lastDeltas: budgetDeltas,
+      })) {
+        budgetContinuations++
+        messages.push({ role: 'user', content: '（继续——尚未达到本次 token 预算，请接着完成未尽工作，不要总结收尾。）' })
         continue
       }
       // 模型本轮无工具调用：主会话先看有没有后台任务完成通知要注入（子代理子循环不参与）
