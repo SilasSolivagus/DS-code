@@ -7,6 +7,7 @@ describe('formatConfigReport', () => {
     const out = formatConfigReport({
       settings: { permissions: { allow: [], deny: ['**/.env'] }, compactTokens: 200000, costWarnCNY: 15, maxToolResultChars: 100000, model: 'pro', apiKey: 'sk-secret123' } as any,
       provenance: { model: 'project', apiKey: 'user', permissions: 'merged' },
+      permissionSources: { allow: {}, deny: { '**/.env': 'user' } },
       scopes: [
         { scope: 'user', path: '/home/u/.deepcode/settings.json', present: true, demoted: false, stripped: [] },
         { scope: 'project', path: '/proj/.deepcode/settings.json', present: true, demoted: false, stripped: ['apiKey', 'hooks', 'permissions.allow'] },
@@ -25,6 +26,7 @@ describe('formatConfigReport', () => {
     const out = formatConfigReport({
       settings: { apiKey: 'shortkey', model: 'dev' } as any,
       provenance: { apiKey: 'local', model: 'user' },
+      permissionSources: { allow: {}, deny: {} },
       scopes: [
         { scope: 'user', path: '/home/u/.deepcode/settings.json', present: true, demoted: false, stripped: [] },
         { scope: 'local', path: '/proj/.deepcode/settings.local.json', present: true, demoted: true, stripped: ['permissions'] },

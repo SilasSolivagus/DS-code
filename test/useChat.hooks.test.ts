@@ -31,17 +31,29 @@ vi.mock('../src/hooks.js', async orig => ({
 
 // mock config：注入非空 settings.hooks，使 useChat/headless 的 `if (settings.hooks)` 守卫通过
 // （守卫与 loop.ts 一致——未配 hooks 时不引入额外 await）。runHooks 已被 mock，hooks 内容仅需 truthy。
+const MOCK_SETTINGS = { permissions: { allow: [] as string[], deny: [] as string[] }, hooks: { UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'true' }] }] } }
 vi.mock('../src/config.js', async orig => {
   const actual = await orig() as any
   return {
     ...actual,
-    loadSettings: () => ({ ...actual.loadSettings(), permissions: { allow: [] }, hooks: { UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'true' }] }] } }),
+    loadSettings: () => ({ ...actual.loadSettings(), ...MOCK_SETTINGS }),
     addUserAllowRule: vi.fn(() => []),
     removeUserAllowRule: vi.fn(() => undefined),
     listUserAllowRules: vi.fn(() => []),
     saveRawUserSettings: vi.fn(),
   }
 })
+// mock settingsLayers：useChat.createChatCore 现在用 loadLayeredSettings 代替 loadSettings；
+// 返回同样的 settings（含 hooks 守卫），permissionSources 空映射即可。
+vi.mock('../src/settingsLayers.js', async orig => ({
+  ...(await orig() as any),
+  loadLayeredSettings: () => ({
+    settings: { permissions: { allow: [], deny: [] }, hooks: MOCK_SETTINGS.hooks },
+    provenance: {},
+    permissionSources: { allow: {}, deny: {} },
+    scopes: [],
+  }),
+}))
 
 vi.mock('../src/compact.js', async orig => ({
   ...(await orig() as any),

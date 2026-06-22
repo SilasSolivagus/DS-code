@@ -1,5 +1,6 @@
 // src/deny.ts
 // 敏感路径 deny：内置私钥类默认列表 + picomatch glob 匹配（~展开、不 realpath，对齐 CC）。
+import type { PermissionRuleSource } from './permissions.js'
 import picomatch from 'picomatch'
 import os from 'node:os'
 import path from 'node:path'
@@ -37,4 +38,14 @@ export function isDeniedPath(absPath: string, patterns: string[]): string | null
 /** 运行时 deny 列表 = 内置默认 ∪ 用户配置。 */
 export function resolveDenyList(userDeny?: string[]): string[] {
   return [...BUILTIN_DENY, ...(userDeny ?? [])]
+}
+
+/** deny pattern → 来源映射：内置规则标 'builtin'，并入 config deny 的 scope（同名 config 覆盖 builtin）。 */
+export function buildDenySourceMap(
+  configDenySources?: Record<string, PermissionRuleSource>,
+): Record<string, PermissionRuleSource> {
+  const out: Record<string, PermissionRuleSource> = {}
+  for (const pat of BUILTIN_DENY) out[pat] = 'builtin'
+  if (configDenySources) for (const [pat, src] of Object.entries(configDenySources)) out[pat] = src
+  return out
 }

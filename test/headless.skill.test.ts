@@ -24,14 +24,29 @@ vi.mock('../src/hooks.js', async (orig) => {
   }
 })
 
+const mockSkillSettings = {
+  permissions: { allow: [] },
+  compactTokens: 200_000,
+  costWarnCNY: 2,
+}
+
 vi.mock('../src/config.js', async (orig) => {
   const actual = await orig<typeof import('../src/config.js')>()
   return {
     ...actual,
-    loadSettings: vi.fn(() => ({
-      permissions: { allow: [] },
-      compactTokens: 200_000,
-      costWarnCNY: 2,
+    loadSettings: vi.fn(() => mockSkillSettings),
+  }
+})
+
+vi.mock('../src/settingsLayers.js', async (orig) => {
+  const actual = await orig<typeof import('../src/settingsLayers.js')>()
+  return {
+    ...actual,
+    loadLayeredSettings: vi.fn(() => ({
+      settings: mockSkillSettings,
+      provenance: {},
+      permissionSources: { allow: {}, deny: {} },
+      scopes: [],
     })),
   }
 })
@@ -63,6 +78,7 @@ import { runHeadless } from '../src/headless.js'
 import { chatStream } from '../src/api.js'
 import { loadSkills } from '../src/skillsLoader.js'
 import { loadSettings } from '../src/config.js'
+import { loadLayeredSettings } from '../src/settingsLayers.js'
 
 const usage = { prompt_tokens: 10, completion_tokens: 5, prompt_cache_hit_tokens: 0 }
 
@@ -90,13 +106,20 @@ describe('headless Skills 接线', () => {
     const keepSkill = { ...fakeSkill, name: 'keep', description: '保留的 skill', modelInvocable: true }
     const dropSkill = { ...fakeSkill, name: 'drop', description: '被排除的 skill', modelInvocable: true }
 
-    // loadSettings mock 返回 skills.deny=['drop']
-    vi.mocked(loadSettings).mockReturnValueOnce({
+    // loadSettings/loadLayeredSettings mock 返回 skills.deny=['drop']
+    const settingsWithDeny = {
       permissions: { allow: [] },
       compactTokens: 200_000,
       costWarnCNY: 2,
       maxToolResultChars: 100_000,
       skills: { deny: ['drop'] },
+    }
+    vi.mocked(loadSettings).mockReturnValueOnce(settingsWithDeny)
+    vi.mocked(loadLayeredSettings).mockReturnValueOnce({
+      settings: settingsWithDeny,
+      provenance: {},
+      permissionSources: { allow: {}, deny: {} },
+      scopes: [],
     })
 
     // loadSkills mock：按 config.deny 过滤（模拟真实 loadSkills 的 deny 逻辑）

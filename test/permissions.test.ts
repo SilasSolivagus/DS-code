@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { matchRule, checkPermission, isDangerous, splitBashCommand, bashCommandAllowed, hasUnquotedOperator, type PermissionContext, type Decision } from '../src/permissions.js'
+import { matchRule, checkPermission, isDangerous, splitBashCommand, bashCommandAllowed, hasUnquotedOperator, permissionSourceName, findMatchingRule, findBashMatchingRule, type PermissionContext, type Decision } from '../src/permissions.js'
 
 const fakeTool = (name: string, isReadOnly: boolean, desc: false | string = 'x'): any => ({
   name,
@@ -48,7 +48,7 @@ describe('checkPermission', () => {
 
   it('用户拒绝时返回 reason', async () => {
     const r = await checkPermission(fakeTool('Bash', false, 'npm i'), {}, pc({ ask: async () => 'no' }))
-    expect(r).toEqual({ ok: false, reason: '用户拒绝了此操作' })
+    expect(r).toMatchObject({ ok: false, reason: '用户拒绝了此操作' })
   })
 
   it('always 持久化规则且后续命中不再询问', async () => {
@@ -312,5 +312,70 @@ describe('checkPermission deny', () => {
   it('未命中 deny 不影响放行', async () => {
     const r = await checkPermission(denyTool('Read', true, ['/proj/x.ts']), {}, pc({ deny: ['**/id_rsa'] }))
     expect(r.ok).toBe(true)
+  })
+})
+
+describe('permissionSourceName', () => {
+  it('五个来源映射到中文显示名', () => {
+    expect(permissionSourceName('builtin')).toBe('内置规则')
+    expect(permissionSourceName('user')).toBe('用户设置')
+    expect(permissionSourceName('project')).toBe('共享项目设置')
+    expect(permissionSourceName('local')).toBe('项目本地设置')
+    expect(permissionSourceName('flag')).toBe('命令行参数')
+  })
+})
+
+describe('findMatchingRule / findBashMatchingRule', () => {
+  it('返回命中规则字符串', () => {
+    expect(findMatchingRule(['Read(/a)', 'Read(/b)'], 'Read', '/b')).toBe('Read(/b)')
+    expect(findMatchingRule(['Read(/a)'], 'Read', '/z')).toBeNull()
+  })
+  it('Bash 单命令前缀命中', () => {
+    expect(findBashMatchingRule('npm test -- x', ['Bash(npm test:*)'])).toBe('Bash(npm test:*)')
+  })
+  it('Bash 复合：精确全量规则命中', () => {
+    expect(findBashMatchingRule('ls && pwd', ['Bash(ls && pwd)'])).toBe('Bash(ls && pwd)')
+  })
+  it('Bash 复合：每段覆盖返回首段命中规则', () => {
+    expect(findBashMatchingRule('ls && pwd', ['Bash(ls)', 'Bash(pwd)'])).toBe('Bash(ls)')
+  })
+  it('Bash 复合：未全覆盖返回 null', () => {
+    expect(findBashMatchingRule('ls && pwd', ['Bash(ls)'])).toBeNull()
+  })
+  it('bashCommandAllowed 与 findBashMatchingRule 等价', () => {
+    expect(bashCommandAllowed('ls && pwd', ['Bash(ls)', 'Bash(pwd)'])).toBe(true)
+    expect(bashCommandAllowed('ls && rm', ['Bash(ls)'])).toBe(false)
+  })
+})
+
+describe('checkPermission decisionReason', () => {
+  const denyTool = (name: string): any => ({
+    name, isReadOnly: false, needsPermission: () => 'x',
+    deniablePaths: () => ['/home/u/.ssh/id_rsa'],
+  })
+  it('非 Bash deny：reason 文本含来源 + decisionReason rule', async () => {
+    const r = await checkPermission(denyTool('Read'), {}, pc({
+      deny: ['**/id_rsa'], denySources: { '**/id_rsa': 'user' },
+    }))
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.reason).toContain('来自 用户设置')
+      expect(r.decisionReason).toEqual({ type: 'rule', rule: { source: 'user', behavior: 'deny', value: '**/id_rsa' } })
+    }
+  })
+  it('Bash deny：降级 ask 并把 deny reason 透传给 ask', async () => {
+    let got: any = null
+    await checkPermission(denyTool('Bash'), {}, pc({
+      deny: ['**/id_rsa'], denySources: { '**/id_rsa': 'builtin' },
+      ask: async (_t, _d, reason) => { got = reason; return 'no' },
+    }))
+    expect(got).toEqual({ type: 'rule', rule: { source: 'builtin', behavior: 'deny', value: '**/id_rsa' } })
+  })
+  it('allow by rule：ok 带 decisionReason allow', async () => {
+    const tool = fakeTool('Read', false, '/tmp/x')
+    const r = await checkPermission(tool, {}, pc({
+      rules: ['Read(/tmp/x)'], ruleSources: { 'Read(/tmp/x)': 'local' },
+    }))
+    expect(r).toMatchObject({ ok: true, decisionReason: { type: 'rule', rule: { source: 'local', behavior: 'allow', value: 'Read(/tmp/x)' } } })
   })
 })

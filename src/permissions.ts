@@ -70,13 +70,41 @@ export function splitBashCommand(command: string): { tooComplex: boolean; comman
 export type PermissionMode = 'default' | 'acceptEdits' | 'yolo'
 export type Decision = 'yes' | 'no' | 'always'
 
+export type PermissionRuleSource = 'builtin' | 'user' | 'project' | 'local' | 'flag'
+
+export interface PermissionRule {
+  source: PermissionRuleSource
+  behavior: 'allow' | 'deny'
+  value: string
+}
+
+export type PermissionDecisionReason =
+  | { type: 'rule'; rule: PermissionRule }
+  | { type: 'hook'; hookName: string; reason?: string }
+  | { type: 'other'; reason: string }
+
+const SOURCE_NAMES: Record<PermissionRuleSource, string> = {
+  builtin: '内置规则',
+  user: '用户设置',
+  project: '共享项目设置',
+  local: '项目本地设置',
+  flag: '命令行参数',
+}
+
+/** 来源层级 → 中文显示名。 */
+export function permissionSourceName(s: PermissionRuleSource): string {
+  return SOURCE_NAMES[s] ?? String(s)
+}
+
 export interface PermissionContext {
   mode: PermissionMode
   rules: string[]
   saveRule: (rule: string) => void
-  ask: (toolName: string, desc: string) => Promise<Decision>
+  ask: (toolName: string, desc: string, reason?: PermissionDecisionReason) => Promise<Decision>
   deny?: string[]
   cwd?: string
+  ruleSources?: Record<string, PermissionRuleSource>
+  denySources?: Record<string, PermissionRuleSource>
 }
 
 export interface PermissionHooks {
@@ -135,16 +163,30 @@ function matchExactRule(rule: string, toolName: string, desc: string): boolean {
   return desc.replace(/\n/g, ' ') === pat
 }
 
-/** Bash 命令是否被规则集允许：too-complex→否；单命令→现匹配；复合→精确全量规则命中 OR 每段都被覆盖。 */
-export function bashCommandAllowed(command: string, rules: string[]): boolean {
+/** 返回第一条命中规则字符串，无则 null。 */
+export function findMatchingRule(rules: string[], toolName: string, desc: string): string | null {
+  for (const r of rules) if (matchRule(r, toolName, desc)) return r
+  return null
+}
+
+/** Bash 命中规则查找：too-complex→null；单命令→现匹配；复合→精确全量规则 OR 每段覆盖（返回首段命中规则作代表）。 */
+export function findBashMatchingRule(command: string, rules: string[]): string | null {
   const { tooComplex, commands } = splitBashCommand(command)
-  if (tooComplex) return false
-  if (commands.length <= 1) return rules.some(r => matchRule(r, 'Bash', commands[0] ?? command))
-  // 复合命令：先尝试精确全量规则（\n→空格归一后完整匹配，对应 always 存下的复合精确规则）
-  // 注意：只走精确规则，前缀规则不得跨多段命令匹配
-  if (rules.some(r => matchExactRule(r, 'Bash', command))) return true
-  // 回退：每段都需被单独覆盖
-  return commands.every(s => rules.some(r => matchRule(r, 'Bash', s)))
+  if (tooComplex) return null
+  if (commands.length <= 1) {
+    const d = commands[0] ?? command
+    return findMatchingRule(rules, 'Bash', d)
+  }
+  for (const r of rules) if (matchExactRule(r, 'Bash', command)) return r
+  if (commands.every(s => rules.some(r => matchRule(r, 'Bash', s)))) {
+    return findMatchingRule(rules, 'Bash', commands[0])
+  }
+  return null
+}
+
+/** Bash 命令是否被规则集允许（委托 findBashMatchingRule，保持原行为）。 */
+export function bashCommandAllowed(command: string, rules: string[]): boolean {
+  return findBashMatchingRule(command, rules) !== null
 }
 
 export async function checkPermission(
@@ -152,48 +194,59 @@ export async function checkPermission(
   input: unknown,
   pc: PermissionContext,
   hooks?: PermissionHooks,
-): Promise<{ ok: true } | { ok: false; reason: string }> {
+): Promise<
+  | { ok: true; decisionReason?: PermissionDecisionReason }
+  | { ok: false; reason: string; decisionReason?: PermissionDecisionReason }
+> {
   // deny 最高优先级：早于 isReadOnly/yolo/acceptEdits/rules
   let forceAsk = false
+  let denyHit: string | null = null
   if (pc.deny?.length && tool.deniablePaths) {
     for (const p of tool.deniablePaths(input as any, pc.cwd ?? process.cwd())) {
       const hit = isDeniedPath(p, pc.deny)
       if (!hit) continue
+      denyHit = hit
       if (tool.name === 'Bash') { forceAsk = true; break } // Bash：降级 ask 防误操作
-      await hooks?.onDenied?.(tool.name, tool.needsPermission(input) || tool.name, `路径被 deny 规则拒绝（${hit}）`)
-      return { ok: false, reason: `路径被 deny 规则拒绝（${hit}）` }
+      const src = pc.denySources?.[hit] ?? 'builtin'
+      const reason = `路径被 deny 规则拒绝（${hit}，来自 ${permissionSourceName(src)}）`
+      await hooks?.onDenied?.(tool.name, tool.needsPermission(input) || tool.name, reason)
+      return { ok: false, reason, decisionReason: { type: 'rule', rule: { source: src, behavior: 'deny', value: hit } } }
     }
   }
   if (tool.isReadOnly && !forceAsk) return { ok: true }
   const desc = tool.needsPermission(input)
   if (desc === false && !forceAsk) return { ok: true }
-  if (desc === false) return { ok: true } // forceAsk 仅对 Bash（desc 恒为 string）；其它工具 desc===false 直接放行
+  if (desc === false) return { ok: true } // forceAsk 仅对 Bash（desc 恒为 string）
   if (pc.mode === 'yolo' && !forceAsk) return { ok: true }
   if (pc.mode === 'acceptEdits' && !forceAsk && (tool.name === 'Edit' || tool.name === 'Write')) return { ok: true }
-  const allowed = tool.name === 'Bash'
-    ? bashCommandAllowed(desc, pc.rules)
-    : pc.rules.some(r => matchRule(r, tool.name, desc))
-  if (allowed && !forceAsk) return { ok: true }
-  // PermissionRequest hook：交互 ask 前。allow→跳弹窗放行；deny/block→拒绝。
+  const matched = tool.name === 'Bash'
+    ? findBashMatchingRule(desc, pc.rules)
+    : findMatchingRule(pc.rules, tool.name, desc)
+  if (matched && !forceAsk) {
+    const src = pc.ruleSources?.[matched] ?? 'user'
+    return { ok: true, decisionReason: { type: 'rule', rule: { source: src, behavior: 'allow', value: matched } } }
+  }
+  // PermissionRequest hook：交互 ask 前。allow→放行；deny/block→拒绝。
   if (hooks?.onRequest) {
     const out = await hooks.onRequest(tool.name, desc)
     if (out.permission === 'allow') return { ok: true }
-    // 权限门控事件：exit-2/decision:block 即「拒绝本操作」，故 block 在此是必要 deny 信号
-    // （与 Stop 类 I-1 不同——那里 block 语义重载须读 preventContinuation；门控同 PreToolUse 用 block）。
     if (out.permission === 'deny' || out.block) {
       const reason = out.permissionReason ?? out.blockReason ?? '权限被 hook 拒绝'
       await hooks.onDenied?.(tool.name, desc, reason)
-      return { ok: false, reason }
+      return { ok: false, reason, decisionReason: { type: 'hook', hookName: 'PermissionRequest', reason } }
     }
-    // 既非 allow 也非 deny/block（含 hook 出错/超时返回空 outcome）→ fall through 到 pc.ask（fail-safe 问用户）。
+    // fall through 到 pc.ask（fail-safe 问用户）。
   }
-  const decision = await pc.ask(tool.name, desc)
+  const askReason: PermissionDecisionReason | undefined = denyHit
+    ? { type: 'rule', rule: { source: pc.denySources?.[denyHit] ?? 'builtin', behavior: 'deny', value: denyHit } }
+    : undefined
+  const decision = await pc.ask(tool.name, desc, askReason)
   if (decision === 'always') {
     const firstLine = desc.split('\n')[0]
     const compound = tool.name === 'Bash' && splitBashCommand(desc).commands.length > 1
     const pat = tool.name === 'Bash'
       ? (isDangerous(desc) || compound)
-        ? desc.replace(/\n/g, ' ')                      // 危险/复合：完整精确
+        ? desc.replace(/\n/g, ' ')
         : firstLine.split(' ').slice(0, 2).join(' ') + ':*'
       : desc.replace(/\n/g, ' ')
     pc.saveRule(`${tool.name}(${pat})`)
@@ -201,5 +254,5 @@ export async function checkPermission(
   }
   if (decision === 'yes') return { ok: true }
   await hooks?.onDenied?.(tool.name, desc, '用户拒绝了此操作')
-  return { ok: false, reason: '用户拒绝了此操作' }
+  return { ok: false, reason: '用户拒绝了此操作', decisionReason: { type: 'other', reason: '用户拒绝了此操作' } }
 }

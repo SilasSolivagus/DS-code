@@ -27,19 +27,34 @@ vi.mock('../src/hooks.js', async (orig) => {
   }
 })
 
+const mockSettings = {
+  permissions: { allow: [] },
+  compactTokens: 200_000,
+  costWarnCNY: 15,
+  hooks: {
+    SessionStart: [{ matcher: '*', hooks: [] }],
+    InstructionsLoaded: [{ matcher: '*', hooks: [] }],
+    UserPromptSubmit: [{ matcher: '*', hooks: [] }],
+  },
+}
+
 vi.mock('../src/config.js', async (orig) => {
   const actual = await orig<typeof import('../src/config.js')>()
   return {
     ...actual,
-    loadSettings: vi.fn(() => ({
-      permissions: { allow: [] },
-      compactTokens: 200_000,
-      costWarnCNY: 15,
-      hooks: {
-        SessionStart: [{ matcher: '*', hooks: [] }],
-        InstructionsLoaded: [{ matcher: '*', hooks: [] }],
-        UserPromptSubmit: [{ matcher: '*', hooks: [] }],
-      },
+    loadSettings: vi.fn(() => mockSettings),
+  }
+})
+
+vi.mock('../src/settingsLayers.js', async (orig) => {
+  const actual = await orig<typeof import('../src/settingsLayers.js')>()
+  return {
+    ...actual,
+    loadLayeredSettings: vi.fn(() => ({
+      settings: mockSettings,
+      provenance: {},
+      permissionSources: { allow: {}, deny: {} },
+      scopes: [],
     })),
   }
 })
@@ -177,5 +192,20 @@ describe('runHeadless', () => {
     } finally {
       if (createdMem) rmSync(memPath, { force: true })
     }
+  })
+})
+
+import { checkPermission } from '../src/permissions.js'
+import { buildDenySourceMap, resolveDenyList } from '../src/deny.js'
+
+describe('headless deny 文本含来源', () => {
+  it('内置私钥路径硬拒绝文本带 来自 内置规则', async () => {
+    const tool: any = { name: 'Read', isReadOnly: false, needsPermission: () => 'x', deniablePaths: () => ['/h/.ssh/id_rsa'] }
+    const r = await checkPermission(tool, {}, {
+      mode: 'default', rules: [], saveRule: () => {}, ask: async () => 'no',
+      deny: resolveDenyList(), denySources: buildDenySourceMap(),
+    })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain('来自 内置规则')
   })
 })

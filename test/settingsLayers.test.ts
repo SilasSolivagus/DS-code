@@ -133,3 +133,21 @@ describe('loadLayeredSettings', () => {
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 })
+
+describe('mergeScopePartials permissionSources', () => {
+  it('per-rule 归属到贡献 scope，重复取最高优先级', () => {
+    const { permissionSources } = mergeScopePartials([
+      { scope: 'user', partial: { permissions: { allow: ['Bash(ls)'], deny: ['~/.ssh/**'] } } },
+      { scope: 'local', partial: { permissions: { allow: ['Bash(ls)', 'Read(/tmp/x)'], deny: ['~/.aws/**'] } } },
+    ])
+    expect(permissionSources.allow['Read(/tmp/x)']).toBe('local')
+    expect(permissionSources.allow['Bash(ls)']).toBe('local') // 重复 → 最高优先级 local
+    expect(permissionSources.deny['~/.ssh/**']).toBe('user')
+    expect(permissionSources.deny['~/.aws/**']).toBe('local')
+  })
+
+  it('无 permissions 时为空映射', () => {
+    const { permissionSources } = mergeScopePartials([{ scope: 'user', partial: { model: 'x' } }])
+    expect(permissionSources).toEqual({ allow: {}, deny: {} })
+  })
+})

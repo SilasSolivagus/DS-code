@@ -13,7 +13,7 @@ import { bgTaskListTool, taskOutputTool, taskStopTool } from './tools/taskTools.
 import { taskCreateTool, taskGetTool, taskUpdateTool, taskListTool } from './tools/taskListTools.js'
 import { installTaskCleanup } from './tasks.js'
 import { buildSystemPrompt, findMemoryFiles } from './prompt.js'
-import { loadSettings } from './config.js'
+import { loadLayeredSettings } from './settingsLayers.js'
 import { runHooks } from './hooks.js'
 import { makeHookRuntime } from './hookRuntime.js'
 import { initMcpTools } from './mcp.js'
@@ -21,7 +21,7 @@ import { loadSkills } from './skillsLoader.js'
 import { makeSkillTool } from './tools/skill.js'
 import { TaskListStore } from './taskList.js'
 import { costCNY } from './pricing.js'
-import { resolveDenyList } from './deny.js'
+import { resolveDenyList, buildDenySourceMap } from './deny.js'
 import type { ToolContext } from './tools/types.js'
 import type { Usage } from './api.js'
 
@@ -36,7 +36,9 @@ export interface HeadlessResult {
 /** 单 prompt 跑完整个 loop。工具事件打到 stderr（stdout 留给最终结果，方便脚本消费）。 */
 export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: boolean; flagSettingsPath?: string }): Promise<HeadlessResult> {
   installTaskCleanup() // 退出时 kill 仍 running 的后台任务
-  const settings = loadSettings(process.cwd(), opts.flagSettingsPath)
+  const layered = loadLayeredSettings(process.cwd(), opts.flagSettingsPath)
+  const settings = layered.settings
+  const denySources = buildDenySourceMap(layered.permissionSources.deny)
   const model = 'deepseek-v4-flash'
   let cwd = process.cwd()
   const agents = resolveAgents(cwd)
@@ -117,6 +119,8 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
       cwd,
       saveRule: () => { /* headless 不持久化规则 */ },
       ask: async () => 'no', // 无人值守：默认拒绝，拒绝理由按正常机制喂回模型
+      ruleSources: layered.permissionSources.allow,
+      denySources,
     },
     reminders: () => {
       taskList.tick()
