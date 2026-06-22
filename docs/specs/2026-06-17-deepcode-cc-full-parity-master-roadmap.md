@@ -22,7 +22,7 @@
 
 **⭐2026-06-22 派 4 agent 实读 CC+摸现状调研，roadmap 大修正（又一次「别照标题盲做」）：** ①**2.3 自动 compact = 已端到端做完**（2.5 顺手做，标 ✅，唯一可选=413 兜底）。②**3.5 Rewind = 主干已完成**（存储+还原+/rewind+两级选择器+三模式，标 🟢主干，真实剩余=1M Summarize+4S，其中 #4 防覆盖手改=数据安全建议补）。③**5.6 权限弹窗 = 主体已做**（三态+always 写规则+危险警告+diff 全有，标 🟢主体，真实剩余=1M deny/来源展示+3S 文案）。④**2.1 = adaptive thinking 对 DeepSeek N/A，真实剩余只剩 CC token budget 自动续跑(`+500k`/跨turn结转/收益递减熔断)，S-M 纯逻辑**。**净结论：当初选的 3.5/5.6 主干已完成；真正值得做的高价值低风险件=【2.1 token budget(新功能,S-M,非TUI)】+【5.6 deny/来源展示(M,TUI)】+【3.5 #4 防覆盖手改(S,非TUI,数据安全)】。**
 
-**🚀执行进度（2026-06-22）：✅3.5 #4 restore-only-if-differs(`19762b3`)✅2.1 Token budget 自动续跑(`a104f45`,opus 终审+真机签收)。剩 → 5.6 deny/来源展示(M,TUI,下一件) → C4 工具批。main=origin=`a104f45` 全同步。**
+**🚀执行进度（2026-06-22）：✅3.5 #4 restore-only-if-differs(`19762b3`)✅2.1 Token budget 自动续跑(`a104f45`,opus 终审+真机签收)✅5.6 deny/来源层级展示(merge `31e5deb`,8 任务 TDD+opus 全分支终审 READY+TUI 真机冒烟过,1010 测试)。剩 → C4 工具批(下一批)。main 领先 origin 11(待 push)。**
 
 ---
 
@@ -118,7 +118,7 @@
 | 5.3 | **Output styles**（自定义输出样式 markdown + 注入 + 降级） | `outputStyles/` `constants/outputStyles.ts` | 无 | ⬜ | 碰TUI | M |
 | 5.4 | **/theme /color 主题切换** | `commands/{theme,color}` | 无 | ⬜ | 碰TUI | S |
 | 5.5 | **语音模式**（音频录制 + STT 流 + keyterms） | `voice/` `services/voice*.ts` | 无 | ⬜ | 碰TUI | L |
-| 5.6 | **权限弹窗 UI**（always/yes/no 决策 + 规则记忆） | `components/PermissionPrompt.tsx` | ✅ **主体已做**（PermissionDialog.tsx 三态全+↑↓/数字/字母/Esc 快捷键+always 真写 user 规则+危险警告+diff 预览）。调研(2026-06-22)。**真实剩余=1×M(deny/来源原因透传进 PendingAsk 并展示，类 CC PermissionRuleExplanation)+3×S 文案(always 写哪层反馈/规则粒度预览/Tab-amend)** | 🟢 主体 | 碰TUI | M(余) |
+| 5.6 | **权限弹窗 UI**（always/yes/no 决策 + 规则记忆 + deny/来源展示） | `components/PermissionPrompt.tsx` | ✅ **完成**（PermissionDialog 三态+快捷键+always 写 user 规则+危险警告+diff；**+deny/来源层级展示 merge `31e5deb`**：PermissionDecisionReason 联合+settingsLayers per-rule provenance+buildDenySourceMap+checkPermission 携带/透传 decisionReason+硬拒绝文本带来源+弹窗渲染来源行；镜像 CC PermissionRuleExplanation，源 builtin/user/project/local/flag）。**余 3×S 文案(always 写哪层反馈/规则粒度预览/Tab-amend)留将来** | ✅ | 碰TUI | ✅ |
 | 5.7 | **Statusline**（成本/token/模型/模式/任务进度实时栏 + /statusline） | `commands/statusline.tsx` | 极简状态行 | 🟡 | 碰TUI | M |
 | 5.8 | **AI 辅助摘要**（AgentSummary 子代理进度 / toolUseSummary / awaySummary / PromptSuggestion 下一步建议） | `services/{AgentSummary,toolUseSummary,awaySummary,PromptSuggestion}` | 无 | ⬜ | 碰TUI | M |
 | 5.9 | **交互小命令**（/copy /good-claude /context viz /files /add-dir /status /help 增强） | `commands/*` | 部分 | 🟡 | 碰TUI | S |
@@ -161,7 +161,7 @@
 - **C5 · Steering→多agent**：1.3 Steering 非 TUI 逻辑（为 B 批 1.6 铺路）。
 - **⏳ 后置 · 2.8 通用多 provider / GLM**（2026-06-22 用户钦定通用 preset，但拍板**后置**）：先把第 1-5 层 CC 对齐做完整再做。不进下面的近期清单。
 
-**真实剩余下一步（2026-06-22 同步，旧 6-8 件清单已完成作废；先做完 CC 对齐）**：①2.1 余 adaptive budget ②2.3 余自动触发（①②=C3 收尾）③起 C4 工具批（LSP/REPL/Notebook/PowerShell/Cron/Sandbox，可并行降仪式）④C5 1.3 Steering ⑤TUI 批（含破例 3.5 Rewind UI / 5.6 权限弹窗 UI）。**CC 第 1-5 层全做完后** → 才做 ⏳2.8 通用多 provider。
+**真实剩余下一步（2026-06-22 同步，旧 6-8 件清单已完成作废；先做完 CC 对齐）**：①2.1 余 adaptive budget(N/A,DeepSeek无API) ②2.3 余自动触发(已端到端完成) ③**起 C4 工具批（LSP/REPL/Notebook/PowerShell/Cron/Sandbox，可并行降仪式）= 下一批**④C5 1.3 Steering ⑤TUI 批余项（✅3.5 Rewind UI / ✅5.6 权限弹窗 deny/来源 已破例先做完；余 `/permissions` UI + 其它 TUI 件）。**CC 第 1-5 层全做完后** → 才做 ⏳2.8 通用多 provider。
 
 **TUI 批 · 两件提前破例（用户拍板，其余仍攒最后一起冒烟）：**
 - 🔓 **3.5 Rewind UI 提前**（安全网，让后面可写 subagent 1.5/autoDream 敢做）。
