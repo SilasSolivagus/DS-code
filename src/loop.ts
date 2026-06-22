@@ -40,6 +40,9 @@ export interface LoopDeps {
   /** inline skill 注入队列 drain：每轮 tool 结果回灌后调用，返回的内容各作 user 消息追加。
    *  与 ctx.injectUserMessage 接同一 buffer（caller 在 useChat/headless 接线）。 */
   drainInjections?: () => string[]
+  /** steering 注入队列 drain：每轮 tool 结果回灌后、drainInjections 之后调用，
+   *  返回已包 <queued-user-message> 标记的字符串，各作 user 消息追加。仅主会话（TUI）传入。 */
+  drainSteering?: () => string[]
   /** 工具结果字符级兜底上限，超出截断后再回灌 messages（保护上下文/前缀缓存）。缺省由 caller 传 settings.maxToolResultChars。 */
   maxToolResultChars?: number
   /** 2.1 Token budget：本次 send 的输出 token 目标（用户 +500k 设的 sticky 值）。
@@ -295,6 +298,10 @@ export async function* runLoop(
     // inline skill：把工具经 injectUserMessage 排入的内容作为 user 消息追加（在 tool 结果之后，下一轮模型可见）
     for (const inj of deps.drainInjections?.() ?? []) {
       messages.push({ role: 'user', content: inj })
+    }
+    // steering（next/later）：用户中途排队的消息在 tool 结果边界注入（已含 queued-user-message 标记）
+    for (const s of deps.drainSteering?.() ?? []) {
+      messages.push({ role: 'user', content: s })
     }
     yield { type: 'turn_end', usage: result.usage, sentLen }
     if (deps.ctx.signal.aborted) {
