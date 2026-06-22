@@ -336,7 +336,7 @@ export function createChatCore(opts: {
     opts.onState(state)
     for (const l of listeners) l()
   }
-  // steering 队列变化驱动 React 重渲染（steerNext/Now/Pop → subscribe → setState）
+  // steering 队列变化驱动 React 重渲染（steer/steerPop → subscribe → setState）
   steerQueue.subscribe(setState)
   const dispatch = (a: ReducerAction): void => {
     transcript = transcriptReducer(transcript, a)

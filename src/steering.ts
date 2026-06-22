@@ -1,5 +1,5 @@
 // src/steering.ts —— 会话级 steering 队列：用户中途插入消息的 FIFO 缓冲。
-// priority 仅用于 TUI 列队展示标记 + 决定 onSteerNow 是否触发 abort（不影响 drain）；
+// priority 仅用于 TUI 列队展示 + now/next/later 枚举保留供 SDK/未来用途；不影响 drain（用户路径恒 next，软中断由 useChat toolInFlight 决定）。
 // deepcode 无 Sleep 工具，无 later-only 边界，故 drain 一律 drainAll（对齐 spec §6「later 暂同 next」）。
 
 export type SteeringPriority = 'now' | 'next' | 'later'
