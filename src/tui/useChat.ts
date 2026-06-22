@@ -51,6 +51,7 @@ import { DEFAULT_MEMORY_CONFIG } from '../memdir/memoryConfig.js'
 import { createMemoryExtractor } from '../services/memory/extractMemories.js'
 import { createRecaller } from '../services/memory/recall.js'
 import { findRelevantMemories } from '../memdir/findRelevantMemories.js'
+import { SteeringQueue, formatSteeringMessage, type SteeringItem } from '../steering.js'
 import { type SessionMemoryState, shouldUpdateSessionMemory, runSessionMemoryUpdate } from '../services/memory/sessionMemory.js'
 
 /** ! 直跑：同步执行，30s 超时，stdout+stderr 合并，超 20k 截断 */
@@ -186,6 +187,10 @@ export interface ChatCore {
   state: ChatState
   send(line: string): Promise<void> // 斜杠命令本地处理；其余走 runLoop（含边界 reminders、落盘、自动 compact）
   interrupt(): void // Esc
+  steerNext(text: string): void
+  steerNow(text: string): void
+  steerPop(): string | undefined
+  steerQueue(): readonly SteeringItem[]
   resolveAsk(d: Decision): void // 权限弹窗回答
   resolveQuestion(answers: Answer[] | null): void // AskUserQuestion 弹窗回答
   resumeList(): { file: string; preview: string }[]
@@ -220,6 +225,7 @@ export function createChatCore(opts: {
   const denySources = buildDenySourceMap(layered.permissionSources.deny)
   let cwd = opts.cwd
   let abort = new AbortController()
+  const steerQueue = new SteeringQueue()
   let model = settings.model ?? 'deepseek-v4-flash'
   let tokenBudget: number | null = null // 2.1 sticky 预算（进程内，不落 session；+0k 清除）
   let budgetUsed = 0                     // 2.1 本次 send 累计输出 token（状态栏 budget 段分子）
@@ -251,6 +257,7 @@ export function createChatCore(opts: {
   const skills = loadSkills(cwd, undefined, settings.skills)
   const injectionBuffer: string[] = []
   ctx.injectUserMessage = (c: string) => injectionBuffer.push(c)
+  ctx.resetSignal = () => { abort = new AbortController() }
   const mem = settings.memory ?? DEFAULT_MEMORY_CONFIG
   const memdir = mem.enabled && !mem.recall.enabled ? memdirFor(cwd) : undefined
   // 动态召回：recall 开时构 recaller（prefetch 每轮非阻塞启动，consume 在 tool_end 后注入 reminder）
@@ -329,6 +336,8 @@ export function createChatCore(opts: {
     opts.onState(state)
     for (const l of listeners) l()
   }
+  // steering 队列变化驱动 React 重渲染（steerNext/Now/Pop → subscribe → setState）
+  steerQueue.subscribe(setState)
   const dispatch = (a: ReducerAction): void => {
     transcript = transcriptReducer(transcript, a)
     setState()
@@ -639,6 +648,7 @@ export function createChatCore(opts: {
         hooks: settings.hooks,
         hookDeps,
         drainInjections: () => injectionBuffer.splice(0),
+        drainSteering: () => steerQueue.drainAll().map(i => formatSteeringMessage(i.value)),
         ...(tokenBudget ? { tokenBudget } : {}), // 2.1 sticky 预算（有值才传）
       }
       const gen = runLoop(messages, deps)
@@ -1018,8 +1028,16 @@ export function createChatCore(opts: {
       // generator 永不返回，busy 永远 true——必须先拒绝掉再 abort，否则死锁。
       if (pendingAsk) { const p = pendingAsk; pendingAsk = null; setState(); p.resolve('no') }
       if (pendingQuestion) { const p = pendingQuestion; pendingQuestion = null; setState(); p.resolve(null) }
-      abort.abort()
+      abort.abort('user-cancel')
     },
+    steerNext: (text: string) => { if (text.trim()) steerQueue.enqueue(text, 'next') },
+    steerNow: (text: string) => {
+      if (!text.trim()) return
+      steerQueue.enqueue(text, 'now')
+      abort.abort('interrupt') // 软中断当前 turn；loop 据 reason 续跑
+    },
+    steerPop: () => steerQueue.popLast()?.value,
+    steerQueue: () => steerQueue.peek(),
     resolveAsk: (d: Decision) => {
       if (!pendingAsk) return
       const p = pendingAsk
@@ -1094,7 +1112,7 @@ export function createChatCore(opts: {
         notice('info', `[rewind] 代码：${parts.join('、')}`)
       }
     },
-    dispose: () => { fireSessionEnd('exit'); unsubNotification(); void mcpCleanup?.() },
+    dispose: () => { fireSessionEnd('exit'); unsubNotification(); steerQueue.clear(); void mcpCleanup?.() },
   }
 }
 
