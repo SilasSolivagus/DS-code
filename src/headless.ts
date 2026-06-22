@@ -13,7 +13,6 @@ import { bgTaskListTool, taskOutputTool, taskStopTool } from './tools/taskTools.
 import { taskCreateTool, taskGetTool, taskUpdateTool, taskListTool } from './tools/taskListTools.js'
 import { installTaskCleanup } from './tasks.js'
 import { buildSystemPrompt, findMemoryFiles } from './prompt.js'
-import { loadSettings } from './config.js'
 import { loadLayeredSettings } from './settingsLayers.js'
 import { runHooks } from './hooks.js'
 import { makeHookRuntime } from './hookRuntime.js'
