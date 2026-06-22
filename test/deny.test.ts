@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import os from 'node:os'
 import path from 'node:path'
-import { BUILTIN_DENY, isDeniedPath, resolveDenyList } from '../src/deny.js'
+import { BUILTIN_DENY, isDeniedPath, resolveDenyList, buildDenySourceMap } from '../src/deny.js'
 
 const home = os.homedir()
 describe('isDeniedPath', () => {
@@ -61,5 +61,19 @@ describe('resolveDenyList', () => {
 
   it('[] 返回 BUILTIN_DENY 副本', () => {
     expect(resolveDenyList([])).toEqual(BUILTIN_DENY)
+  })
+})
+
+describe('buildDenySourceMap', () => {
+  it('builtin 标 builtin，config 并入且同名覆盖', () => {
+    const m = buildDenySourceMap({ '~/secret/**': 'user', '~/.ssh/**': 'project' })
+    expect(m['**/id_rsa']).toBe('builtin')
+    expect(m['~/secret/**']).toBe('user')
+    expect(m['~/.ssh/**']).toBe('project') // config 覆盖 builtin 同名
+  })
+
+  it('无 config 时全为 builtin', () => {
+    const m = buildDenySourceMap()
+    for (const p of BUILTIN_DENY) expect(m[p]).toBe('builtin')
   })
 })
