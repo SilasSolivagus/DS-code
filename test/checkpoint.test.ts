@@ -54,6 +54,25 @@ describe('Checkpointer', () => {
     expect(fs.readFileSync(f('b.txt'), 'utf8')).toBe('b-untouched')
   })
 
+  it('restore-only-if-differs：当前内容已等于目标 before-image → 跳过写入、不计入 restored、不 bump mtime', () => {
+    const cp = createCheckpointer(store)
+    fs.writeFileSync(f('a.txt'), 'same'); cp.capture(f('a.txt'), 1)
+    // 当前内容仍等于 before-image（模型没改或改回了）
+    const beforeMtime = fs.statSync(f('a.txt')).mtimeMs
+    const r = cp.restoreFiles(1)
+    expect(r.restored).not.toContain(f('a.txt'))            // 无谓写入被跳过
+    expect(fs.statSync(f('a.txt')).mtimeMs).toBe(beforeMtime) // mtime 未变（没触发 watcher）
+  })
+
+  it('restore-only-if-differs：当前内容与目标不同 → 正常还原并计入 restored', () => {
+    const cp = createCheckpointer(store)
+    fs.writeFileSync(f('a.txt'), 'orig'); cp.capture(f('a.txt'), 1)
+    fs.writeFileSync(f('a.txt'), 'changed')
+    const r = cp.restoreFiles(1)
+    expect(r.restored).toContain(f('a.txt'))
+    expect(fs.readFileSync(f('a.txt'), 'utf8')).toBe('orig')
+  })
+
   it('fileCountAt：某轮捕获的不同 path 数', () => {
     const cp = createCheckpointer(store)
     fs.writeFileSync(f('a.txt'), 'a'); cp.capture(f('a.txt'), 5)

@@ -77,6 +77,11 @@ export function createCheckpointer(storeDir: string, cap = 100): Checkpointer {
             if (fs.existsSync(e.path)) { fs.rmSync(e.path); result.deleted.push(e.path) }
           } else {
             const buf = fs.readFileSync(path.join(blobDir, e.blob!))
+            // restore-only-if-differs（对齐 CC checkOriginFileChanged）：当前已等于目标 before-image
+            // 就跳过——省一次写、不无谓 bump mtime（避免触发 IDE/构建 watcher 重编译）。
+            let current: Buffer | null = null
+            try { current = fs.readFileSync(e.path) } catch { /* 不存在/读失败 → 当作不同，照常还原 */ }
+            if (current && current.equals(buf)) continue
             fs.mkdirSync(path.dirname(e.path), { recursive: true })
             fs.writeFileSync(e.path, buf)
             result.restored.push(e.path)
