@@ -26,6 +26,9 @@ export interface ToolContext {
   injectUserMessage?: (content: string) => void
   /** deny 规则列表（Glob/Grep 过滤输出用）。主会话/headless 注入；子代理可不注入。 */
   denyPatterns?: () => string[]
+  /** turn 内信号重建：steering 'now' 软中断后，旧 signal 已永久 aborted，
+   *  调此重建 AbortController 使后续轮拿到未中断的新 signal。主会话/TUI 注入；headless/子代理不注入。 */
+  resetSignal?: () => void
 }
 
 export interface Tool<S extends z.ZodTypeAny = z.ZodTypeAny> {

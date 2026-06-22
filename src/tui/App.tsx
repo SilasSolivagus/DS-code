@@ -252,6 +252,10 @@ export function App(props: {
                 history={historyItems}
                 busy={state.busy}
                 valueOverride={valueOverride}
+                onSteer={(t) => core.steer(t)}
+                onSteerPop={() => { const v = core.steerPop(); if (v !== undefined) setValueOverride(prev => ({ text: v, nonce: (prev?.nonce ?? 0) + 1 })) }}
+                steerQueueSize={core.steerQueue().length}
+                steerQueueItems={core.steerQueue()}
               />
             </>
       }

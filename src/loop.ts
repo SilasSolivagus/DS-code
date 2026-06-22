@@ -40,6 +40,9 @@ export interface LoopDeps {
   /** inline skill 注入队列 drain：每轮 tool 结果回灌后调用，返回的内容各作 user 消息追加。
    *  与 ctx.injectUserMessage 接同一 buffer（caller 在 useChat/headless 接线）。 */
   drainInjections?: () => string[]
+  /** steering 注入队列 drain：每轮 tool 结果回灌后、drainInjections 之后调用，
+   *  返回已包 <queued-user-message> 标记的字符串，各作 user 消息追加。仅主会话（TUI）传入。 */
+  drainSteering?: () => string[]
   /** 工具结果字符级兜底上限，超出截断后再回灌 messages（保护上下文/前缀缓存）。缺省由 caller 传 settings.maxToolResultChars。 */
   maxToolResultChars?: number
   /** 2.1 Token budget：本次 send 的输出 token 目标（用户 +500k 设的 sticky 值）。
@@ -154,6 +157,7 @@ export async function* runLoop(
   for (let turn = 0; turn < (deps.maxTurns ?? 80); turn++) {
     const sentLen = messages.length
     let result: ChatResult
+    let streamedText = ''
     try {
       const stream = chatStream(deps.client, {
         model: deps.model,
@@ -174,9 +178,20 @@ export async function* runLoop(
           delta: step.value.delta,
           ...(step.value.type === 'reasoning' ? { reasoning: true } : {}),
         }
+        if (step.value.type !== 'reasoning') streamedText += step.value.delta
       }
     } catch (e) {
       if (deps.ctx.signal.aborted) {
+        // steering 软中断：保留已生成 partial、重建 signal、注入 steering、续跑（不终止）
+        // 注：当前用户 steering 路径只在 toolInFlight 时 abort，故 mid-stream 中断分支当前仅为将来 SDK
+        // now 优先级预留；Enter 路径走不到这里（纯流式 toolsRunning=0 不 abort）。
+        if (deps.ctx.signal.reason === 'interrupt') {
+          if (streamedText) messages.push({ role: 'assistant', content: streamedText })
+          deps.ctx.resetSignal?.()
+          for (const s of deps.drainSteering?.() ?? []) messages.push({ role: 'user', content: s })
+          continue
+        }
+        // 硬中断（ESC user-cancel 或无 reason）：维持现状
         sealMessages(messages, '（本轮已被用户中断。）')
         return 'aborted'
       }
@@ -231,6 +246,13 @@ export async function* runLoop(
           messages.push({ role: 'user', content: notes.map(formatNotification).join('\n') })
           continue // 不 return，进入下一轮 turn（再发一次 API，模型据通知决策；受 maxTurns 约束）
         }
+      }
+      // steering（no-tool turn-end）：模型本轮无工具调用自然结束时，若有排队的 steering 消息，注入并续跑。
+      // 对齐 CC：turn 结束时消费排队消息；tool 边界那段 drainSteering 仍独立工作，两路互不重复（drain 清空队列）。
+      const steerMsgs = deps.drainSteering?.() ?? []
+      if (steerMsgs.length > 0) {
+        for (const s of steerMsgs) messages.push({ role: 'user', content: s })
+        continue
       }
       // Stop hook：即将自然结束前触发。对齐 CC（query.ts:1267-1306）——
       // preventContinuation（decision:block / exit2）→ 注入 blockReason 作 user 消息续跑（守卫限一次）；
@@ -296,8 +318,18 @@ export async function* runLoop(
     for (const inj of deps.drainInjections?.() ?? []) {
       messages.push({ role: 'user', content: inj })
     }
+    // steering（next/later）：用户中途排队的消息在 tool 结果边界注入（已含 queued-user-message 标记）
+    for (const s of deps.drainSteering?.() ?? []) {
+      messages.push({ role: 'user', content: s })
+    }
     yield { type: 'turn_end', usage: result.usage, sentLen }
     if (deps.ctx.signal.aborted) {
+      // mid-tool 软中断：assistant+tool 结果已在 messages（进度天然保留），重建 signal+注入 steering 续跑
+      if (deps.ctx.signal.reason === 'interrupt') {
+        deps.ctx.resetSignal?.()
+        for (const s of deps.drainSteering?.() ?? []) messages.push({ role: 'user', content: s })
+        continue
+      }
       sealMessages(messages, '（本轮已被用户中断。）')
       return 'aborted'
     }
