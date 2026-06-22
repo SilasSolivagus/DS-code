@@ -20,6 +20,14 @@ export function InputBox(props: {
   busy: boolean
   /** App 层注入值（补全 pick 后替换整个 draft）。nonce 变化时才实际替换，防止 re-render 重置 */
   valueOverride?: { text: string; nonce: number }
+  /** busy 态 steering：排队下一条 */
+  onSteerNext?: (text: string) => void
+  /** busy 态 steering：立即插入（Alt+Enter） */
+  onSteerNow?: (text: string) => void
+  /** busy 态 steering：弹出最后一条队列项并回填输入框 */
+  onSteerPop?: () => void
+  /** 当前 steer 队列长度（决定 ESC busy 语义） */
+  steerQueueSize?: number
 }) {
   const [value, setValue] = useState('')
   const [pending, setPending] = useState('')        // \ 续行累积
@@ -49,8 +57,10 @@ export function InputBox(props: {
 
   useInput((input, key) => {
     if (key.escape) {
-      if (props.busy) props.onInterrupt()
-      else {
+      if (props.busy) {
+        if ((props.steerQueueSize ?? 0) > 0) props.onSteerPop?.()
+        else props.onInterrupt()
+      } else {
         pendingRef.current = ''
         histIdxRef.current = -1
         setPending('')
@@ -61,7 +71,7 @@ export function InputBox(props: {
     }
     if (key.return) {
       if (props.suggestionsActive) return            // 菜单接管 Enter
-      if (props.busy) return                         // busy guard：busy 时忽略提交
+      // 续行优先（与非 busy 同逻辑）
       if (valueRef.current.endsWith('\\')) {
         const next = pendingRef.current + valueRef.current.slice(0, -1) + '\n'
         pendingRef.current = next
@@ -71,12 +81,18 @@ export function InputBox(props: {
       }
       const full = pendingRef.current + valueRef.current
       if (!full.trim()) return
+      if (props.busy) {
+        // busy 态：Alt+Enter=now 软中断、普通 Enter=排队 next
+        if (key.meta) props.onSteerNow?.(full)
+        else props.onSteerNext?.(full)
+      } else {
+        props.onSubmit(full)
+      }
       pendingRef.current = ''
       histIdxRef.current = -1
       setPending('')
       setHistIdx(-1)
       setVal('')
-      props.onSubmit(full)
       return
     }
     if (key.upArrow || key.downArrow) {

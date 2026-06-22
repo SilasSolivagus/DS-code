@@ -267,6 +267,10 @@ export function FullscreenApp(props: {
                   history={historyItems}
                   busy={state.busy}
                   valueOverride={valueOverride}
+                  onSteerNext={(t) => core.steerNext(t)}
+                  onSteerNow={(t) => core.steerNow(t)}
+                  onSteerPop={() => { const v = core.steerPop(); if (v !== undefined) setValueOverride(prev => ({ text: v, nonce: (prev?.nonce ?? 0) + 1 })) }}
+                  steerQueueSize={core.steerQueue().length}
                 />
               </>
         }
