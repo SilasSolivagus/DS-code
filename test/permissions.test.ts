@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { matchRule, checkPermission, isDangerous, splitBashCommand, bashCommandAllowed, hasUnquotedOperator, permissionSourceName, type PermissionContext, type Decision } from '../src/permissions.js'
+import { matchRule, checkPermission, isDangerous, splitBashCommand, bashCommandAllowed, hasUnquotedOperator, permissionSourceName, findMatchingRule, findBashMatchingRule, type PermissionContext, type Decision } from '../src/permissions.js'
 
 const fakeTool = (name: string, isReadOnly: boolean, desc: false | string = 'x'): any => ({
   name,
@@ -322,5 +322,28 @@ describe('permissionSourceName', () => {
     expect(permissionSourceName('project')).toBe('共享项目设置')
     expect(permissionSourceName('local')).toBe('项目本地设置')
     expect(permissionSourceName('flag')).toBe('命令行参数')
+  })
+})
+
+describe('findMatchingRule / findBashMatchingRule', () => {
+  it('返回命中规则字符串', () => {
+    expect(findMatchingRule(['Read(/a)', 'Read(/b)'], 'Read', '/b')).toBe('Read(/b)')
+    expect(findMatchingRule(['Read(/a)'], 'Read', '/z')).toBeNull()
+  })
+  it('Bash 单命令前缀命中', () => {
+    expect(findBashMatchingRule('npm test -- x', ['Bash(npm test:*)'])).toBe('Bash(npm test:*)')
+  })
+  it('Bash 复合：精确全量规则命中', () => {
+    expect(findBashMatchingRule('ls && pwd', ['Bash(ls && pwd)'])).toBe('Bash(ls && pwd)')
+  })
+  it('Bash 复合：每段覆盖返回首段命中规则', () => {
+    expect(findBashMatchingRule('ls && pwd', ['Bash(ls)', 'Bash(pwd)'])).toBe('Bash(ls)')
+  })
+  it('Bash 复合：未全覆盖返回 null', () => {
+    expect(findBashMatchingRule('ls && pwd', ['Bash(ls)'])).toBeNull()
+  })
+  it('bashCommandAllowed 与 findBashMatchingRule 等价', () => {
+    expect(bashCommandAllowed('ls && pwd', ['Bash(ls)', 'Bash(pwd)'])).toBe(true)
+    expect(bashCommandAllowed('ls && rm', ['Bash(ls)'])).toBe(false)
   })
 })

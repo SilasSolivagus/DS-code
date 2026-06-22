@@ -161,16 +161,30 @@ function matchExactRule(rule: string, toolName: string, desc: string): boolean {
   return desc.replace(/\n/g, ' ') === pat
 }
 
-/** Bash 命令是否被规则集允许：too-complex→否；单命令→现匹配；复合→精确全量规则命中 OR 每段都被覆盖。 */
-export function bashCommandAllowed(command: string, rules: string[]): boolean {
+/** 返回第一条命中规则字符串，无则 null。 */
+export function findMatchingRule(rules: string[], toolName: string, desc: string): string | null {
+  for (const r of rules) if (matchRule(r, toolName, desc)) return r
+  return null
+}
+
+/** Bash 命中规则查找：too-complex→null；单命令→现匹配；复合→精确全量规则 OR 每段覆盖（返回首段命中规则作代表）。 */
+export function findBashMatchingRule(command: string, rules: string[]): string | null {
   const { tooComplex, commands } = splitBashCommand(command)
-  if (tooComplex) return false
-  if (commands.length <= 1) return rules.some(r => matchRule(r, 'Bash', commands[0] ?? command))
-  // 复合命令：先尝试精确全量规则（\n→空格归一后完整匹配，对应 always 存下的复合精确规则）
-  // 注意：只走精确规则，前缀规则不得跨多段命令匹配
-  if (rules.some(r => matchExactRule(r, 'Bash', command))) return true
-  // 回退：每段都需被单独覆盖
-  return commands.every(s => rules.some(r => matchRule(r, 'Bash', s)))
+  if (tooComplex) return null
+  if (commands.length <= 1) {
+    const d = commands[0] ?? command
+    return findMatchingRule(rules, 'Bash', d)
+  }
+  for (const r of rules) if (matchExactRule(r, 'Bash', command)) return r
+  if (commands.every(s => rules.some(r => matchRule(r, 'Bash', s)))) {
+    return findMatchingRule(rules, 'Bash', commands[0])
+  }
+  return null
+}
+
+/** Bash 命令是否被规则集允许（委托 findBashMatchingRule，保持原行为）。 */
+export function bashCommandAllowed(command: string, rules: string[]): boolean {
+  return findBashMatchingRule(command, rules) !== null
 }
 
 export async function checkPermission(
