@@ -22,7 +22,9 @@
 
 **⭐2026-06-22 派 4 agent 实读 CC+摸现状调研，roadmap 大修正（又一次「别照标题盲做」）：** ①**2.3 自动 compact = 已端到端做完**（2.5 顺手做，标 ✅，唯一可选=413 兜底）。②**3.5 Rewind = 主干已完成**（存储+还原+/rewind+两级选择器+三模式，标 🟢主干，真实剩余=1M Summarize+4S，其中 #4 防覆盖手改=数据安全建议补）。③**5.6 权限弹窗 = 主体已做**（三态+always 写规则+危险警告+diff 全有，标 🟢主体，真实剩余=1M deny/来源展示+3S 文案）。④**2.1 = adaptive thinking 对 DeepSeek N/A，真实剩余只剩 CC token budget 自动续跑(`+500k`/跨turn结转/收益递减熔断)，S-M 纯逻辑**。**净结论：当初选的 3.5/5.6 主干已完成；真正值得做的高价值低风险件=【2.1 token budget(新功能,S-M,非TUI)】+【5.6 deny/来源展示(M,TUI)】+【3.5 #4 防覆盖手改(S,非TUI,数据安全)】。**
 
-**🚀执行进度（2026-06-22）：✅3.5 #4 restore-only-if-differs(`19762b3`)✅2.1 Token budget 自动续跑(`a104f45`,opus 终审+真机签收)✅5.6 deny/来源层级展示(merge `31e5deb`,8 任务 TDD+opus 全分支终审 READY+TUI 真机冒烟过,1010 测试)。剩 → C4 工具批(下一批)。main 领先 origin 11(待 push)。**
+**🚀执行进度（2026-06-22）：✅3.5 #4 restore-only-if-differs(`19762b3`)✅2.1 Token budget 自动续跑(`a104f45`,opus 终审+真机签收)✅5.6 deny/来源层级展示(merge `31e5deb`,8 任务 TDD+opus 全分支终审 READY+TUI 真机冒烟过,1010 测试,已 push)。**
+
+**⭐C4 工具批 ROI 复评（2026-06-22，6 agent 实读 CC+摸现状，用户拍板「只做 Notebook 其余归档」）：6 件坍缩成 1 件。**①**✅现在做 = Notebook（NotebookRead+NotebookEdit，编辑版不执行）**：CC NotebookEditTool（cell replace/insert/delete，无 kernel）+ Read 对 .ipynb 解析成 `<cell>`；deepcode 把 .ipynb 当**纯文本**编辑会破坏 JSON（真实 bug）；增量小(~400-500 行,**零依赖**,不碰 TUI,无平台问题)。②**⏭️推迟 LSP**：全套 LSP infra(server manager+vscode-jsonrpc+诊断聚合 7 文件,~1500-2000 行+3 依赖+**常驻进程**)，CLI↔daemon **架构冲突**(CC 靠 IDE daemon，deepcode 一次性会话)。③**⏭️推迟 Cron**：本地 tick loop 靠 REPL 保活；deepcode 会话型 CLI 退出即死、**无会话外触发**(需守护进程/systemd)，架构冲突，归预留。④**⏭️推迟 Sandbox**：@anthropic-ai/sandbox-runtime(mac Sandbox.framework/Linux bwrap+socat)；deepcode 已有 deny+权限+sanitize 三层防御，OS 级边际收益低+平台依赖重。⑤**🚫跳过 PowerShell**：CC 独立工具但**仅 Windows 门控**，darwin/linux/WSL 用户零价值。⑥**🚫跳过代码 REPL/PTY**：CC 的"REPL"其实是工具隐藏层+WebSocket bridge **非代码解释器**，CC 自己都不做 PTY；真 PTY 需 node-pty 原生编译，市场信号=一次性执行已够。**净结论：C4 实质=Notebook 一件，做完 C4 收尾→C5 1.3 Steering。** main=origin=`e203ff9` 全同步。**
 
 ---
 
