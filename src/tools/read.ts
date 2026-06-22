@@ -3,6 +3,7 @@ import { z } from 'zod'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { Tool } from './types.js'
+import { parseNotebook, formatNotebookForRead } from '../notebook.js'
 
 const MAX_LINES = 2000
 const MAX_LINE_CHARS = 2000
@@ -30,6 +31,14 @@ export const readTool: Tool<typeof schema> = {
       return `错误：文件不存在：${p}。请用 Glob 确认正确路径。`
     }
     if (stat.isDirectory()) return `错误：${p} 是目录。请用 Glob 列出其中的文件。`
+    if (p.endsWith('.ipynb')) {
+      const nb = parseNotebook(fs.readFileSync(p, 'utf8'))
+      if (nb) {
+        ctx.fileState.set(p, fs.statSync(p).mtimeMs)
+        return formatNotebookForRead(nb)
+      }
+      // 解析失败 → 落到下方纯文本读取（优雅回退）
+    }
     const lines = fs.readFileSync(p, 'utf8').split('\n')
     if (input.offset !== undefined && input.offset - 1 >= lines.length) {
       return `错误：offset ${input.offset} 超出文件总行数 ${lines.length}。`

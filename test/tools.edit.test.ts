@@ -89,3 +89,17 @@ describe('Edit', () => {
     expect(readFileSync(f, 'utf8')).toContain('return 2')
   })
 })
+
+describe('Edit 拒绝 .ipynb', () => {
+  it('.ipynb → 重定向 NotebookEdit，不改文件', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'dc-'))
+    const f = path.join(dir, 'n.ipynb')
+    const original = JSON.stringify({ cells: [], metadata: {} })
+    writeFileSync(f, original)
+    const ctx = makeCtx(dir)
+    await readTool.call({ file_path: f }, ctx)
+    const out = await editTool.call({ file_path: f, old_string: 'cells', new_string: 'CELLS' }, ctx)
+    expect(out).toContain('NotebookEdit')
+    expect(readFileSync(f, 'utf8')).toBe(original) // 未被改
+  })
+})
