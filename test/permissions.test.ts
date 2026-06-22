@@ -48,7 +48,7 @@ describe('checkPermission', () => {
 
   it('用户拒绝时返回 reason', async () => {
     const r = await checkPermission(fakeTool('Bash', false, 'npm i'), {}, pc({ ask: async () => 'no' }))
-    expect(r).toEqual({ ok: false, reason: '用户拒绝了此操作' })
+    expect(r).toMatchObject({ ok: false, reason: '用户拒绝了此操作' })
   })
 
   it('always 持久化规则且后续命中不再询问', async () => {
@@ -345,5 +345,37 @@ describe('findMatchingRule / findBashMatchingRule', () => {
   it('bashCommandAllowed 与 findBashMatchingRule 等价', () => {
     expect(bashCommandAllowed('ls && pwd', ['Bash(ls)', 'Bash(pwd)'])).toBe(true)
     expect(bashCommandAllowed('ls && rm', ['Bash(ls)'])).toBe(false)
+  })
+})
+
+describe('checkPermission decisionReason', () => {
+  const denyTool = (name: string): any => ({
+    name, isReadOnly: false, needsPermission: () => 'x',
+    deniablePaths: () => ['/home/u/.ssh/id_rsa'],
+  })
+  it('非 Bash deny：reason 文本含来源 + decisionReason rule', async () => {
+    const r = await checkPermission(denyTool('Read'), {}, pc({
+      deny: ['**/id_rsa'], denySources: { '**/id_rsa': 'user' },
+    }))
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.reason).toContain('来自 用户设置')
+      expect(r.decisionReason).toEqual({ type: 'rule', rule: { source: 'user', behavior: 'deny', value: '**/id_rsa' } })
+    }
+  })
+  it('Bash deny：降级 ask 并把 deny reason 透传给 ask', async () => {
+    let got: any = null
+    await checkPermission(denyTool('Bash'), {}, pc({
+      deny: ['**/id_rsa'], denySources: { '**/id_rsa': 'builtin' },
+      ask: async (_t, _d, reason) => { got = reason; return 'no' },
+    }))
+    expect(got).toEqual({ type: 'rule', rule: { source: 'builtin', behavior: 'deny', value: '**/id_rsa' } })
+  })
+  it('allow by rule：ok 带 decisionReason allow', async () => {
+    const tool = fakeTool('Read', false, '/tmp/x')
+    const r = await checkPermission(tool, {}, pc({
+      rules: ['Read(/tmp/x)'], ruleSources: { 'Read(/tmp/x)': 'local' },
+    }))
+    expect(r).toMatchObject({ ok: true, decisionReason: { type: 'rule', rule: { source: 'local', behavior: 'allow', value: 'Read(/tmp/x)' } } })
   })
 })
