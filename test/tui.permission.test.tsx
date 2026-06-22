@@ -173,3 +173,18 @@ describe('PermissionDialog', () => {
     expect(r.lastFrame()).not.toContain('❯ 2. 总是允许')
   })
 })
+
+describe('PermissionDialog 来源行', () => {
+  it('deny rule 显示规则与来源', () => {
+    const ask: any = { toolName: 'Bash', desc: 'cat ~/.ssh/id_rsa', dangerous: false,
+      reason: { type: 'rule', rule: { source: 'builtin', behavior: 'deny', value: '~/.ssh/**' } }, resolve: () => {} }
+    const { lastFrame } = render(<PermissionDialog ask={ask} onDecide={() => {}} />)
+    expect(lastFrame()).toContain('命中 deny 规则 ~/.ssh/**')
+    expect(lastFrame()).toContain('来自 内置规则')
+  })
+  it('无 reason 不渲染来源行', () => {
+    const ask: any = { toolName: 'Bash', desc: 'npm test', dangerous: false, resolve: () => {} }
+    const { lastFrame } = render(<PermissionDialog ask={ask} onDecide={() => {}} />)
+    expect(lastFrame()).not.toContain('命中 deny 规则')
+  })
+})

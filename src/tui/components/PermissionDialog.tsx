@@ -5,7 +5,7 @@ import { Box, Text, useInput } from 'ink'
 import { T } from '../theme.js'
 import { buildPreview } from '../diffPreview.js'
 import type { PendingAsk } from '../useChat.js'
-import type { Decision } from '../../permissions.js'
+import { type Decision, permissionSourceName } from '../../permissions.js'
 
 const OPTIONS: Array<{ label: string; decision: Decision }> = [
   { label: '允许', decision: 'yes' },
@@ -41,6 +41,12 @@ export function PermissionDialog(props: {
       <Text bold color={T.accent}>{preview.title}</Text>
       {ask.dangerous && (
         <Text color={T.err}>⚠ 高危操作；always 也只精确放行这一条</Text>
+      )}
+      {ask.reason?.type === 'rule' && ask.reason.rule.behavior === 'deny' && (
+        <Text color={T.err}>⚠ 命中 deny 规则 {ask.reason.rule.value}（来自 {permissionSourceName(ask.reason.rule.source)}）</Text>
+      )}
+      {ask.reason?.type === 'hook' && (
+        <Text dimColor>权限被 hook {ask.reason.hookName} 拒绝</Text>
       )}
       {preview.lines.map((line, i) => (
         <Text key={i} color={line.sign === '+' ? T.ok : line.sign === '-' ? T.err : T.dim}>
