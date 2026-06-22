@@ -3,15 +3,19 @@ import { describe, it, expect, vi } from 'vitest'
 
 // 复用 loop.test.ts 的 vi.mock 模式：脚本化 chatStream
 const script: Array<{ deltas?: any[]; result: any }> = []
+// spy 数组记录每次 chatStream 调用传入的 opts.messages
+const callMessages: any[][] = []
+
 vi.mock('../src/api.js', () => ({
-  chatStream: vi.fn(() =>
-    (async function* () {
+  chatStream: vi.fn((_client, opts) => {
+    callMessages.push([...(opts.messages as any[])])
+    return (async function* () {
       const scene = script.shift()
       if (!scene) throw new Error('script exhausted')
       for (const d of scene.deltas ?? []) yield typeof d === 'string' ? { type: 'text', delta: d } : d
       return scene.result
-    })(),
-  ),
+    })()
+  }),
 }))
 
 import { runLoop, type LoopDeps } from '../src/loop.js'
@@ -50,6 +54,7 @@ async function drain(gen: AsyncGenerator<any, any>) {
 describe('loop drainSteering', () => {
   it('tool_result 边界后把 drainSteering 返回项作为 user 消息注入', async () => {
     script.length = 0
+    callMessages.length = 0
     // 脚本：第一轮带工具调用，第二轮无工具调用结束
     script.push(
       {
@@ -74,31 +79,12 @@ describe('loop drainSteering', () => {
       },
     })
 
-    // 拦截 chatStream 调用以捕获第二轮发送的 messages 参数
-    const { chatStream } = await import('../src/api.js')
-    const capturedMessages: any[][] = []
-    vi.mocked(chatStream).mockImplementationOnce((_client, opts) => {
-      capturedMessages.push([...(opts.messages as any[])])
-      return (async function* () {
-        const scene = script.shift()!
-        for (const d of scene.deltas ?? []) yield typeof d === 'string' ? { type: 'text', delta: d } : d
-        return scene.result
-      })()
-    })
-    vi.mocked(chatStream).mockImplementationOnce((_client, opts) => {
-      capturedMessages.push([...(opts.messages as any[])])
-      return (async function* () {
-        const scene = script.shift()!
-        for (const d of scene.deltas ?? []) yield typeof d === 'string' ? { type: 'text', delta: d } : d
-        return scene.result
-      })()
-    })
-
     await drain(runLoop(messages, deps))
 
     // 第二轮（index 1）发送的 messages 应包含 drainSteering 注入的 user 消息
-    expect(capturedMessages.length).toBeGreaterThanOrEqual(2)
-    const secondCallMessages = capturedMessages[1]
+    expect(callMessages.length).toBeGreaterThanOrEqual(2)
+    const secondCallMessages = callMessages[1]
+    expect(secondCallMessages).toBeDefined()
     const steeringMsg = secondCallMessages.find(
       (m: any) => m.role === 'user' && String(m.content).includes('queued-user-message'),
     )
@@ -107,6 +93,7 @@ describe('loop drainSteering', () => {
 
   it('drainSteering 缺省时不影响现有行为', async () => {
     script.length = 0
+    callMessages.length = 0
     script.push(
       {
         result: {
@@ -122,5 +109,12 @@ describe('loop drainSteering', () => {
     const deps = baseDeps({}) // 无 drainSteering
     const { events } = await drain(runLoop(messages, deps))
     expect(events.some((e: any) => e.type === 'turn_end')).toBe(true)
+    // 反向断言：缺省零行为变化，没有 queued-user-message 注入
+    const allSentMessages = callMessages.flat()
+    expect(
+      allSentMessages.some(
+        (m: any) => m.role === 'user' && String(m.content).includes('queued-user-message'),
+      ),
+    ).toBe(false)
   })
 })
