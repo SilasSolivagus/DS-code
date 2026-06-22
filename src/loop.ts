@@ -157,6 +157,7 @@ export async function* runLoop(
   for (let turn = 0; turn < (deps.maxTurns ?? 80); turn++) {
     const sentLen = messages.length
     let result: ChatResult
+    let streamedText = ''
     try {
       const stream = chatStream(deps.client, {
         model: deps.model,
@@ -177,9 +178,18 @@ export async function* runLoop(
           delta: step.value.delta,
           ...(step.value.type === 'reasoning' ? { reasoning: true } : {}),
         }
+        if (step.value.type !== 'reasoning') streamedText += step.value.delta
       }
     } catch (e) {
       if (deps.ctx.signal.aborted) {
+        // steering 软中断：保留已生成 partial、重建 signal、注入 steering、续跑（不终止）
+        if (deps.ctx.signal.reason === 'interrupt') {
+          if (streamedText) messages.push({ role: 'assistant', content: streamedText })
+          deps.ctx.resetSignal?.()
+          for (const s of deps.drainSteering?.() ?? []) messages.push({ role: 'user', content: s })
+          continue
+        }
+        // 硬中断（ESC user-cancel 或无 reason）：维持现状
         sealMessages(messages, '（本轮已被用户中断。）')
         return 'aborted'
       }
@@ -305,6 +315,12 @@ export async function* runLoop(
     }
     yield { type: 'turn_end', usage: result.usage, sentLen }
     if (deps.ctx.signal.aborted) {
+      // mid-tool 软中断：assistant+tool 结果已在 messages（进度天然保留），重建 signal+注入 steering 续跑
+      if (deps.ctx.signal.reason === 'interrupt') {
+        deps.ctx.resetSignal?.()
+        for (const s of deps.drainSteering?.() ?? []) messages.push({ role: 'user', content: s })
+        continue
+      }
       sealMessages(messages, '（本轮已被用户中断。）')
       return 'aborted'
     }

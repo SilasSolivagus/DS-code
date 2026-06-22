@@ -2,7 +2,7 @@
 import { describe, it, expect, vi } from 'vitest'
 
 // 复用 loop.test.ts 的 vi.mock 模式：脚本化 chatStream
-const script: Array<{ deltas?: any[]; result: any }> = []
+const script: Array<{ deltas?: any[]; result?: any; throw?: any }> = []
 // spy 数组记录每次 chatStream 调用传入的 opts.messages
 const callMessages: any[][] = []
 
@@ -12,6 +12,7 @@ vi.mock('../src/api.js', () => ({
     return (async function* () {
       const scene = script.shift()
       if (!scene) throw new Error('script exhausted')
+      if (scene.throw) throw scene.throw
       for (const d of scene.deltas ?? []) yield typeof d === 'string' ? { type: 'text', delta: d } : d
       return scene.result
     })()
@@ -116,5 +117,76 @@ describe('loop drainSteering', () => {
         (m: any) => m.role === 'user' && String(m.content).includes('queued-user-message'),
       ),
     ).toBe(false)
+  })
+})
+
+describe('loop interrupt 软中断', () => {
+  it('reason=interrupt：保留进度 + 重建 signal + 注入 steering 续跑（不返回 aborted）', async () => {
+    script.length = 0
+    callMessages.length = 0
+
+    const abortErr: any = new Error('aborted')
+    abortErr.name = 'AbortError'
+
+    // 第一轮：chatStream 抛 AbortError（signal 已 aborted with reason='interrupt'）
+    // 第二轮：正常返回
+    script.push(
+      { throw: abortErr },
+      { result: { content: 'redirected', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+
+    const ac = { current: new AbortController() }
+    ac.current.abort('interrupt')
+    let resetCalls = 0
+    let drained = false
+
+    const messages: any[] = [{ role: 'user', content: 'hello' }]
+    const deps = baseDeps({
+      ctx: {
+        cwd: () => '/tmp', setCwd: () => {}, fileState: new Map(),
+        get signal() { return ac.current.signal },
+        resetSignal: () => { resetCalls++; ac.current = new AbortController() },
+      },
+      drainSteering: () => {
+        if (drained) return []
+        drained = true
+        return ['<queued-user-message>\nGO\n</queued-user-message>']
+      },
+    })
+
+    const { ret } = await drain(runLoop(messages, deps))
+
+    expect(resetCalls).toBe(1)                   // 重建 signal 一次
+    expect(ret).not.toBe('aborted')              // 软中断不终止
+    // 续跑那次（第二次调用）的 messages 应包含 drainSteering 注入的 user 消息
+    expect(callMessages.length).toBeGreaterThanOrEqual(2)
+    const secondCallMessages = callMessages[1]
+    expect(secondCallMessages.some((m: any) => String(m.content).includes('queued-user-message'))).toBe(true)
+  })
+
+  it('reason=user-cancel：维持现状返回 aborted', async () => {
+    script.length = 0
+    callMessages.length = 0
+
+    const abortErr: any = new Error('aborted')
+    abortErr.name = 'AbortError'
+
+    script.push({ throw: abortErr })
+
+    const ac = new AbortController()
+    ac.abort('user-cancel')
+
+    const messages: any[] = [{ role: 'user', content: 'hello' }]
+    const deps = baseDeps({
+      ctx: {
+        cwd: () => '/tmp', setCwd: () => {}, fileState: new Map(),
+        get signal() { return ac.signal },
+        resetSignal: () => {},
+      },
+      drainSteering: () => [],
+    })
+
+    const { ret } = await drain(runLoop(messages, deps))
+    expect(ret).toBe('aborted')
   })
 })
