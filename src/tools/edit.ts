@@ -37,6 +37,9 @@ export const editTool: Tool<typeof schema> = {
   deniablePaths: (input, cwd) => [path.resolve(cwd, input.file_path)],
   async call(input, ctx) {
     const p = path.resolve(ctx.cwd(), input.file_path)
+    if (p.endsWith('.ipynb')) {
+      return '错误：.ipynb 是 Jupyter notebook，请用 NotebookEdit 工具编辑（Edit 的纯文本替换会破坏 notebook JSON 结构）。'
+    }
     const stateErr = checkFileState(p, ctx)
     if (stateErr) return stateErr
     if (input.old_string === input.new_string) return '错误：new_string 与 old_string 相同，无需编辑。'
