@@ -190,3 +190,87 @@ describe('loop interrupt 软中断', () => {
     expect(ret).toBe('aborted')
   })
 })
+
+describe('loop point-B（mid-tool abort）', () => {
+  it('point-B × interrupt：rw 工具跳过 + resetSignal + 注入 steering 续跑（不返回 aborted）', async () => {
+    script.length = 0
+    callMessages.length = 0
+
+    // 第一幕：chatStream 返回带 toolCalls 的结果（不抛），signal 预先 aborted with reason='interrupt'
+    // 第二幕：正常结束
+    script.push(
+      {
+        result: {
+          content: '',
+          toolCalls: [{ id: 't1', name: 'echo', args: '{}' }],
+          usage,
+          finishReason: 'tool_calls',
+        },
+      },
+      { result: { content: 'redirected', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+
+    const ac = { current: new AbortController() }
+    ac.current.abort('interrupt')   // 预先 abort，触发 point-B 路径
+    let resetCalls = 0
+    let drained = false
+
+    const messages: any[] = [{ role: 'user', content: 'hello' }]
+    const deps = baseDeps({
+      ctx: {
+        cwd: () => '/tmp', setCwd: () => {}, fileState: new Map(),
+        get signal() { return ac.current.signal },
+        resetSignal: () => { resetCalls++; ac.current = new AbortController() },
+      },
+      drainSteering: () => {
+        if (drained) return []
+        drained = true
+        return ['<queued-user-message>\nGO\n</queued-user-message>']
+      },
+    })
+
+    const { ret } = await drain(runLoop(messages, deps))
+
+    expect(ret).not.toBe('aborted')                 // 软中断不终止
+    expect(resetCalls).toBe(1)                      // 重建 signal 一次
+    expect(callMessages.length).toBeGreaterThanOrEqual(2)
+    const secondCallMessages = callMessages[1]
+    // 第二轮 messages 应含 role:'tool' 消息（进度保留）
+    expect(secondCallMessages.some((m: any) => m.role === 'tool')).toBe(true)
+    // 第二轮 messages 应含注入的 queued-user-message
+    expect(
+      secondCallMessages.some((m: any) => m.role === 'user' && String(m.content).includes('queued-user-message')),
+    ).toBe(true)
+  })
+
+  it('point-B × user-cancel：返回 aborted', async () => {
+    script.length = 0
+    callMessages.length = 0
+
+    // 第一幕：返回带 toolCalls 的结果，signal 预先 aborted with reason='user-cancel'
+    script.push({
+      result: {
+        content: '',
+        toolCalls: [{ id: 't2', name: 'echo', args: '{}' }],
+        usage,
+        finishReason: 'tool_calls',
+      },
+    })
+
+    const ac = new AbortController()
+    ac.abort('user-cancel')
+
+    const messages: any[] = [{ role: 'user', content: 'hello' }]
+    const deps = baseDeps({
+      ctx: {
+        cwd: () => '/tmp', setCwd: () => {}, fileState: new Map(),
+        get signal() { return ac.signal },
+        resetSignal: () => {},
+      },
+      drainSteering: () => [],
+    })
+
+    const { ret } = await drain(runLoop(messages, deps))
+    expect(ret).toBe('aborted')
+  })
+})
