@@ -96,3 +96,52 @@ export function applyCellEdit(
   if (cell.cell_type === 'code') { cell.execution_count = null; cell.outputs = [] }
   return { ok: true }
 }
+
+const LARGE_OUTPUT_THRESHOLD = 10000
+
+function joinSource(s: string | string[] | undefined): string {
+  return Array.isArray(s) ? s.join('') : (s ?? '')
+}
+
+function outputToText(o: NotebookOutput): string {
+  switch (o.output_type) {
+    case 'stream':
+      return joinSource(o.text)
+    case 'execute_result':
+    case 'display_data': {
+      const txt = joinSource(o.data?.['text/plain'] as string | string[] | undefined)
+      const hasImg = !!o.data && (typeof o.data['image/png'] === 'string' || typeof o.data['image/jpeg'] === 'string')
+      return hasImg ? (txt ? txt + '\n[图像输出已省略]' : '[图像输出已省略]') : txt
+    }
+    case 'error':
+      return `${o.ename}: ${o.evalue}\n${(o.traceback ?? []).join('\n')}`
+    default:
+      return ''
+  }
+}
+
+/** 把 notebook 渲染成 Read 的 cell 文本视图。 */
+export function formatNotebookForRead(nb: NotebookContent): string {
+  const lang = nb.metadata?.language_info?.name ?? 'python'
+  return nb.cells
+    .map((cell, index) => {
+      const id = cell.id ?? `cell-${index}`
+      const src = joinSource(cell.source)
+      let attrs = ''
+      if (cell.cell_type !== 'code') attrs = ` type="${cell.cell_type}"`
+      else if (lang !== 'python') attrs = ` language="${lang}"`
+      let block = `<cell id="${id}"${attrs}>\n${src}\n</cell>`
+      if (cell.cell_type === 'code' && cell.outputs?.length) {
+        const text = cell.outputs.map(outputToText).filter(Boolean).join('\n')
+        if (text) {
+          const out =
+            text.length > LARGE_OUTPUT_THRESHOLD
+              ? `输出过大，用 Bash: cat <notebook_path> | jq '.cells[${index}].outputs'`
+              : text
+          block += `\n<output>\n${out}\n</output>`
+        }
+      }
+      return block
+    })
+    .join('\n\n')
+}

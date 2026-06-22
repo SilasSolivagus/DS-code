@@ -39,7 +39,7 @@ describe('generateCellId', () => {
   })
 })
 
-import { resolveCellIndex, applyCellEdit } from '../src/notebook.js'
+import { resolveCellIndex, applyCellEdit, formatNotebookForRead } from '../src/notebook.js'
 
 function mk() {
   return {
@@ -90,5 +90,49 @@ describe('applyCellEdit', () => {
   it('cell 未命中 → error', () => {
     const r = applyCellEdit(mk(), { cellId: 'nope', newSource: 'x', editMode: 'replace' })
     expect(r.ok).toBe(false)
+  })
+})
+
+describe('formatNotebookForRead', () => {
+  it('code/markdown cell + cell id 回退 cell-N', () => {
+    const nb = { cells: [
+      { cell_type: 'code', source: 'print(1)' },                 // 无 id → cell-0
+      { cell_type: 'markdown', source: ['# h', '\nbody'], id: 'm1' },
+    ], metadata: {} } as any
+    const out = formatNotebookForRead(nb)
+    expect(out).toContain('<cell id="cell-0">')
+    expect(out).toContain('print(1)')
+    expect(out).toContain('<cell id="m1" type="markdown">')
+    expect(out).toContain('# h\nbody')
+  })
+  it('code cell 的 outputs：stream/error 文本', () => {
+    const nb = { cells: [{ cell_type: 'code', source: 'x', id: 'c', outputs: [
+      { output_type: 'stream', text: 'hello' },
+      { output_type: 'error', ename: 'ValueError', evalue: 'bad', traceback: ['line1', 'line2'] },
+    ] }], metadata: {} } as any
+    const out = formatNotebookForRead(nb)
+    expect(out).toContain('hello')
+    expect(out).toContain('ValueError: bad')
+    expect(out).toContain('line1\nline2')
+  })
+  it('图像输出 → 文本占位', () => {
+    const nb = { cells: [{ cell_type: 'code', source: 'x', id: 'c', outputs: [
+      { output_type: 'display_data', data: { 'image/png': 'BASE64DATA' } },
+    ] }], metadata: {} } as any
+    expect(formatNotebookForRead(nb)).toContain('[图像输出已省略]')
+  })
+  it('大输出 → jq 提示截断', () => {
+    const big = 'y'.repeat(10001)
+    const nb = { cells: [{ cell_type: 'code', source: 'x', id: 'c', outputs: [
+      { output_type: 'stream', text: big },
+    ] }], metadata: {} } as any
+    const out = formatNotebookForRead(nb)
+    expect(out).not.toContain(big)
+    expect(out).toContain("jq '.cells[0].outputs'")
+  })
+  it('非 python 语言的 code cell 标 language', () => {
+    const nb = { cells: [{ cell_type: 'code', source: 'puts 1', id: 'c' }],
+      metadata: { language_info: { name: 'ruby' } } } as any
+    expect(formatNotebookForRead(nb)).toContain('<cell id="c" language="ruby">')
   })
 })
