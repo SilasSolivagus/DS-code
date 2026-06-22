@@ -20,6 +20,8 @@
 
 **2026-06-22**：✅2.5 Token 计数已 push（`7dc78ea`，main=origin=`c8de188` 全同步）+ 状态栏 Row 2 加 contextBar 迷你进度条（`c8de188`）。✅C1（3.9+4.5）+ C2 记忆四件均已整批完成。**⭐新增 2.8 通用多 provider / GLM（用户钦定通用 preset，但拍板⏳后置——先把 CC 第 1-5 层对齐做完整再做）**——见第 2 层 2.8 详述。**剩余非 TUI 下一步（先做完 CC 对齐）= 2.1 余 / 2.3 余 / C4 工具批 / C5 Steering；CC 全做完后才做 2.8。**
 
+**⭐2026-06-22 派 4 agent 实读 CC+摸现状调研，roadmap 大修正（又一次「别照标题盲做」）：** ①**2.3 自动 compact = 已端到端做完**（2.5 顺手做，标 ✅，唯一可选=413 兜底）。②**3.5 Rewind = 主干已完成**（存储+还原+/rewind+两级选择器+三模式，标 🟢主干，真实剩余=1M Summarize+4S，其中 #4 防覆盖手改=数据安全建议补）。③**5.6 权限弹窗 = 主体已做**（三态+always 写规则+危险警告+diff 全有，标 🟢主体，真实剩余=1M deny/来源展示+3S 文案）。④**2.1 = adaptive thinking 对 DeepSeek N/A，真实剩余只剩 CC token budget 自动续跑(`+500k`/跨turn结转/收益递减熔断)，S-M 纯逻辑**。**净结论：当初选的 3.5/5.6 主干已完成；真正值得做的高价值低风险件=【2.1 token budget(新功能,S-M,非TUI)】+【5.6 deny/来源展示(M,TUI)】+【3.5 #4 防覆盖手改(S,非TUI,数据安全)】。**
+
 ---
 
 ## 🔄 进度更新（2026-06-18，历史快照）
@@ -50,9 +52,9 @@
 
 | # | 机制 | CC 源码 | deepcode | 状态 | TUI? | 工作量 |
 |---|---|---|---|---|---|---|
-| 2.1 | **思考预算 / ultrathink**（adaptive budget + 关键词触发 + 跨 compact 边界结转；DeepSeek reasoner 模型可对齐） | `utils/thinking.ts` | 🟡 effort 档位/ultrathink 关键词(`fa2cade`),adaptive/跨compact 余 | 🟡 | 否 | M |
+| 2.1 | **思考预算 / ultrathink**（adaptive budget + 关键词触发 + 跨 compact 边界结转） | `utils/thinking.ts` `utils/tokenBudget.ts` | 🟡 effort 三档/ultrathink 关键词(`fa2cade`)已是 DeepSeek 等价。**调研(2026-06-22)：adaptive thinking 那半对 DeepSeek N/A（无 budgetTokens API）；真实剩余=CC 的「输出 token budget 自动续跑」(`+500k`/跨turn结转/收益递减熔断，`utils/tokenBudget.ts`+`query/tokenBudget.ts`)，纯客户端逻辑可不碰 TUI** | 🟡 | 否 | S-M |
 | 2.2 | **Microcompact**（逐消息清理旧工具结果占位，省 token） | `services/compact/microCompact.ts` | 无(仅整体 compact) | ⏭️跳过(不适用 DeepSeek) | 否 | M |
-| 2.3 | **自动 compact 触发 + 告警 UI**（超 token 阈值自动压 + 提示） | `services/compact/autoCompact` | 🟡 熔断器+预警色(`fa2cade`),自动触发余 | 🟡 | 部分 | M |
+| 2.3 | **自动 compact 触发 + 告警 UI**（超 token 阈值自动压 + 提示） | `services/compact/autoCompact` | ✅ **已端到端做完**（2.5 顺手做：useChat.ts:746 预估→shouldAutoCompact→doCompact('auto')→熔断+失败计数+90%预警+状态栏预警色全闭环）。调研(2026-06-22)确认。**唯一可选增量=413 reactive 兜底(M,另立条目)** | ✅ | 部分 | M |
 | 2.4 | **Prompt caching / cache_control 头** | `utils/cacheBreak.ts` | ✅ cacheSavings 纯函数+状态栏 cache 段(`841b264`) | ✅ | 否 | S |
 | 2.5 | **Token 计数/估算**（精确计数 + 多后端） | `services/tokenEstimation.ts` | ✅ CJK 感知估算+模型感知 window+发送前预估 compact(`7dc78ea`)。CC 的 countTokens API/多后端 N/A(DeepSeek 无此端点) | ✅ | 否 | M |
 | 2.6 | **Cost 告警 hook**（累计 + 阈值告警；settings 已有 costWarnUSD） | `costHook.ts` `cost-tracker.ts` | ✅ costWarnUSD 阈值告警(`fa2cade`) | ✅ | 部分 | S |
@@ -82,7 +84,7 @@
 | 3.2 | **自动记忆提取**（会话末提取持久记忆文件） | `services/extractMemories` | ✅ C2(2026-06-19) | ✅ | 否 | L |
 | 3.3 | **SessionMemory**（会话记忆 markdown 维护） | `services/SessionMemory` | ✅ C2(2026-06-19) | ✅ | 否 | L |
 | 3.4 | **autoDream**（后台记忆合并，时间/会话门槛） | `services/autoDream` | ✅ C2(2026-06-19) | ✅ | 否 | L |
-| 3.5 | **Checkpoint/rewind**（回合级文件备份 + content-addressable blob + /rewind 还原） | `utils/fileHistory.ts` `commands/rewind` | checkpoint.ts 存在,完整度待核实 | 🟡 | 部分 | M |
+| 3.5 | **Checkpoint/rewind**（回合级文件备份 + content-addressable blob + /rewind 还原） | `utils/fileHistory.ts` `commands/rewind` | ✅ **主干已完成**（checkpoint.ts sha1 blob 备份+GC、restoreFiles 还原、/rewind 命令、两级 TUI 选择器、conversation/code/both 三模式全有）。调研(2026-06-22)。**真实剩余=1×M(Summarize-from-here)+4×S，其中 #4 还原前防覆盖用户手改=数据安全建议补(S,不碰TUI)** | 🟢 主干 | 部分 | S(余) |
 | 3.6 | **会话管理**（/resume /branch /rename /tag /share + history） | `commands/{resume,branch,rename,tag,share}` `history.ts` | 部分(export/session) | 🟡 | 碰TUI | M |
 | 3.7 | **权限 deny 规则层 + 来源层级 + denial tracking + /permissions** | `utils/permissions/*` | 🟡 deny 规则+denial tracking(安全批`e5f403d`);缺来源层级(归 3.9)+/permissions UI | 🟡 | 部分 | M |
 | 3.8 | **Sandbox 网络隔离 + /sandbox-toggle** | `commands/sandbox-toggle` | 无 | ⬜ | 否 | M |
@@ -114,7 +116,7 @@
 | 5.3 | **Output styles**（自定义输出样式 markdown + 注入 + 降级） | `outputStyles/` `constants/outputStyles.ts` | 无 | ⬜ | 碰TUI | M |
 | 5.4 | **/theme /color 主题切换** | `commands/{theme,color}` | 无 | ⬜ | 碰TUI | S |
 | 5.5 | **语音模式**（音频录制 + STT 流 + keyterms） | `voice/` `services/voice*.ts` | 无 | ⬜ | 碰TUI | L |
-| 5.6 | **权限弹窗 UI**（always/yes/no 决策 + 规则记忆） | `components/PermissionPrompt.tsx` | 权限逻辑全,无 UI | 🟡 | 碰TUI | M |
+| 5.6 | **权限弹窗 UI**（always/yes/no 决策 + 规则记忆） | `components/PermissionPrompt.tsx` | ✅ **主体已做**（PermissionDialog.tsx 三态全+↑↓/数字/字母/Esc 快捷键+always 真写 user 规则+危险警告+diff 预览）。调研(2026-06-22)。**真实剩余=1×M(deny/来源原因透传进 PendingAsk 并展示，类 CC PermissionRuleExplanation)+3×S 文案(always 写哪层反馈/规则粒度预览/Tab-amend)** | 🟢 主体 | 碰TUI | M(余) |
 | 5.7 | **Statusline**（成本/token/模型/模式/任务进度实时栏 + /statusline） | `commands/statusline.tsx` | 极简状态行 | 🟡 | 碰TUI | M |
 | 5.8 | **AI 辅助摘要**（AgentSummary 子代理进度 / toolUseSummary / awaySummary / PromptSuggestion 下一步建议） | `services/{AgentSummary,toolUseSummary,awaySummary,PromptSuggestion}` | 无 | ⬜ | 碰TUI | M |
 | 5.9 | **交互小命令**（/copy /good-claude /context viz /files /add-dir /status /help 增强） | `commands/*` | 部分 | 🟡 | 碰TUI | S |
