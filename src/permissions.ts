@@ -70,6 +70,32 @@ export function splitBashCommand(command: string): { tooComplex: boolean; comman
 export type PermissionMode = 'default' | 'acceptEdits' | 'yolo'
 export type Decision = 'yes' | 'no' | 'always'
 
+export type PermissionRuleSource = 'builtin' | 'user' | 'project' | 'local' | 'flag'
+
+export interface PermissionRule {
+  source: PermissionRuleSource
+  behavior: 'allow' | 'deny'
+  value: string
+}
+
+export type PermissionDecisionReason =
+  | { type: 'rule'; rule: PermissionRule }
+  | { type: 'hook'; hookName: string; reason?: string }
+  | { type: 'other'; reason: string }
+
+const SOURCE_NAMES: Record<PermissionRuleSource, string> = {
+  builtin: '内置规则',
+  user: '用户设置',
+  project: '共享项目设置',
+  local: '项目本地设置',
+  flag: '命令行参数',
+}
+
+/** 来源层级 → 中文显示名。 */
+export function permissionSourceName(s: PermissionRuleSource): string {
+  return SOURCE_NAMES[s] ?? String(s)
+}
+
 export interface PermissionContext {
   mode: PermissionMode
   rules: string[]

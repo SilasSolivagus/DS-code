@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { matchRule, checkPermission, isDangerous, splitBashCommand, bashCommandAllowed, hasUnquotedOperator, type PermissionContext, type Decision } from '../src/permissions.js'
+import { matchRule, checkPermission, isDangerous, splitBashCommand, bashCommandAllowed, hasUnquotedOperator, permissionSourceName, type PermissionContext, type Decision } from '../src/permissions.js'
 
 const fakeTool = (name: string, isReadOnly: boolean, desc: false | string = 'x'): any => ({
   name,
@@ -312,5 +312,15 @@ describe('checkPermission deny', () => {
   it('未命中 deny 不影响放行', async () => {
     const r = await checkPermission(denyTool('Read', true, ['/proj/x.ts']), {}, pc({ deny: ['**/id_rsa'] }))
     expect(r.ok).toBe(true)
+  })
+})
+
+describe('permissionSourceName', () => {
+  it('五个来源映射到中文显示名', () => {
+    expect(permissionSourceName('builtin')).toBe('内置规则')
+    expect(permissionSourceName('user')).toBe('用户设置')
+    expect(permissionSourceName('project')).toBe('共享项目设置')
+    expect(permissionSourceName('local')).toBe('项目本地设置')
+    expect(permissionSourceName('flag')).toBe('命令行参数')
   })
 })
