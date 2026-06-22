@@ -22,6 +22,8 @@
 
 **⭐2026-06-22 派 4 agent 实读 CC+摸现状调研，roadmap 大修正（又一次「别照标题盲做」）：** ①**2.3 自动 compact = 已端到端做完**（2.5 顺手做，标 ✅，唯一可选=413 兜底）。②**3.5 Rewind = 主干已完成**（存储+还原+/rewind+两级选择器+三模式，标 🟢主干，真实剩余=1M Summarize+4S，其中 #4 防覆盖手改=数据安全建议补）。③**5.6 权限弹窗 = 主体已做**（三态+always 写规则+危险警告+diff 全有，标 🟢主体，真实剩余=1M deny/来源展示+3S 文案）。④**2.1 = adaptive thinking 对 DeepSeek N/A，真实剩余只剩 CC token budget 自动续跑(`+500k`/跨turn结转/收益递减熔断)，S-M 纯逻辑**。**净结论：当初选的 3.5/5.6 主干已完成；真正值得做的高价值低风险件=【2.1 token budget(新功能,S-M,非TUI)】+【5.6 deny/来源展示(M,TUI)】+【3.5 #4 防覆盖手改(S,非TUI,数据安全)】。**
 
+**🚀执行进度（2026-06-22）：✅3.5 #4 restore-only-if-differs(`19762b3`)✅2.1 Token budget 自动续跑(`a104f45`,opus 终审+真机签收)。剩 → 5.6 deny/来源展示(M,TUI,下一件) → C4 工具批。main=origin=`a104f45` 全同步。**
+
 ---
 
 ## 🔄 进度更新（2026-06-18，历史快照）
@@ -52,7 +54,7 @@
 
 | # | 机制 | CC 源码 | deepcode | 状态 | TUI? | 工作量 |
 |---|---|---|---|---|---|---|
-| 2.1 | **思考预算 / ultrathink**（adaptive budget + 关键词触发 + 跨 compact 边界结转） | `utils/thinking.ts` `utils/tokenBudget.ts` | 🟡 effort 三档/ultrathink 关键词(`fa2cade`)已是 DeepSeek 等价。**调研(2026-06-22)：adaptive thinking 那半对 DeepSeek N/A（无 budgetTokens API）；真实剩余=CC 的「输出 token budget 自动续跑」(`+500k`/跨turn结转/收益递减熔断，`utils/tokenBudget.ts`+`query/tokenBudget.ts`)，纯客户端逻辑可不碰 TUI** | 🟡 | 否 | S-M |
+| 2.1 | **思考预算 / ultrathink**（adaptive budget + 关键词触发 + 跨 compact 边界结转） | `utils/thinking.ts` `utils/tokenBudget.ts` | ✅ effort 三档/ultrathink 关键词(`fa2cade`)+ **Token budget 自动续跑(`a104f45`)：+500k/use 2M sticky 目标→未达90%自动续跑+收益递减熔断+状态栏 budget 段，opus 终审 PASS+真机签收**。adaptive thinking 对 DeepSeek N/A | ✅ | 部分 | S-M |
 | 2.2 | **Microcompact**（逐消息清理旧工具结果占位，省 token） | `services/compact/microCompact.ts` | 无(仅整体 compact) | ⏭️跳过(不适用 DeepSeek) | 否 | M |
 | 2.3 | **自动 compact 触发 + 告警 UI**（超 token 阈值自动压 + 提示） | `services/compact/autoCompact` | ✅ **已端到端做完**（2.5 顺手做：useChat.ts:746 预估→shouldAutoCompact→doCompact('auto')→熔断+失败计数+90%预警+状态栏预警色全闭环）。调研(2026-06-22)确认。**唯一可选增量=413 reactive 兜底(M,另立条目)** | ✅ | 部分 | M |
 | 2.4 | **Prompt caching / cache_control 头** | `utils/cacheBreak.ts` | ✅ cacheSavings 纯函数+状态栏 cache 段(`841b264`) | ✅ | 否 | S |
