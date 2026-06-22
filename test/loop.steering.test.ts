@@ -53,6 +53,40 @@ async function drain(gen: AsyncGenerator<any, any>) {
 }
 
 describe('loop drainSteering', () => {
+  it('no-tool turn-end：模型纯文本回答结束时排队的 steering 消息被注入并续跑', async () => {
+    script.length = 0
+    callMessages.length = 0
+
+    // 第一轮：纯文本，无 tool 调用（自然结束路径）
+    // 第二轮：纯文本，无 tool 调用（结束）
+    script.push(
+      { result: { content: 'first answer', toolCalls: [], usage, finishReason: 'stop' } },
+      { result: { content: 'second answer', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+
+    let drained = false
+    const messages: any[] = [{ role: 'user', content: 'hi' }]
+    const deps = baseDeps({
+      drainSteering: () => {
+        if (drained) return []
+        drained = true
+        return ['<queued-user-message>\nSTEER\n</queued-user-message>']
+      },
+    })
+
+    await drain(runLoop(messages, deps))
+
+    // loop 应跑了两轮（第一轮 drain 出 steering → continue，第二轮正常结束）
+    expect(callMessages.length).toBe(2)
+    // 第二轮 messages 应包含注入的 queued-user-message
+    const secondCallMessages = callMessages[1]
+    expect(secondCallMessages).toBeDefined()
+    const steeringMsg = secondCallMessages.find(
+      (m: any) => m.role === 'user' && String(m.content).includes('queued-user-message'),
+    )
+    expect(steeringMsg).toBeTruthy()
+  })
+
   it('tool_result 边界后把 drainSteering 返回项作为 user 消息注入', async () => {
     script.length = 0
     callMessages.length = 0

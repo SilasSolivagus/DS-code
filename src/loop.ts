@@ -245,6 +245,13 @@ export async function* runLoop(
           continue // 不 return，进入下一轮 turn（再发一次 API，模型据通知决策；受 maxTurns 约束）
         }
       }
+      // steering（no-tool turn-end）：模型本轮无工具调用自然结束时，若有排队的 steering 消息，注入并续跑。
+      // 对齐 CC：turn 结束时消费排队消息；tool 边界那段 drainSteering 仍独立工作，两路互不重复（drain 清空队列）。
+      const steerMsgs = deps.drainSteering?.() ?? []
+      if (steerMsgs.length > 0) {
+        for (const s of steerMsgs) messages.push({ role: 'user', content: s })
+        continue
+      }
       // Stop hook：即将自然结束前触发。对齐 CC（query.ts:1267-1306）——
       // preventContinuation（decision:block / exit2）→ 注入 blockReason 作 user 消息续跑（守卫限一次）；
       // 读 preventContinuation/stop 而非 block（block 在 permission 通道也为真，语义重载，见 ①a 终审 I-1）。
