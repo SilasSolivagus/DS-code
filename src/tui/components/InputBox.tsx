@@ -1,9 +1,8 @@
 // src/tui/components/InputBox.tsx
 // CC 手感输入框：圆角蓝边框、placeholder、历史↑↓、行尾 \ 续行、Esc 双语义、busy 态提示。
 // 不用 ink-text-input：自管 value/cursor，否则历史与续行语义插不进去。
-// 偏差说明：计划原版在 Enter 时无条件调 onSubmit；此处加 busy guard——busy 时 Enter 不提交
-// （value 仍然可以累积）。注意：guard 会吞掉 busy 期间的 Enter，上层收不到 onSubmit——
-// 若要做 CC 式输入排队，需放开此 guard 或加 prop，不能只在上层实现。
+// busy 态：Enter 调 onSteer(text) 排队转向（toolInFlight 时 useChat 内部自动附带软中断）；
+// ESC 在队列非空时 onSteerPop 拉回、队列空时 onInterrupt 硬中断。
 // 实现细节：状态变更统一走 setVal helper（同步 ref+state+onChange），useInput handler
 // 读 ref 而非闭包，避免连续按键（↑↑↓）时读到旧状态。
 import React, { useState, useRef, useEffect } from 'react'
@@ -20,10 +19,8 @@ export function InputBox(props: {
   busy: boolean
   /** App 层注入值（补全 pick 后替换整个 draft）。nonce 变化时才实际替换，防止 re-render 重置 */
   valueOverride?: { text: string; nonce: number }
-  /** busy 态 steering：排队下一条 */
-  onSteerNext?: (text: string) => void
-  /** busy 态 steering：立即插入（Alt+Enter） */
-  onSteerNow?: (text: string) => void
+  /** busy 态 steering：统一入口（Enter 时调用；toolInFlight 由 useChat 内部决定是否软中断） */
+  onSteer?: (text: string) => void
   /** busy 态 steering：弹出最后一条队列项并回填输入框 */
   onSteerPop?: () => void
   /** 当前 steer 队列长度（决定 ESC busy 语义） */
@@ -82,9 +79,8 @@ export function InputBox(props: {
       const full = pendingRef.current + valueRef.current
       if (!full.trim()) return
       if (props.busy) {
-        // busy 态：Alt+Enter=now 软中断、普通 Enter=排队 next
-        if (key.meta) props.onSteerNow?.(full)
-        else props.onSteerNext?.(full)
+        // busy 态：Enter 统一调 onSteer（toolInFlight 时 useChat 内部附带软中断）
+        props.onSteer?.(full)
       } else {
         props.onSubmit(full)
       }

@@ -187,8 +187,7 @@ export interface ChatCore {
   state: ChatState
   send(line: string): Promise<void> // 斜杠命令本地处理；其余走 runLoop（含边界 reminders、落盘、自动 compact）
   interrupt(): void // Esc
-  steerNext(text: string): void
-  steerNow(text: string): void
+  steer(text: string): void // busy 时 Enter：入队 next；若 toolInFlight 则同时软中断
   steerPop(): string | undefined
   steerQueue(): readonly SteeringItem[]
   resolveAsk(d: Decision): void // 权限弹窗回答
@@ -226,6 +225,7 @@ export function createChatCore(opts: {
   let cwd = opts.cwd
   let abort = new AbortController()
   const steerQueue = new SteeringQueue()
+  let toolsRunning = 0 // 并发 tool 计数；steer() 据此判定是否附带软中断
   let model = settings.model ?? 'deepseek-v4-flash'
   let tokenBudget: number | null = null // 2.1 sticky 预算（进程内，不落 session；+0k 清除）
   let budgetUsed = 0                     // 2.1 本次 send 累计输出 token（状态栏 budget 段分子）
@@ -666,8 +666,10 @@ export function createChatCore(opts: {
           dispatch({ type: 'delta', delta: ev.delta, reasoning: !!ev.reasoning })
         } else if (ev.type === 'tool_start') {
           turnToolCalls++
+          toolsRunning++
           dispatch(ev)
         } else if (ev.type === 'tool_end') {
+          toolsRunning = Math.max(0, toolsRunning - 1)
           dispatch(ev)
           // recall: tool 结果回灌后 poll，与 drainInjections 同站点——已 settle 则注入 reminder
           if (recaller) {
@@ -1030,11 +1032,10 @@ export function createChatCore(opts: {
       if (pendingQuestion) { const p = pendingQuestion; pendingQuestion = null; setState(); p.resolve(null) }
       abort.abort('user-cancel')
     },
-    steerNext: (text: string) => { if (text.trim()) steerQueue.enqueue(text, 'next') },
-    steerNow: (text: string) => {
+    steer: (text: string) => {
       if (!text.trim()) return
-      steerQueue.enqueue(text, 'now')
-      abort.abort('interrupt') // 软中断当前 turn；loop 据 reason 续跑
+      steerQueue.enqueue(text, 'next') // 用户路径恒 next（CC 模型：toolInFlight 时自动软中断）
+      if (toolsRunning > 0) abort.abort('interrupt') // 有 tool 在跑：软中断当前 turn，loop 据 reason 续跑
     },
     steerPop: () => steerQueue.popLast()?.value,
     steerQueue: () => steerQueue.peek(),

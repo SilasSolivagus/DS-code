@@ -9,23 +9,34 @@ const delay = (ms = 0) => new Promise(res => setTimeout(res, ms))
 
 // 若仓库无 ink-testing-library，则跳过组件渲染测试、靠真机冒烟；此处给出标准用法。
 describe('InputBox steering 按键', () => {
-  it('busy 时普通 Enter 调 onSteerNext 而非 onSubmit', async () => {
-    const onSteerNext = vi.fn(), onSubmit = vi.fn()
+  it('busy 时普通 Enter 调 onSteer 而非 onSubmit', async () => {
+    const onSteer = vi.fn(), onSubmit = vi.fn()
     const { stdin } = render(React.createElement(InputBox, {
-      onSubmit, onInterrupt: () => {}, onSteerNext, onSteerNow: vi.fn(), onSteerPop: vi.fn(),
+      onSubmit, onInterrupt: () => {}, onSteer, onSteerPop: vi.fn(),
       steerQueueSize: 0, history: [], busy: true,
     }))
     await delay()
     stdin.write('hi')
     stdin.write('\r')              // Enter
-    expect(onSteerNext).toHaveBeenCalledWith('hi')
+    expect(onSteer).toHaveBeenCalledWith('hi')
     expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('busy 时 Enter 输入为空不调 onSteer', async () => {
+    const onSteer = vi.fn()
+    const { stdin } = render(React.createElement(InputBox, {
+      onSubmit: vi.fn(), onInterrupt: () => {}, onSteer, onSteerPop: vi.fn(),
+      steerQueueSize: 0, history: [], busy: true,
+    }))
+    await delay()
+    stdin.write('\r')              // Enter with no input
+    expect(onSteer).not.toHaveBeenCalled()
   })
 
   it('busy 时 ESC 在队列非空时调 onSteerPop、空时调 onInterrupt', async () => {
     const onInterrupt = vi.fn(), onSteerPop = vi.fn()
     const r1 = render(React.createElement(InputBox, {
-      onSubmit: vi.fn(), onInterrupt, onSteerNext: vi.fn(), onSteerNow: vi.fn(), onSteerPop,
+      onSubmit: vi.fn(), onInterrupt, onSteer: vi.fn(), onSteerPop,
       steerQueueSize: 2, history: [], busy: true,
     }))
     await delay()
@@ -34,7 +45,7 @@ describe('InputBox steering 按键', () => {
     expect(onInterrupt).not.toHaveBeenCalled()
 
     const r2 = render(React.createElement(InputBox, {
-      onSubmit: vi.fn(), onInterrupt, onSteerNext: vi.fn(), onSteerNow: vi.fn(), onSteerPop: vi.fn(),
+      onSubmit: vi.fn(), onInterrupt, onSteer: vi.fn(), onSteerPop: vi.fn(),
       steerQueueSize: 0, history: [], busy: true,
     }))
     await delay()

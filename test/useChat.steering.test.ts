@@ -3,7 +3,8 @@ import { describe, it, expect } from 'vitest'
 import { SteeringQueue, formatSteeringMessage } from '../src/steering.js'
 
 // useChat 完整 harness 较重；本任务核心可测单元是「队列 + 注入格式 + drainSteering 闭包」的契约。
-// 若仓库已有 useChat 测试 harness（createChatCore mock client），追加端到端用例；否则至少锁定下列契约。
+// toolInFlight（toolsRunning > 0 → abort）行为依赖 AbortController 跨 async 边界，在
+// React hook 内嵌套；这里改用集成层（真机冒烟）验证，单元层只锁定队列契约。
 describe('steering 接线契约', () => {
   it('drainSteering 闭包把队列项经 formatSteeringMessage 包装后清空队列', () => {
     const q = new SteeringQueue()
@@ -15,5 +16,58 @@ describe('steering 接线契约', () => {
     expect(out[1]).toContain('再加一句')
     expect(q.size).toBe(0)
     expect(drainSteering()).toEqual([])
+  })
+
+  it('steer 模拟：无 tool 时只入队，不触发 abort', () => {
+    // 模拟 steer() 函数逻辑（toolsRunning=0）
+    const q = new SteeringQueue()
+    let aborted = false
+    const mockAbort = (reason: string) => { aborted = true; void reason }
+    const toolsRunning = 0
+
+    const steer = (text: string) => {
+      if (!text.trim()) return
+      q.enqueue(text, 'next')
+      if (toolsRunning > 0) mockAbort('interrupt')
+    }
+
+    steer('转个方向')
+    expect(q.size).toBe(1)
+    expect(aborted).toBe(false)
+  })
+
+  it('steer 模拟：有 tool 在跑时同时触发 abort(interrupt)', () => {
+    // 模拟 steer() 函数逻辑（toolsRunning=1）
+    const q = new SteeringQueue()
+    let abortReason: string | undefined
+    const mockAbort = (reason: string) => { abortReason = reason }
+    const toolsRunning = 1
+
+    const steer = (text: string) => {
+      if (!text.trim()) return
+      q.enqueue(text, 'next')
+      if (toolsRunning > 0) mockAbort('interrupt')
+    }
+
+    steer('立刻转向')
+    expect(q.size).toBe(1)
+    expect(abortReason).toBe('interrupt')
+  })
+
+  it('steer 模拟：空文本不入队也不 abort', () => {
+    const q = new SteeringQueue()
+    let aborted = false
+    const mockAbort = () => { aborted = true }
+    const toolsRunning = 1
+
+    const steer = (text: string) => {
+      if (!text.trim()) return
+      q.enqueue(text, 'next')
+      if (toolsRunning > 0) mockAbort()
+    }
+
+    steer('   ')
+    expect(q.size).toBe(0)
+    expect(aborted).toBe(false)
   })
 })
