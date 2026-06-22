@@ -50,3 +50,24 @@ describe('Read', () => {
     expect(out).toContain('超出文件总行数 2')
   })
 })
+
+describe('Read .ipynb', () => {
+  it('合法 notebook → cell 视图 + 设 fileState', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'dc-nb-'))
+    const f = path.join(dir, 'n.ipynb')
+    writeFileSync(f, JSON.stringify({ cells: [{ cell_type: 'code', source: 'print(1)', id: 'c1' }], metadata: {} }))
+    const ctx = makeCtx(dir)
+    const out = await readTool.call({ file_path: f }, ctx)
+    expect(out).toContain('<cell id="c1">')
+    expect(out).toContain('print(1)')
+    expect(out).not.toContain('\t') // 非纯文本行号格式
+    expect(ctx.fileState.get(f)).toBeDefined()
+  })
+  it('非法 .ipynb → 回退纯文本（行号格式）', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'dc-nb-'))
+    const f = path.join(dir, 'bad.ipynb')
+    writeFileSync(f, 'not json at all')
+    const out = await readTool.call({ file_path: f }, makeCtx(dir))
+    expect(out).toContain('1\tnot json at all') // 纯文本行号回退
+  })
+})
