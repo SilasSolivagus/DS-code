@@ -24,15 +24,30 @@ vi.mock('../src/hooks.js', async (orig) => {
 
 // ---- settings with mcpServers configured ----
 const fakeMcpServers = { my_server: { command: 'node', args: ['mcp-server.js'] } }
+const mockMcpSettings = {
+  permissions: { allow: [] },
+  compactTokens: 200_000,
+  costWarnCNY: 15,
+  mcpServers: fakeMcpServers,
+}
+
 vi.mock('../src/config.js', async (orig) => {
   const actual = await orig<typeof import('../src/config.js')>()
   return {
     ...actual,
-    loadSettings: vi.fn(() => ({
-      permissions: { allow: [] },
-      compactTokens: 200_000,
-      costWarnCNY: 15,
-      mcpServers: fakeMcpServers,
+    loadSettings: vi.fn(() => mockMcpSettings),
+  }
+})
+
+vi.mock('../src/settingsLayers.js', async (orig) => {
+  const actual = await orig<typeof import('../src/settingsLayers.js')>()
+  return {
+    ...actual,
+    loadLayeredSettings: vi.fn(() => ({
+      settings: mockMcpSettings,
+      provenance: {},
+      permissionSources: { allow: {}, deny: {} },
+      scopes: [],
     })),
   }
 })
