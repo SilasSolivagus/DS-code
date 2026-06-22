@@ -16,7 +16,13 @@
 
 ---
 
-## 🔄 进度更新（2026-06-18，下表状态列已同步本块）
+## 🔄 进度更新（2026-06-22 最新，下表状态列已同步本块）
+
+**2026-06-22**：✅2.5 Token 计数已 push（`7dc78ea`，main=origin=`c8de188` 全同步）+ 状态栏 Row 2 加 contextBar 迷你进度条（`c8de188`）。✅C1（3.9+4.5）+ C2 记忆四件均已整批完成。**⭐新增 2.8 通用多 provider / GLM（用户钦定通用 preset，但拍板⏳后置——先把 CC 第 1-5 层对齐做完整再做）**——见第 2 层 2.8 详述。**剩余非 TUI 下一步（先做完 CC 对齐）= 2.1 余 / 2.3 余 / C4 工具批 / C5 Steering；CC 全做完后才做 2.8。**
+
+---
+
+## 🔄 进度更新（2026-06-18，历史快照）
 
 自本表 2026-06-17 快照以来合并的件（按层）：
 - **第 1 层**：✅1.1 MCP(`e93cf54`)、✅1.2 Skills(`0685ecb`+预算/scope`c882d14`)、✅1.8 Task todo-V2(`2558c61`)。
@@ -50,7 +56,23 @@
 | 2.4 | **Prompt caching / cache_control 头** | `utils/cacheBreak.ts` | ✅ cacheSavings 纯函数+状态栏 cache 段(`841b264`) | ✅ | 否 | S |
 | 2.5 | **Token 计数/估算**（精确计数 + 多后端） | `services/tokenEstimation.ts` | ✅ CJK 感知估算+模型感知 window+发送前预估 compact(`7dc78ea`)。CC 的 countTokens API/多后端 N/A(DeepSeek 无此端点) | ✅ | 否 | M |
 | 2.6 | **Cost 告警 hook**（累计 + 阈值告警；settings 已有 costWarnUSD） | `costHook.ts` `cost-tracker.ts` | ✅ costWarnUSD 阈值告警(`fa2cade`) | ✅ | 部分 | S |
-| 2.7 | **/model /effort /fast 模型切换** | `commands/{model,effort,fast}` | 无 | ⬜ | 碰TUI | S |
+| 2.7 | **/model /effort /fast 模型切换**（DeepSeek 内 flash↔pro 切换命令） | `commands/{model,effort,fast}` | 🟡 useChat.ts:812 仅 flash↔pro 翻转 | 🟡 | 碰TUI | S |
+| 2.8 | **通用多 provider / 第三方模型切换（GLM 等任意 OpenAI 兼容后端）** ⭐用户钦定，⏳**后置（CC 对齐做完整后再做）** | （无 CC 对应；deepcode 专属扩展） | 🟡 `baseURL` 通道已在(api.ts:95)可指任意 OpenAI 兼容端点；但缺一等公民抽象 | 🟡 | 部分 | M |
+
+### 2.8 通用多 provider 详述（2026-06-22 用户钦定新增；⏳排序后置）
+**目标**：做成**通用 provider preset**（不只 GLM）——deepcode 不绑死 DeepSeek，可加任意 OpenAI 兼容后端（deepseek/glm/其它），切 provider 即带出 baseURL + 模型列表。
+**排序（用户 2026-06-22 拍板）**：**先把第 1-5 层 CC 对齐做完整、该做的都做完，再回头做 2.8。** 不进当前 C3 收尾批，不抢 CC 对齐件的位。
+
+**现状（已能勉强用）**：`createClient`(api.ts:88-99) 读 `settings.baseURL`（默认 `https://api.deepseek.com`）+ `apiKey` + `model`。GLM 是 OpenAI 兼容端点（`https://open.bigmodel.cn/api/paas/v4`，模型如 `glm-4.6`），**今天设这三项就能指过去**。
+
+**缺口（要做成一等公民）**：
+1. **解除 `deepseek-v4-flash` 硬编码** ~10 处（session.ts:90/103、compact.ts:19、headless.ts:40、tools/constants.ts:3 `SUB_MODEL`、useChat.ts:216/499/500、usageLog）→ 改 provider/model 感知，从配置取。
+2. **per-provider/model 表**：`pricing.ts`（GLM 单价不同 → 否则成本显 0）、`tokenEstimate.ts MODEL_CONTEXT_WINDOWS`（GLM window → 否则落 200k 默认）、token 估算比例（GLM 也 CJK 但比例待核）。
+3. **provider preset / 抽象**：`{ provider, baseURL, apiKey, models[] }`，内置 deepseek/glm preset，settings 选 provider 即带出 baseURL+模型列表（`config.ts:30` 已有闲置 `provider` 字段，目前只给 webSearch 用）。
+4. **切换入口**：`/model` 扩展到跨 provider（碰 TUI 部分）；2.7 的 flash↔pro 翻转(useChat.ts:812) 并入 provider-aware 选择器。
+5. **未知模型 fail-safe**：无价格表→成本标「未知」不崩；无 window→合理默认 + 提示。
+
+**与 2.7 关系**：2.7 = DeepSeek 内切换命令的 TUI 壳；2.8 = 底层多 provider 能力。建议 2.8 先做底层抽象（非 TUI，可全做），切换 UI 与 2.7 一起在 TUI 批落。
 
 ## 第 3 层 · 记忆/会话/权限/配置（roadmap 外，价值高）
 
@@ -127,15 +149,15 @@
 
 **排序原则（用户钦定，取代旧"非TUI先/逐层"）：依赖拓扑 → 可感知收益 → 主题聚类（共享子系统连做，省重复实读 CC）→ 小件穿插。** 理由：六层是机制分类轴非执行轴；单人+AI 一件一仪式流程下最贵的是上下文切换+重复实读同一 CC 子系统，主题聚类消灭浪费。**逐层独立做完已被否决。**
 
-**主题聚类批次（剩余非 TUI，按此序）：**
-- **C1 · 配置与权限层** ← 下一批起跑：**3.9 Settings 分层（捆绑 hook SSRF/URL 白名单加固）** → 3.7 余「来源层级」 → 4.5 Config 工具。
-  - *3.9 是隐藏拓扑根*：解锁 3.7 来源层级 + 是所有未来「项目级配置」的安全前置（威胁模型已点名：共享 settings 启用前必须先补 hook SSRF，否则项目级文件=供应链 RCE）+ 越晚做读 config 件返工面越大。
-- **C2 · 记忆子系统**（最该打包）：3.1 记忆索引（先定 schema）→ 3.3 SessionMemory → 3.2 自动提取 → 3.4 autoDream。四件共享 memdir，一次实读 CC memory 子系统连做，别拆开穿插。
-- **C3 · Token/Compact 收尾**：2.5 Token 计数 → 2.1 余 adaptive budget → 2.3 余自动触发。
+**主题聚类批次（剩余非 TUI，按此序；2026-06-22 状态已同步）：**
+- **C1 · 配置与权限层** → ✅**已整批完成**（3.9 Settings+SSRF `c24ed0e` / 4.5 Config `87a1dab`；3.7 余「来源层级」+ `/permissions` UI 留 TUI 批）。
+- **C2 · 记忆子系统** → ✅**已整批完成**（3.1/3.3/3.2/3.4 全闭合 `af47aab`+followup `c10300e`）。
+- **C3 · Token/Compact 收尾**：2.5 Token 计数 ✅(`7dc78ea`+迷你进度条 `c8de188`) → **剩 2.1 余 adaptive budget + 2.3 余自动触发**。
 - **C4 · 独立工具件**（互相独立，可并行 worktree 丢 agent，降仪式）：4.6 LSP、4.7 REPL、4.8 Notebook、4.9 PowerShell、3.10 Cron、3.8 Sandbox。
 - **C5 · Steering→多agent**：1.3 Steering 非 TUI 逻辑（为 B 批 1.6 铺路）。
+- **⏳ 后置 · 2.8 通用多 provider / GLM**（2026-06-22 用户钦定通用 preset，但拍板**后置**）：先把第 1-5 层 CC 对齐做完整再做。不进下面的近期清单。
 
-**推荐下一步 6-8 件**：①3.9 Settings+SSRF ②3.7 来源层级 ③4.5 Config ④3.1 记忆索引 ⑤3.3 SessionMemory ⑥3.2 自动提取 ⑦3.4 autoDream ⑧2.5 Token 计数。（④-⑦ 是整个 memory 批，不拆。）
+**真实剩余下一步（2026-06-22 同步，旧 6-8 件清单已完成作废；先做完 CC 对齐）**：①2.1 余 adaptive budget ②2.3 余自动触发（①②=C3 收尾）③起 C4 工具批（LSP/REPL/Notebook/PowerShell/Cron/Sandbox，可并行降仪式）④C5 1.3 Steering ⑤TUI 批（含破例 3.5 Rewind UI / 5.6 权限弹窗 UI）。**CC 第 1-5 层全做完后** → 才做 ⏳2.8 通用多 provider。
 
 **TUI 批 · 两件提前破例（用户拍板，其余仍攒最后一起冒烟）：**
 - 🔓 **3.5 Rewind UI 提前**（安全网，让后面可写 subagent 1.5/autoDream 敢做）。
