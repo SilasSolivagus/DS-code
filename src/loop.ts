@@ -183,6 +183,8 @@ export async function* runLoop(
     } catch (e) {
       if (deps.ctx.signal.aborted) {
         // steering 软中断：保留已生成 partial、重建 signal、注入 steering、续跑（不终止）
+        // 注：当前用户 steering 路径只在 toolInFlight 时 abort，故 mid-stream 中断分支当前仅为将来 SDK
+        // now 优先级预留；Enter 路径走不到这里（纯流式 toolsRunning=0 不 abort）。
         if (deps.ctx.signal.reason === 'interrupt') {
           if (streamedText) messages.push({ role: 'assistant', content: streamedText })
           deps.ctx.resetSignal?.()
