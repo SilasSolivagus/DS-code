@@ -16,6 +16,13 @@ function fmtK(n: number): string {
   return n >= 1000 ? Math.round(n / 1000) + 'k' : String(n)
 }
 
+/** 迷你进度条：width 格，非零用量至少填 1 格，越界钳到 [0,100]。 */
+export function contextBar(pct: number, width = 10): string {
+  const clamped = Math.max(0, Math.min(100, pct))
+  const filled = clamped > 0 ? Math.max(1, Math.round((clamped / 100) * width)) : 0
+  return '█'.repeat(filled) + '░'.repeat(width - filled)
+}
+
 export function StatusFooter(props: {
   model: string
   mode: string
@@ -53,6 +60,9 @@ export function StatusFooter(props: {
       <Text>
         <Text dimColor>Context </Text>
         <Text color={contextBarColor(usedPct)}>{fmtK(props.contextUsed)} / {fmtK(props.contextWindow)}</Text>
+        <Text dimColor>{` [`}</Text>
+        <Text color={contextBarColor(usedPct)}>{contextBar(usedPct)}</Text>
+        <Text dimColor>{`]`}</Text>
         {props.hitRate > 0 && (
           <Text dimColor>{` · cache ${Math.round(props.hitRate * 100)}% (−¥${props.cacheSavings.toFixed(4)})`}</Text>
         )}

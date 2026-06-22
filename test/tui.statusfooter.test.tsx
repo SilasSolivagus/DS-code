@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest'
 import React from 'react'
 import { render } from 'ink-testing-library'
-import { StatusFooter, contextBarColor } from '../src/tui/components/StatusFooter.js'
+import { StatusFooter, contextBarColor, contextBar } from '../src/tui/components/StatusFooter.js'
 import { T } from '../src/tui/theme.js'
 
 const base = {
@@ -93,5 +93,19 @@ describe('StatusFooter', () => {
     expect(contextBarColor(50)).toBe(T.accent)
     expect(contextBarColor(85)).toBe(T.warn)
     expect(contextBarColor(96)).toBe(T.err)
+  })
+
+  it('contextBar：满格/空格/非零至少一格/越界钳制', () => {
+    expect(contextBar(0)).toBe('░'.repeat(10))
+    expect(contextBar(100)).toBe('█'.repeat(10))
+    expect(contextBar(50)).toBe('█'.repeat(5) + '░'.repeat(5))
+    expect(contextBar(4)).toBe('█' + '░'.repeat(9))   // 非零但 <半格 → 至少 1 格
+    expect(contextBar(150)).toBe('█'.repeat(10))       // 越界上钳
+    expect(contextBar(-5)).toBe('░'.repeat(10))        // 越界下钳
+  })
+
+  it('Row 2 渲染迷你进度条', () => {
+    const f = render(<StatusFooter {...base} contextUsed={100_000} contextWindow={200_000} />).lastFrame()!
+    expect(f).toContain('[' + '█'.repeat(5) + '░'.repeat(5) + ']')
   })
 })
