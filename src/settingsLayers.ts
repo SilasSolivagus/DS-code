@@ -70,6 +70,7 @@ function deepMergeInto(target: Record<string, unknown>, src: Record<string, unkn
 export function mergeScopePartials(layers: ScopePartial[]): {
   settings: any
   provenance: Record<string, SettingScope | 'merged'>
+  permissionSources: { allow: Record<string, SettingScope>; deny: Record<string, SettingScope> }
 } {
   const settings: Record<string, unknown> = structuredClone(DEFAULT_SETTINGS)
   const contributors: Record<string, Set<SettingScope>> = {}
@@ -100,7 +101,15 @@ export function mergeScopePartials(layers: ScopePartial[]): {
       }
     }
   }
-  return { settings, provenance }
+
+  const permissionSources: { allow: Record<string, SettingScope>; deny: Record<string, SettingScope> } = { allow: {}, deny: {} }
+  for (const { scope, partial } of layers) {
+    const perm = partial.permissions as { allow?: string[]; deny?: string[] } | undefined
+    if (perm?.allow) for (const r of perm.allow) permissionSources.allow[r] = scope
+    if (perm?.deny) for (const r of perm.deny) permissionSources.deny[r] = scope
+  }
+
+  return { settings, provenance, permissionSources }
 }
 
 export interface LoadedScope {
@@ -109,6 +118,7 @@ export interface LoadedScope {
 export interface LayeredResult {
   settings: Settings
   provenance: Record<string, SettingScope | 'merged'>
+  permissionSources: { allow: Record<string, SettingScope>; deny: Record<string, SettingScope> }
   scopes: LoadedScope[]
 }
 
@@ -167,6 +177,6 @@ export function loadLayeredSettings(cwd: string = process.cwd(), flagPath?: stri
     }
     scopes.push({ scope, path: file, present, demoted, stripped })
   }
-  const { settings, provenance } = mergeScopePartials(layers)
-  return { settings: settings as Settings, provenance, scopes }
+  const { settings, provenance, permissionSources } = mergeScopePartials(layers)
+  return { settings: settings as Settings, provenance, permissionSources, scopes }
 }
