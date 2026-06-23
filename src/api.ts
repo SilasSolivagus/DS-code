@@ -1,7 +1,7 @@
 import OpenAI from 'openai'
 import { fetch as undiciFetch, ProxyAgent } from 'undici'
 import { loadSettings } from './config.js'
-import { resolveActiveProvider } from './providers.js'
+import { resolveActiveProvider, activeProvider, activeModelMeta, type Dialect } from './providers.js'
 
 export interface Usage {
   prompt_tokens: number
@@ -26,13 +26,20 @@ export class Assembler {
   private usage: Usage = { prompt_tokens: 0, completion_tokens: 0, prompt_cache_hit_tokens: 0 }
   private calls = new Map<number, { id: string; name: string; args: string }>()
 
+  constructor(private dialect: Dialect = 'deepseek') {}
+
   /** 喂入一个流式分片，返回其中的文本增量 */
   push(chunk: any): { text: string; reasoning: string } {
     if (chunk?.usage) {
+      const u = chunk.usage
+      const cacheHit =
+        this.dialect === 'glm' ? (u.prompt_tokens_details?.cached_tokens ?? 0)
+        : this.dialect === 'openai' ? 0
+        : (u.prompt_cache_hit_tokens ?? 0)
       this.usage = {
-        prompt_tokens: chunk.usage.prompt_tokens ?? 0,
-        completion_tokens: chunk.usage.completion_tokens ?? 0,
-        prompt_cache_hit_tokens: chunk.usage.prompt_cache_hit_tokens ?? 0,
+        prompt_tokens: u.prompt_tokens ?? 0,
+        completion_tokens: u.completion_tokens ?? 0,
+        prompt_cache_hit_tokens: cacheHit,
       }
     }
     const choice = chunk?.choices?.[0]
@@ -114,11 +121,27 @@ export interface ChatOptions {
   thinking: boolean
   effortLevel?: 'low' | 'medium' | 'high'
   signal: AbortSignal
+  dialect?: Dialect
+  supportsThinking?: boolean
+}
+
+/** thinking 请求体三态：supportsThinking=false → 完全省略；true → 按开关 enabled/disabled。 */
+export function buildThinkingParams(
+  supportsThinking: boolean,
+  thinking: boolean,
+  effortLevel: 'low' | 'medium' | 'high' | undefined,
+): Record<string, unknown> {
+  if (!supportsThinking) return {}
+  return thinking
+    ? { reasoning_effort: effortLevel ?? 'medium', thinking: { type: 'enabled' } }
+    : { thinking: { type: 'disabled' } }
 }
 
 export type StreamDelta = { type: 'text' | 'reasoning'; delta: string }
 
 export async function* chatStream(client: OpenAI, opts: ChatOptions): AsyncGenerator<StreamDelta, ChatResult> {
+  const dialect = opts.dialect ?? activeProvider().dialect
+  const supportsThinking = opts.supportsThinking ?? activeModelMeta(opts.model).supportsThinking
   // 重试只覆盖"建立流"；分片开始到达后中断则直接抛出
   const stream = await withRetry(() =>
     client.chat.completions.create(
@@ -128,15 +151,12 @@ export async function* chatStream(client: OpenAI, opts: ChatOptions): AsyncGener
         ...(opts.tools.length ? { tools: opts.tools } : {}),
         stream: true,
         stream_options: { include_usage: true },
-        // v4 系列默认开 thinking（白烧思考 token），必须显式 disabled
-        ...(opts.thinking
-          ? { reasoning_effort: opts.effortLevel ?? 'medium', thinking: { type: 'enabled' } }
-          : { thinking: { type: 'disabled' } }),
+        ...buildThinkingParams(supportsThinking, opts.thinking, opts.effortLevel),
       } as any,
       { signal: opts.signal },
     ),
   )
-  const asm = new Assembler()
+  const asm = new Assembler(dialect)
   for await (const chunk of stream as any) {
     const { text, reasoning } = asm.push(chunk)
     if (reasoning) yield { type: 'reasoning', delta: reasoning }
