@@ -5,6 +5,7 @@
 import React, { useRef, useLayoutEffect } from 'react'
 import { Box, measureElement, type DOMElement } from 'ink'
 import { renderItem } from './renderItem.js'
+import { useTheme } from './theme.js'
 import type { TranscriptItem } from './useChat.js'
 
 export function ScrollView(props: {
@@ -14,6 +15,7 @@ export function ScrollView(props: {
   onMeasureTotal: (totalH: number) => void
   banner?: React.ReactNode
 }) {
+  const theme = useTheme()
   const innerRef = useRef<DOMElement | null>(null)
 
   useLayoutEffect(() => {
@@ -28,7 +30,7 @@ export function ScrollView(props: {
     <Box height={props.height} overflowY="hidden" flexDirection="column" flexShrink={0}>
       <Box ref={innerRef} flexDirection="column" flexShrink={0} marginTop={-props.scrollOffset}>
         {props.banner}
-        {props.items.map((it, i) => renderItem(it, i))}
+        {props.items.map((it, i) => renderItem(it, i, theme))}
       </Box>
     </Box>
   )

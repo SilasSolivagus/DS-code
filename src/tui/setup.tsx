@@ -4,7 +4,8 @@
 import React, { useState, useRef } from 'react'
 import { render, Box, Text, useInput, useApp } from 'ink'
 import { saveApiKey } from '../config.js'
-import { T } from './theme.js'
+import { DEFAULT_THEME } from './theme.js'
+const T = DEFAULT_THEME
 
 export function Setup(props: { onDone: () => void }) {
   const [val, setVal] = useState('')

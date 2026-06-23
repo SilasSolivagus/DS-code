@@ -94,9 +94,6 @@ export function useThemeControl(): { themeName: string; setThemeName: (n: string
   return { themeName, setThemeName }
 }
 
-// 临时向后兼容：Task 9 迁移 13 消费点到 useTheme() 后删除
-export const T = DEFAULT_THEME
-
 export const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
 
 // CC 风格工作 spinner：星号动画帧 + 中文俏皮动名词（CC 轮换 Cogitating/Pondering 等）

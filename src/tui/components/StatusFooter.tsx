@@ -4,12 +4,12 @@
 // 已剔除 CC 的云端专属信息（5h 配额窗口、hooks、auto-mode 循环）——deepcode 是按 token 计费的 DeepSeek。
 import React from 'react'
 import { Box, Text } from 'ink'
-import { T } from '../theme.js'
+import { useTheme, DEFAULT_THEME } from '../theme.js'
 
 export function contextBarColor(pct: number): string {
-  if (pct >= 95) return T.err
-  if (pct >= 80) return T.warn
-  return T.accent
+  if (pct >= 95) return DEFAULT_THEME.err
+  if (pct >= 80) return DEFAULT_THEME.warn
+  return DEFAULT_THEME.accent
 }
 
 function fmtK(n: number): string {
@@ -40,6 +40,7 @@ export function StatusFooter(props: {
   effortLevel: 'low' | 'medium' | 'high'
   toolCounts: Array<{ name: string; n: number }>
 }) {
+  const T = useTheme()
   const usedPct = props.contextWindow > 0 ? (props.contextUsed / props.contextWindow) * 100 : 0
 
   // 对照 CC 真实样式（图6）：`[模型 | 模式] | cwd git:(分支)` / `Context used/window · $花费`

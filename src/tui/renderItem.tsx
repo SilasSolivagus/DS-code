@@ -3,7 +3,7 @@
 // 行为与抽出前完全一致——任何改动都会破坏现有 transcript 回归测试。
 import React from 'react'
 import { Box, Text } from 'ink'
-import { T } from './theme.js'
+import type { Theme } from './theme.js'
 import { renderMarkdown } from './markdown.js'
 import { ToolLine } from './components/ToolLine.js'
 import { withBullet } from './withBullet.js'
@@ -18,12 +18,12 @@ export function isDone(item: TranscriptItem): boolean {
   return true
 }
 
-export function renderItem(item: TranscriptItem, index: number): React.ReactNode {
+export function renderItem(item: TranscriptItem, index: number, theme: Theme): React.ReactNode {
   switch (item.kind) {
     case 'user':
       return (
         <Box key={index}>
-          <Text color={T.accent}>{'> '}</Text>
+          <Text color={theme.accent}>{'> '}</Text>
           <Text dimColor>{item.text}</Text>
         </Box>
       )
@@ -31,7 +31,7 @@ export function renderItem(item: TranscriptItem, index: number): React.ReactNode
     case 'assistant':
       if (item.done) {
         // 完成：markdown 渲染（ANSI 着色串），⏺ 项目符号 + 悬挂缩进
-        return <Box key={index}>{withBullet(renderMarkdown(item.text))}</Box>
+        return <Box key={index}>{withBullet(renderMarkdown(item.text), theme)}</Box>
       }
       // 进行中：流式增量 markdown 渲染（稳定前缀缓存 + 末尾重算）
       return <Box key={index}><StreamingMarkdown text={item.text} /></Box>
@@ -83,7 +83,7 @@ export function renderItem(item: TranscriptItem, index: number): React.ReactNode
       )
 
     case 'notice': {
-      const color = item.level === 'error' ? T.err : item.level === 'warn' ? T.warn : undefined
+      const color = item.level === 'error' ? theme.err : item.level === 'warn' ? theme.warn : undefined
       return (
         <Box key={index}>
           <Text dimColor={!color} color={color}>{item.text}</Text>

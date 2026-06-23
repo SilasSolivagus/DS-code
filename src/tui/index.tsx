@@ -5,10 +5,12 @@ import React from 'react'
 import { render } from 'ink'
 import { App } from './App.js'
 import { FullscreenApp } from './FullscreenApp.js'
+import { ThemeProvider } from './theme.js'
 import { enterAltScreen, installCleanup } from './altscreen.js'
 import { makeMouseFilteredStdin } from './mouseStdin.js'
 import { emitWheel } from './wheel.js'
 import { installTaskCleanup, cleanupOldTaskLogs } from '../tasks.js'
+import { loadSettings } from '../config.js'
 import type OpenAI from 'openai'
 
 export async function startTui(opts: {
@@ -43,14 +45,17 @@ export async function startTui(opts: {
     cleanupFull = () => { dispose(); fullLeave() }
   }
   try {
+    const initialTheme = loadSettings().theme ?? 'dark'
     const { waitUntilExit } = render(
-      <Root
-        client={opts.client as any}
-        yolo={opts.yolo}
-        cwd={process.cwd()}
-        continueSession={opts.continueSession}
-        flagSettingsPath={opts.flagSettingsPath}
-      />,
+      <ThemeProvider initial={initialTheme}>
+        <Root
+          client={opts.client as any}
+          yolo={opts.yolo}
+          cwd={process.cwd()}
+          continueSession={opts.continueSession}
+          flagSettingsPath={opts.flagSettingsPath}
+        />
+      </ThemeProvider>,
       { exitOnCtrlC: false, ...(customStdin ? { stdin: customStdin } : {}) },
     )
     await waitUntilExit()

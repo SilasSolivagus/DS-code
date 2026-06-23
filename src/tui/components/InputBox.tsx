@@ -7,7 +7,7 @@
 // 读 ref 而非闭包，避免连续按键（↑↑↓）时读到旧状态。
 import React, { useState, useRef, useEffect } from 'react'
 import { Box, Text, useInput } from 'ink'
-import { T } from '../theme.js'
+import { useTheme } from '../theme.js'
 
 export function InputBox(props: {
   onSubmit: (text: string) => void
@@ -28,6 +28,7 @@ export function InputBox(props: {
   /** 当前 steer 队列项（展示排队预览） */
   steerQueueItems?: readonly { value: string; priority?: string }[]
 }) {
+  const T = useTheme()
   const [value, setValue] = useState('')
   const [pending, setPending] = useState('')        // \ 续行累积
   const [histIdx, setHistIdx] = useState(-1)        // -1 = 不在历史

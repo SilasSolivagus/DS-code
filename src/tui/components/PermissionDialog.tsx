@@ -2,7 +2,7 @@
 // 权限确认弹窗：accent 边框面板，diff 预览，高危警告，CC 式 1/2/3 编号菜单（↑↓+Enter 方向键 / 数字键 / y/n/a 快捷键）。
 import React, { useState, useEffect } from 'react'
 import { Box, Text, useInput } from 'ink'
-import { T } from '../theme.js'
+import { useTheme } from '../theme.js'
 import { buildPreview } from '../diffPreview.js'
 import type { PendingAsk } from '../useChat.js'
 import { type Decision, permissionSourceName } from '../../permissions.js'
@@ -17,6 +17,7 @@ export function PermissionDialog(props: {
   ask: PendingAsk
   onDecide: (d: Decision) => void
 }) {
+  const T = useTheme()
   const { ask, onDecide } = props
   const preview = buildPreview(ask.toolName, ask.desc)
   const [idx, setIdx] = useState(0)

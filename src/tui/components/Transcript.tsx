@@ -9,12 +9,14 @@
 // 从而保证 done 项迁入时不重复输出。
 import React from 'react'
 import { Box, Static } from 'ink'
+import { useTheme } from '../theme.js'
 import type { TranscriptItem } from '../useChat.js'
 import { renderItem, isDone } from '../renderItem.js'
 
 type StaticEntry = TranscriptItem | { __banner: true }
 
 export function Transcript({ items, banner }: { items: TranscriptItem[]; banner?: React.ReactNode }) {
+  const theme = useTheme()
   const doneItems = items.filter(isDone)
   const liveItems = items.filter(item => !isDone(item))
   // 欢迎框作为 Static 第一项：开机渲染一次、随对话滚入历史（仿 CC）——既不在说话后消失，
@@ -27,14 +29,14 @@ export function Transcript({ items, banner }: { items: TranscriptItem[]; banner?
       <Static items={staticItems}>
         {(item, index) => (
           <Box key={index}>
-            {'__banner' in item ? banner : renderItem(item, index)}
+            {'__banner' in item ? banner : renderItem(item, index, theme)}
           </Box>
         )}
       </Static>
 
       {/* 动态区：进行中的项 */}
       <Box flexDirection="column">
-        {liveItems.map((item, i) => renderItem(item, items.indexOf(item)))}
+        {liveItems.map((item, i) => renderItem(item, items.indexOf(item), theme))}
       </Box>
     </Box>
   )

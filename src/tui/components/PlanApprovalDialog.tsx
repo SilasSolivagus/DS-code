@@ -6,7 +6,7 @@
 // 强行复用需要额外转接层，反而增加耦合和理解成本。
 import React, { useState, useEffect } from 'react'
 import { Box, Text, useInput } from 'ink'
-import { T } from '../theme.js'
+import { useTheme } from '../theme.js'
 import type { PendingPlanApproval } from '../useChat.js'
 
 const OPTIONS: Array<{ label: string; approved: boolean }> = [
@@ -20,6 +20,7 @@ export function PlanApprovalDialog(props: {
   pending: PendingPlanApproval
   onDecide: (approved: boolean) => void
 }) {
+  const T = useTheme()
   const { pending, onDecide } = props
   const [idx, setIdx] = useState(0)
 
