@@ -1,6 +1,6 @@
 // test/promptSections.test.ts
 import { describe, it, expect } from 'vitest'
-import { SYSTEM_SECTION, DOING_TASKS_SECTION } from '../src/prompt.js'
+import { SYSTEM_SECTION, DOING_TASKS_SECTION, TOOLS_SECTION } from '../src/prompt.js'
 
 describe('SYSTEM_SECTION', () => {
   it('以 # 系统 标题开头', () => {
@@ -45,5 +45,21 @@ describe('DOING_TASKS_SECTION', () => {
   it('不再含 HTML 优于 curses 偏好', () => {
     expect(DOING_TASKS_SECTION).not.toContain('HTML')
     expect(DOING_TASKS_SECTION).not.toContain('curses')
+  })
+})
+
+describe('TOOLS_SECTION', () => {
+  it('以 # 用好工具 开头', () => {
+    expect(TOOLS_SECTION.startsWith('# 用好工具')).toBe(true)
+  })
+  it('含并行只读调用规则', () => {
+    expect(TOOLS_SECTION).toContain('并行')
+  })
+  it('含完整工具路由（Edit 不 sed/Write 不 heredoc）', () => {
+    expect(TOOLS_SECTION).toContain('sed')
+    expect(TOOLS_SECTION).toContain('heredoc')
+  })
+  it('含子代理别重复干活', () => {
+    expect(TOOLS_SECTION).toContain('子代理')
   })
 })

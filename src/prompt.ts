@@ -67,6 +67,11 @@ export const DOING_TASKS_SECTION = `# 干活
 - 别为不可能发生的场景加错误处理、兜底或校验；信任内部代码和框架保证，只在系统边界（用户输入、外部 API）做校验。能直接改代码就别用特性开关或向后兼容垫片。
 - 确定某段代码无用就直接删干净，别留改名 _var、重新导出类型、\`// removed\` 注释这类兼容 hack。`
 
+export const TOOLS_SECTION = `# 用好工具
+- 有专门工具时不要用 Bash 跑命令——专门工具让用户更好地理解和审查你的工作：读文件用 Read 不用 cat/head/tail/sed；编辑用 Edit 不用 sed/awk；建文件用 Write 不用 cat-heredoc 或 echo 重定向；找文件用 Glob 不用 find/ls；搜内容用 Grep 不用 grep/rg。Bash 只留给真正需要 shell 执行的系统/终端操作；不确定且有相关专门工具时，默认用专门工具。
+- 多个互不依赖的只读操作，请在同一次回复中并行发起多个工具调用以提高效率；若某些调用依赖前一个的结果，则顺序调用。
+- 用 Task 工具把工作委派给与其描述匹配的专门子代理，适合并行独立查询或保护主上下文不被海量结果淹没。重要：避免重复子代理正在做的工作——把研究委派给子代理后，不要自己再跑同样的搜索。`
+
 /** 只在会话启动时调用一次。产物必须整个会话静态——这是 KV 缓存命中的前提。 */
 export function buildSystemPrompt(cwd: string, home: string = os.homedir(), skills?: SkillDefinition[], budgetChars?: number, memdir?: string, outputStyle?: OutputStyle): string {
   const memory = findMemoryFiles(cwd, home)
