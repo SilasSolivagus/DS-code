@@ -45,13 +45,15 @@ describe('parseToolList', () => {
 describe('resolveAgentModelAlias', () => {
   it('inherit', () => { expect(resolveAgentModelAlias('inherit')).toBe('inherit') })
   it('haiku → flash', () => { expect(resolveAgentModelAlias('haiku')).toBe('flash') })
-  it('sonnet/opus → inherit', () => {
-    expect(resolveAgentModelAlias('sonnet')).toBe('inherit')
-    expect(resolveAgentModelAlias('Opus')).toBe('inherit')
+  it('sonnet/opus → smart（能力档升级）', () => {
+    expect(resolveAgentModelAlias('sonnet')).toBe('smart')
+    expect(resolveAgentModelAlias('Opus')).toBe('smart')
   })
   it('未知 claude-* id → inherit 兜底', () => { expect(resolveAgentModelAlias('claude-opus-4-1')).toBe('inherit') })
-  it('其它 CC Anthropic 别名（best/opusplan/[1m]）→ inherit 兜底（不泄漏给 DeepSeek API）', () => {
-    for (const a of ['best', 'opusplan', 'sonnet[1m]', 'opus[1m]', 'Best', 'OpusPlan']) {
+  it('best → smart；opusplan/[1m] → inherit 兜底（不泄漏给 provider API）', () => {
+    expect(resolveAgentModelAlias('best')).toBe('smart')
+    expect(resolveAgentModelAlias('Best')).toBe('smart')
+    for (const a of ['opusplan', 'sonnet[1m]', 'opus[1m]', 'OpusPlan']) {
       expect(resolveAgentModelAlias(a)).toBe('inherit')
     }
   })
@@ -71,7 +73,7 @@ describe('parseAgentFile', () => {
     expect(def.agentType).toBe('code-reviewer')
     expect(def.whenToUse).toBe('Review code for bugs\nand style') // \n 反转义
     expect(def.tools).toEqual(['Read', 'Grep'])
-    expect(def.model).toBe('inherit') // sonnet 映射
+    expect(def.model).toBe('smart') // sonnet → smart（能力档升级）
     expect(def.getSystemPrompt()).toContain('代码审查专家')
   })
   it('缺 name → null（静默）', () => {
