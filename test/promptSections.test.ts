@@ -1,6 +1,6 @@
 // test/promptSections.test.ts
 import { describe, it, expect } from 'vitest'
-import { SYSTEM_SECTION, DOING_TASKS_SECTION, TOOLS_SECTION } from '../src/prompt.js'
+import { SYSTEM_SECTION, DOING_TASKS_SECTION, TOOLS_SECTION, CARE_SECTION } from '../src/prompt.js'
 
 describe('SYSTEM_SECTION', () => {
   it('以 # 系统 标题开头', () => {
@@ -61,5 +61,27 @@ describe('TOOLS_SECTION', () => {
   })
   it('含子代理别重复干活', () => {
     expect(TOOLS_SECTION).toContain('子代理')
+  })
+})
+
+describe('CARE_SECTION', () => {
+  it('以 # 谨慎执行破坏性动作 开头', () => {
+    expect(CARE_SECTION.startsWith('# 谨慎执行破坏性动作')).toBe(true)
+  })
+  it('含可逆性/影响范围核心概念', () => {
+    expect(CARE_SECTION).toContain('可逆性')
+    expect(CARE_SECTION).toContain('影响范围')
+  })
+  it('含授权范围规则（一次批准≠永久）', () => {
+    expect(CARE_SECTION).toContain('一次')
+    expect(CARE_SECTION).toContain('范围')
+  })
+  it('含三类破坏性例子（rm -rf / force-push / 发消息）', () => {
+    expect(CARE_SECTION).toContain('rm -rf')
+    expect(CARE_SECTION).toContain('force-push')
+  })
+  it('含「别用破坏性动作走捷径」+ 意外状态先调查', () => {
+    expect(CARE_SECTION).toContain('--no-verify')
+    expect(CARE_SECTION).toContain('调查')
   })
 })
