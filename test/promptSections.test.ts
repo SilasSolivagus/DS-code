@@ -79,6 +79,7 @@ describe('CARE_SECTION', () => {
   it('含三类破坏性例子（rm -rf / force-push / 发消息）', () => {
     expect(CARE_SECTION).toContain('rm -rf')
     expect(CARE_SECTION).toContain('force-push')
+    expect(CARE_SECTION).toContain('发消息')
   })
   it('含「别用破坏性动作走捷径」+ 意外状态先调查', () => {
     expect(CARE_SECTION).toContain('--no-verify')

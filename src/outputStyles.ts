@@ -8,7 +8,7 @@ export interface OutputStyle {
   name: string
   description: string
   prompt: string
-  /** true=追加在工作守则后；false=替换工作守则块。 */
+  /** true=在全部段后追加风格段；false=省略 # 干活 段（其余段恒在），由风格段承担编码指导。 */
   keepCodingInstructions: boolean
 }
 
