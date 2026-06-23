@@ -38,3 +38,9 @@ export function sessionMemoryPathFor(cwd: string, sessionId: string, home: strin
   const key = sanitizeProjectKey(path.resolve(cwd))
   return path.join(projectsBase(home), key, sessionId, 'session-memory', 'summary.md')
 }
+
+/** plan 文件目录：项目键同 memdir（git root，非 git fallback cwd）+ plans 子目录。 */
+export function planDirFor(cwd: string, home: string = os.homedir()): string {
+  const key = sanitizeProjectKey(findGitRoot(cwd) ?? path.resolve(cwd))
+  return path.join(projectsBase(home), key, 'plans')
+}
