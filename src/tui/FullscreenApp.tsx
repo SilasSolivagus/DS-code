@@ -236,6 +236,13 @@ export function FullscreenApp(props: {
     return () => clearTimeout(id)
   })
 
+  // 启动补一次重渲：首帧 totalH 未收敛→scrollH=availableH→caretRow 算到屏幕底部，光标会泊到左下。
+  // 布局稳定后强制重渲一次，让 IME 光标重新停泊到输入框真实行，无需用户先打字才归位。
+  useEffect(() => {
+    const id = setTimeout(() => setTick(x => x + 1), 60)
+    return () => clearTimeout(id)
+  }, [])
+
   return (
     <Box flexDirection="column" height={rows}>
       <ScrollView

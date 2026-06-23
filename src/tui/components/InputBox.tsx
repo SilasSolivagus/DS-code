@@ -132,7 +132,7 @@ export function InputBox(props: {
       <Box borderStyle="round" borderColor={T.accent} borderLeft={false} borderRight={false} paddingX={1}>
         <Text color={T.accent}>{'❯ '}</Text>
         {value === '' && pending === ''
-          ? <Text><Text inverse> </Text><Text dimColor>{props.busy ? '生成中… esc 中断' : '随便问点什么…'}</Text></Text>
+          ? <Text dimColor>{props.busy ? '生成中… esc 中断' : '随便问点什么…'}</Text>
           : <Text>{value}<Text inverse> </Text></Text>}
       </Box>
     </Box>
