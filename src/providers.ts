@@ -98,7 +98,7 @@ export function modelMeta(preset: ProviderPreset, modelId: string): ModelMeta {
 }
 
 export function belongsToProvider(preset: ProviderPreset, modelId: string): boolean {
-  if (preset.modelPrefix) return modelId.startsWith(preset.modelPrefix)
+  if (preset.modelPrefix) return modelId.startsWith(preset.modelPrefix + '-') || modelId === preset.modelPrefix
   return modelId in preset.meta || modelId === preset.models.fast || modelId === preset.models.smart
 }
 

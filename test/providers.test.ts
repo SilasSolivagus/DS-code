@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
+vi.mock('../src/config.js', () => ({
+  loadSettings: () => ({ permissions: { allow: [] }, costWarnCNY: 15, maxToolResultChars: 100000 }),
+}))
 import {
   BUILTIN_PROVIDERS, resolveActiveProvider, modelMeta, belongsToProvider,
   resolveSubModel, type ProviderPreset, type Settings,
@@ -58,6 +61,10 @@ describe('belongsToProvider', () => {
     expect(belongsToProvider(BUILTIN_PROVIDERS.deepseek, 'deepseek-v4.1-pro')).toBe(true)
     expect(belongsToProvider(BUILTIN_PROVIDERS.deepseek, 'glm-4.6')).toBe(false)
     expect(belongsToProvider(BUILTIN_PROVIDERS.glm, 'glm-5.3')).toBe(true)
+  })
+  it('前缀过宽守卫：无连字符的相近前缀不误判', () => {
+    expect(belongsToProvider(BUILTIN_PROVIDERS.deepseek, 'deepseekfoo')).toBe(false)
+    expect(belongsToProvider(BUILTIN_PROVIDERS.glm, 'glmbar')).toBe(false)
   })
   it('custom 无前缀 → meta∪models 成员判定', () => {
     const p: ProviderPreset = {
