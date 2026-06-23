@@ -6,6 +6,7 @@ import os from 'node:os'
 import { parse as parseYaml } from 'yaml'
 import type { AgentDefinition } from './tools/agentTypes.js'
 import { BUILTIN_AGENTS } from './tools/agentTypes.js'
+import { activeProvider, belongsToProvider, type ProviderPreset } from './providers.js'
 
 /** 切 frontmatter（`---\n…\n---`）+ body。无 frontmatter 或坏 YAML → data 空、body 原文（容错对齐 CC）。 */
 export function parseFrontmatter(raw: string): { data: Record<string, unknown>; body: string } {
@@ -30,18 +31,17 @@ export function parseToolList(value: unknown): string[] | undefined {
   return arr
 }
 
-/** CC 模型档 → deepcode 词汇（inherit/flash/deepseek-id）。加载时归一，agent.ts model 解析零改。
- *  **白名单策略（安全兜底）**：只透传 deepcode 原生可跑的值，其余一律 inherit——
- *  这样所有 CC Anthropic 别名（sonnet/opus/haiku/best/opusplan/sonnet[1m]/opus[1m]/claude-* 及未来新增）
- *  都安全落父模型，**绝不把跑不了的外部 model id 透传给 DeepSeek API**（对齐"兼容 CC 生态不崩"目标）。 */
-export function resolveAgentModelAlias(model: unknown): string | undefined {
+/** CC 模型档 → deepcode 子调用词汇（inherit/flash/smart/具体 id）。加载时归一，运行时由 resolveSubModel 落地。
+ *  能力档别名映射当前 provider；归属 active provider 的具体 id（含未来新档）透传；跨 provider/未知 → inherit。 */
+export function resolveAgentModelAlias(model: unknown, preset: ProviderPreset = activeProvider()): string | undefined {
   if (typeof model !== 'string' || !model.trim()) return undefined
-  const lower = model.trim().toLowerCase()
+  const raw = model.trim()
+  const lower = raw.toLowerCase()
   if (lower === 'inherit') return 'inherit'
-  if (lower === 'flash') return 'flash'              // deepcode cheap 档别名
-  if (lower === 'haiku') return 'flash'              // CC 弱档 → deepcode cheap 档（唯一便利映射）
-  if (lower.startsWith('deepseek')) return model.trim() // deepcode 原生具体 id 透传
-  return 'inherit'                                   // 其它（含全部 CC Anthropic 别名/未知 id）→ 跑不了 → 落父模型
+  if (lower === 'smart' || lower === 'opus' || lower === 'sonnet' || lower === 'best') return 'smart'
+  if (lower === 'fast' || lower === 'flash' || lower === 'haiku') return 'flash'
+  if (belongsToProvider(preset, raw)) return raw // active provider 具体 id（含 v4.1/glm-5.3 前向兼容）
+  return 'inherit'                                // 跨 provider / 未知 → 安全落父
 }
 
 /** 单 agent markdown → AgentDefinition。缺 name/description → null（对齐 CC：静默/记错跳过）。

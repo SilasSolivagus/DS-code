@@ -5,6 +5,25 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { clearAllTasks, drainNotifications, listTasks, getTask } from '../src/tasks.js'
 
+// 隔离真实 provider 配置：resolveSubModel 中 'flash'/'smart' 别名走 activeFastModel/activeSmartModel，
+// 同时覆盖 resolveSubModel 本身以确保 Explore flash 别名解析到 deepseek 档。
+vi.mock('../src/providers.js', async orig => {
+  const actual = await orig() as any
+  const fastModel = 'deepseek-v4-flash'
+  const smartModel = 'deepseek-v4-pro'
+  return {
+    ...actual,
+    activeFastModel: () => fastModel,
+    activeSmartModel: () => smartModel,
+    resolveSubModel: (alias: string | undefined, parent: string) => {
+      if (!alias || alias === 'inherit') return parent
+      if (alias === 'flash' || alias === 'fast') return fastModel
+      if (alias === 'smart') return smartModel
+      return alias
+    },
+  }
+})
+
 const script: Array<{ deltas?: any[]; result: any }> = []
 vi.mock('../src/api.js', () => ({
   chatStream: vi.fn(() =>

@@ -4,6 +4,20 @@ import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
+// 隔离真实 provider 配置：pinning activeProvider/activeFastModel 为 deepseek 档，
+// 使测试对 ~/.deepcode/settings.json 中 provider:glm 免疫（/model 切换、rotateModel 等依赖此）。
+vi.mock('../src/providers.js', async orig => {
+  const actual = await orig() as any
+  const deepseekPreset = actual.BUILTIN_PROVIDERS.deepseek
+  return {
+    ...actual,
+    activeProvider: () => deepseekPreset,
+    activeFastModel: () => 'deepseek-v4-flash',
+    activeSmartModel: () => 'deepseek-v4-pro',
+    belongsToProvider: (preset: any, modelId: string) => actual.belongsToProvider(deepseekPreset, modelId),
+  }
+})
+
 const script: Array<{ deltas?: any[]; result: any }> = []
 vi.mock('../src/api.js', async orig => ({
   ...(await orig() as any),
@@ -213,13 +227,13 @@ describe('createChatCore.runTurn', () => {
   })
 
   // ── Task 10: /model 参数化 ────────────────────────────────────────────────
-  it('/model <名> 切换到任意模型，notice 含 已切换到；非 deepseek 加计价提示', async () => {
+  it('/model <名> 切换到任意模型，notice 含 已切换到；非当前 provider 档加兜底提示', async () => {
     const core = createChatCore({ client: {} as any, yolo: true, cwd: '/tmp', sessionDir, onState: () => {} })
     await core.send('/model my-custom-model')
     expect(core.state.model).toBe('my-custom-model')
     const notices = core.state.transcript.filter(i => i.kind === 'notice') as any[]
     expect(notices.some(n => n.text.includes('已切换到') && n.text.includes('my-custom-model'))).toBe(true)
-    expect(notices.some(n => n.text.includes('非 deepseek 系列计价按 0 估算'))).toBe(true)
+    expect(notices.some(n => n.text.includes('非当前 provider 档，计价/上下文按兜底估算'))).toBe(true)
   })
 
   it('/model 无参从自定义模型切回 flash', async () => {

@@ -22,6 +22,7 @@ import { makeSkillTool } from './tools/skill.js'
 import { TaskListStore } from './taskList.js'
 import { costCNY } from './pricing.js'
 import { resolveDenyList, buildDenySourceMap } from './deny.js'
+import { activeFastModel } from './providers.js'
 import type { ToolContext } from './tools/types.js'
 import type { Usage } from './api.js'
 
@@ -39,7 +40,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
   const layered = loadLayeredSettings(process.cwd(), opts.flagSettingsPath)
   const settings = layered.settings
   const denySources = buildDenySourceMap(layered.permissionSources.deny)
-  const model = 'deepseek-v4-flash'
+  const model = settings.model ?? activeFastModel()
   let cwd = process.cwd()
   const agents = resolveAgents(cwd)
   const skills = loadSkills(cwd, undefined, settings.skills)

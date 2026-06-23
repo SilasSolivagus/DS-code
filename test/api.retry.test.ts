@@ -1,4 +1,16 @@
 import { describe, it, expect, vi } from 'vitest'
+
+// 隔离真实 provider 配置：mock loadSettings 返回默认 deepseek settings（无 provider），
+// 使 createClient 不受真实 ~/.deepcode/settings.json 中 provider:glm 影响，
+// 保证 createClient() 抛错时错误文案含 DEEPSEEK_API_KEY。
+vi.mock('../src/config.js', async orig => {
+  const actual = await orig() as any
+  return {
+    ...actual,
+    loadSettings: () => ({ permissions: { allow: [] }, costWarnCNY: 15, maxToolResultChars: 100_000 }),
+  }
+})
+
 import { withRetry } from '../src/api.js'
 
 const noSleep = async () => {}

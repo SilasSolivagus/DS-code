@@ -2,6 +2,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { summarize, rebuildMessages, shouldAutoCompact } from '../src/compact.js'
 
+// 隔离真实 provider 配置：pinning activeFastModel 为 deepseek 档，使测试对 ~/.deepcode/settings.json 免疫
+vi.mock('../src/providers.js', async orig => ({
+  ...(await orig() as any),
+  activeFastModel: () => 'deepseek-v4-flash',
+}))
+
 const script: Array<{ deltas?: any[]; result: any }> = []
 vi.mock('../src/api.js', () => ({
   chatStream: vi.fn(() =>

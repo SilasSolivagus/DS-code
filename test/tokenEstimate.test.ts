@@ -1,5 +1,11 @@
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, vi, beforeEach } from 'vitest'
+
+vi.mock('../src/config.js', () => ({ loadSettings: vi.fn(() => ({ provider: 'deepseek', permissions: { allow: [] }, costWarnCNY: 15, maxToolResultChars: 100000 })) }))
+
 import { estimateTextTokens, estimateMessagesTokens, resolveContextWindow, computeCompactThreshold, effectiveThreshold } from '../src/tokenEstimate.js'
+import { __resetProviderCache } from '../src/providers.js'
+
+beforeEach(() => __resetProviderCache())
 
 describe('estimateTextTokens', () => {
   it('空/undefined/null → 0', () => {
@@ -58,8 +64,8 @@ describe('resolveContextWindow', () => {
     expect(resolveContextWindow('deepseek-v4-flash')).toBe(1_000_000)
     expect(resolveContextWindow('deepseek-v4-pro')).toBe(1_000_000)
   })
-  it('未知模型 → 默认 200k', () => {
-    expect(resolveContextWindow('some-other-model')).toBe(200_000)
+  it('未知模型 → active provider defaultMeta（deepseek = 1M）', () => {
+    expect(resolveContextWindow('some-other-model')).toBe(1_000_000)
   })
   it('env 覆盖优先', () => {
     process.env.DEEPCODE_MAX_CONTEXT_TOKENS = '500000'
@@ -75,8 +81,8 @@ describe('computeCompactThreshold', () => {
   it('flash = 1M − 16k − 13k = 971k', () => {
     expect(computeCompactThreshold('deepseek-v4-flash')).toBe(971_000)
   })
-  it('未知模型 = 200k − 29k = 171k', () => {
-    expect(computeCompactThreshold('x')).toBe(171_000)
+  it('未知模型 = active defaultMeta window − 29k（deepseek = 1M − 29k = 971k）', () => {
+    expect(computeCompactThreshold('x')).toBe(971_000)
   })
 })
 
@@ -89,5 +95,22 @@ describe('effectiveThreshold', () => {
   })
   it('设了更大 → 取派生', () => {
     expect(effectiveThreshold('deepseek-v4-flash', 5_000_000)).toBe(971_000)
+  })
+})
+
+describe('resolveContextWindow 多 provider', () => {
+  const orig = process.env.DEEPCODE_MAX_CONTEXT_TOKENS
+  afterEach(() => { if (orig === undefined) delete process.env.DEEPCODE_MAX_CONTEXT_TOKENS; else process.env.DEEPCODE_MAX_CONTEXT_TOKENS = orig })
+  it('已知 deepseek 档 = 1M', () => {
+    delete process.env.DEEPCODE_MAX_CONTEXT_TOKENS
+    expect(resolveContextWindow('deepseek-v4-flash')).toBe(1_000_000)
+  })
+  it('未来 deepseek-v4.1-pro 走 defaultMeta = 1M（非全局 200k）', () => {
+    delete process.env.DEEPCODE_MAX_CONTEXT_TOKENS
+    expect(resolveContextWindow('deepseek-v4.1-pro')).toBe(1_000_000)
+  })
+  it('env 覆盖优先', () => {
+    process.env.DEEPCODE_MAX_CONTEXT_TOKENS = '50000'
+    expect(resolveContextWindow('deepseek-v4-flash')).toBe(50000)
   })
 })

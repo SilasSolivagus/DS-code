@@ -53,6 +53,8 @@ import { createRecaller } from '../services/memory/recall.js'
 import { findRelevantMemories } from '../memdir/findRelevantMemories.js'
 import { SteeringQueue, formatSteeringMessage, type SteeringItem } from '../steering.js'
 import { type SessionMemoryState, shouldUpdateSessionMemory, runSessionMemoryUpdate } from '../services/memory/sessionMemory.js'
+import { activeFastModel, activeProvider, belongsToProvider } from '../providers.js'
+import { resolveResumeModel, rotateModel } from './resumeModel.js'
 
 /** ! 直跑：同步执行，30s 超时，stdout+stderr 合并，超 20k 截断 */
 export function runBang(cmd: string, cwd: string): { output: string; code: number } {
@@ -226,7 +228,7 @@ export function createChatCore(opts: {
   let abort = new AbortController()
   const steerQueue = new SteeringQueue()
   let toolsRunning = 0 // 并发 tool 计数；steer() 据此判定是否附带软中断
-  let model = settings.model ?? 'deepseek-v4-flash'
+  let model = settings.model ?? activeFastModel()
   let tokenBudget: number | null = null // 2.1 sticky 预算（进程内，不落 session；+0k 清除）
   let budgetUsed = 0                     // 2.1 本次 send 累计输出 token（状态栏 budget 段分子）
   let thinking = false
@@ -350,7 +352,7 @@ export function createChatCore(opts: {
     const loaded = loadSession(file)
     messages.length = 0
     messages.push(...loaded.messages)
-    model = loaded.meta.model
+    model = resolveResumeModel(loaded.meta.model, activeProvider())
     thinking = loaded.meta.thinking
     effortLevel = loaded.meta.effortLevel ?? 'medium'
     // yolo 必须每次启动显式 --yolo，恢复的模式只允许 default/acceptEdits（含篡改文件兜底）
@@ -417,7 +419,7 @@ export function createChatCore(opts: {
     notice('info', `已恢复会话（${turns} 轮对话），继续写入 ${recovered.file}`)
     fireSessionStart('resume')
   } else {
-    session = newSession({ cwd, model, thinking, effortLevel, permMode }, sessionDir)
+    session = newSession({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id }, sessionDir)
     session.appendMessage(messages[0]) // 持久化 system 消息
     checkpointer = createCheckpointer(checkpointStoreFor(session.file))
     taskList.bind(sessionIdFromFile(session.file))
@@ -516,8 +518,9 @@ export function createChatCore(opts: {
       } catch { /* summary.md 不存在则跳过 */ }
     }
     const { summary, usage: u, truncated } = await summarize(opts.client, messagesForSummarize, ac.signal)
-    usageLog.push({ usage: u, model: 'deepseek-v4-flash' })
-    session.appendUsage(u, 'deepseek-v4-flash')
+    const sub = activeFastModel()
+    usageLog.push({ usage: u, model: sub })
+    session.appendUsage(u, sub)
     const rebuilt = rebuildMessages(messages, summary)
     const before = messages.length
     messages.length = 0
@@ -835,21 +838,21 @@ export function createChatCore(opts: {
       if (arg) {
         // /model <名>：切换到任意指定模型（配合自定义 baseURL 可接 OpenAI 兼容端点）
         model = arg
-        const isDeepSeek = arg.startsWith('deepseek')
-        const suffix = isDeepSeek ? '' : '（非 deepseek 系列计价按 0 估算）'
-        session.appendMeta({ cwd, model, thinking, effortLevel, permMode })
+        const known = belongsToProvider(activeProvider(), arg)
+        const suffix = known ? '' : '（非当前 provider 档，计价/上下文按兜底估算）'
+        session.appendMeta({ cwd, model, providerId: activeProvider().id, thinking, effortLevel, permMode })
         notice('info', `已切换到 ${model}${suffix}`)
       } else {
-        // /model 无参：flash↔pro 轮换（从自定义模型返回时，落到 flash）
-        model = model === 'deepseek-v4-flash' ? 'deepseek-v4-pro' : 'deepseek-v4-flash'
-        session.appendMeta({ cwd, model, thinking, effortLevel, permMode })
+        // /model 无参：active fast↔smart 轮换（从自定义模型返回时，落到 fast）
+        model = rotateModel(model, activeProvider())
+        session.appendMeta({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id })
         notice('info', `已切换到 ${model}`)
       }
       return
     }
     if (line === '/think') {
       thinking = !thinking
-      session.appendMeta({ cwd, model, thinking, effortLevel, permMode })
+      session.appendMeta({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id })
       notice('info', `thinking 模式：${thinking ? '开' : '关'}`)
       return
     }
@@ -857,12 +860,12 @@ export function createChatCore(opts: {
       const arg = line.slice('/effort'.length).trim().toLowerCase()
       if (arg === 'off') {
         thinking = false
-        session.appendMeta({ cwd, model, thinking, effortLevel, permMode })
+        session.appendMeta({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id })
         notice('info', 'thinking 模式：关')
       } else if (arg === 'low' || arg === 'medium' || arg === 'high') {
         effortLevel = arg
         thinking = true
-        session.appendMeta({ cwd, model, thinking, effortLevel, permMode })
+        session.appendMeta({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id })
         notice('info', `思考档位：${arg}（thinking 开）`)
       } else {
         notice('info', `当前思考档位：${thinking ? effortLevel : 'off'}。用法：/effort low|medium|high|off`)
@@ -873,7 +876,7 @@ export function createChatCore(opts: {
     if (line === '/accept') {
       if (opts.yolo) { notice('info', '当前是 yolo 模式，所有操作均已放行'); return }
       permMode = permMode === 'acceptEdits' ? 'default' : 'acceptEdits'
-      session.appendMeta({ cwd, model, thinking, effortLevel, permMode })
+      session.appendMeta({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id })
       notice('info', `acceptEdits 模式：${permMode === 'acceptEdits' ? '开（Edit/Write 免确认，Bash 仍需确认）' : '关'}`)
       return
     }
@@ -907,7 +910,7 @@ export function createChatCore(opts: {
       compactWarned = false
       consecutiveCompactFailures = 0
       pendingSessionContext = null
-      session = newSession({ cwd, model, thinking, effortLevel, permMode }, sessionDir)
+      session = newSession({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id }, sessionDir)
       session.appendMessage(messages[0])
       checkpointer = createCheckpointer(checkpointStoreFor(session.file))
       taskList.bind(sessionIdFromFile(session.file))

@@ -3,7 +3,7 @@ import type OpenAI from 'openai'
 import { chatStream, type Usage } from './api.js'
 import { runLoop } from './loop.js'
 import { allTools } from './tools/index.js'
-import { SUB_MODEL } from './tools/constants.js'
+import { activeFastModel } from './providers.js'
 import { subagentPermissionDecision } from './tools/agent.js'
 import type { HookEngineDeps } from './hooks.js'
 import { registerAsync } from './hookTasks.js'
@@ -19,7 +19,7 @@ const HOOK_EVAL_SCHEMA = z.object({ ok: z.boolean(), reason: z.string().optional
 
 /** 把 hook.model（'flash'/'inherit'/具体 id/undefined）解析成真实模型 id。 */
 function resolveModel(model: string | undefined, getModel: () => string): string {
-  if (!model || model === 'flash') return SUB_MODEL
+  if (!model || model === 'flash') return activeFastModel()
   if (model === 'inherit') return getModel()
   return model
 }

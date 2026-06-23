@@ -4,7 +4,7 @@ import path from 'node:path'
 import os from 'node:os'
 import {
   parsePermissions, parseHooksConfig, parseMcpServers, parseSkillsConfig,
-  parseWebSearchConfig, parseStringArray, type Settings,
+  parseWebSearchConfig, parseStringArray, parseProvidersConfig, type Settings,
 } from './config.js'
 import { parseMemoryConfig } from './memdir/memoryConfig.js'
 
@@ -14,6 +14,7 @@ export type SettingScope = 'user' | 'project' | 'local' | 'flag'
 export const DANGEROUS_TOP_KEYS = [
   'apiKey', 'baseURL', 'hooks', 'mcpServers', 'webSearch',
   'allowedHttpHookUrls', 'httpHookAllowedEnvVars',
+  'provider', 'providers',
 ] as const
 
 /** 深拷 raw 后剥离危险字段；嵌套删 permissions.allow / skills.sources。返回剥掉的键名（含嵌套路径）。 */
@@ -143,7 +144,7 @@ function parsePresent(raw: any): Record<string, unknown> {
     if (perm.deny) out.deny = perm.deny
     if (Object.keys(out).length) p.permissions = out
   }
-  for (const k of ['compactTokens', 'costWarnCNY', 'maxToolResultChars', 'model', 'baseURL', 'apiKey', 'inline'] as const) {
+  for (const k of ['compactTokens', 'costWarnCNY', 'maxToolResultChars', 'model', 'baseURL', 'apiKey', 'inline', 'provider'] as const) {
     if (raw[k] !== undefined) p[k] = raw[k]
   }
   if ('hooks' in raw) { const h = parseHooksConfig(raw.hooks); if (h) p.hooks = h }
@@ -153,6 +154,7 @@ function parsePresent(raw: any): Record<string, unknown> {
   if ('allowedHttpHookUrls' in raw) { const a = parseStringArray(raw.allowedHttpHookUrls); if (a) p.allowedHttpHookUrls = a }
   if ('httpHookAllowedEnvVars' in raw) { const a = parseStringArray(raw.httpHookAllowedEnvVars); if (a) p.httpHookAllowedEnvVars = a }
   if ('memory' in raw) p.memory = parseMemoryConfig(raw.memory)
+  if ('providers' in raw) { const pv = parseProvidersConfig(raw.providers); if (pv) p.providers = pv }
   return p
 }
 
