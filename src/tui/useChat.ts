@@ -22,7 +22,7 @@ import { onNotification, drainNotifications, formatNotification, registerTask, u
 import { runAutoDream } from '../services/memory/autoDream.js'
 import { buildSystemPrompt, findMemoryFiles, PLAN_MODE_GUIDANCE } from '../prompt.js'
 import { formatMemory } from '../memory.js'
-import { loadSettings, loadRawUserSettings, addUserAllowRule, removeUserAllowRule, listUserAllowRules, SETTINGS_FILE } from '../config.js'
+import { loadSettings, loadRawUserSettings, saveRawUserSettings, addUserAllowRule, removeUserAllowRule, listUserAllowRules, SETTINGS_FILE } from '../config.js'
 import { loadLayeredSettings } from '../settingsLayers.js'
 import { runHooks } from '../hooks.js'
 import { makeHookRuntime } from '../hookRuntime.js'
@@ -211,10 +211,12 @@ export interface ChatCore {
   dispose(): void
   modelList(): import('../providers.js').ModelListItem[]
   applyModel(id: string): void
+  outputStyleList(): { name: string; description: string }[]
+  applyOutputStyle(name: string): void
 }
 
 const HELP_TEXT =
-  '/model  无参打开模型选择器；/model <名> 直接切到指定模型\n/think  thinking 模式开关\n/effort 思考档位 low/medium/high/off\n/accept acceptEdits 模式开关（Edit/Write 免确认，Bash 仍确认）\n/plan   plan 模式开关（只读探索+写计划，ExitPlanMode 请用户审批）\n/add-dir <路径> 添加工作目录白名单（plan 模式围栏扩展）\n/cost   本会话花费明细\n/context 上下文占比与上次 usage\n/stats  本会话统计（轮数/工具/token/缓存/花费）\n/copy   复制上条回复到剪贴板\n/memory 查看当前生效的记忆文件\n/compact 手动压缩对话历史\n/clear  清空对话（开新会话文件，花费累计保留）\n/resume 列出并恢复本目录历史会话\n/rewind 回退到某轮之前（仅对话/仅代码/两者）\n/export 导出对话到 markdown 文件\n/permissions 查看/删除已保存权限规则（/permissions rm <编号>）\n/init   分析项目生成 DEEPCODE.md\n/keybindings 查看快捷键\n/exit   退出\n自定义命令：~/.deepcode/commands/*.md 或 <项目>/.deepcode/commands/*.md（$ARGUMENTS 占位）'
+  '/model  无参打开模型选择器；/model <名> 直接切到指定模型\n/think  thinking 模式开关\n/effort 思考档位 low/medium/high/off\n/accept acceptEdits 模式开关（Edit/Write 免确认，Bash 仍确认）\n/plan   plan 模式开关（只读探索+写计划，ExitPlanMode 请用户审批）\n/add-dir <路径> 添加工作目录白名单（plan 模式围栏扩展）\n/cost   本会话花费明细\n/context 上下文占比与上次 usage\n/stats  本会话统计（轮数/工具/token/缓存/花费）\n/copy   复制上条回复到剪贴板\n/memory 查看当前生效的记忆文件\n/compact 手动压缩对话历史\n/clear  清空对话（开新会话文件，花费累计保留）\n/resume 列出并恢复本目录历史会话\n/rewind 回退到某轮之前（仅对话/仅代码/两者）\n/export 导出对话到 markdown 文件\n/permissions 查看/删除已保存权限规则（/permissions rm <编号>）\n/init   分析项目生成 DEEPCODE.md\n/keybindings 查看快捷键\n/output-style 选择输出风格（default/Explanatory/Learning/自定义）\n/exit   退出\n自定义命令：~/.deepcode/commands/*.md 或 <项目>/.deepcode/commands/*.md（$ARGUMENTS 占位）'
 
 export function createChatCore(opts: {
   client: OpenAI
@@ -283,7 +285,9 @@ export function createChatCore(opts: {
         }),
       })
     : null
-  const messages: any[] = [{ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars, memdir, resolveOutputStyle(settings.outputStyle, loadOutputStyles())) }]
+  const outputStyleCache = loadOutputStyles()
+  let outputStyleName = settings.outputStyle ?? 'default'
+  const messages: any[] = [{ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars, memdir, resolveOutputStyle(outputStyleName, outputStyleCache)) }]
   const usageLog: UsageRecord[] = []
   let session!: SessionHandle
   const hookDeps = {
@@ -379,7 +383,7 @@ export function createChatCore(opts: {
     taskList.bind(sessionIdFromFile(session.file)); compacted = false; lastPromptTokens = 0; baselineLen = 0; consecutiveCompactFailures = 0; compactWarned = false
     // doCompact 崩溃在 appendCompact 与首条 re-append 之间的兜底
     if (messages.length === 0 || messages[0]?.role !== 'system') {
-      messages.unshift({ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars, memdir, resolveOutputStyle(settings.outputStyle, loadOutputStyles())) })
+      messages.unshift({ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars, memdir, resolveOutputStyle(outputStyleName, outputStyleCache)) })
       session.appendMessage(messages[0])
     }
     nextTurnId = loaded.maxTurnId + 1
@@ -1102,6 +1106,22 @@ export function createChatCore(opts: {
     await runTurn(line, userText)
   }
 
+  const applyOutputStyle = (name: string): void => {
+    outputStyleName = name
+    const style = resolveOutputStyle(name, outputStyleCache)
+    const rebuilt = buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars, memdir, style)
+    if (messages[0]?.role === 'system') messages[0] = { role: 'system', content: rebuilt }
+    else messages.unshift({ role: 'system', content: rebuilt })
+    try { const raw = loadRawUserSettings(); raw.outputStyle = name; saveRawUserSettings(raw) } catch { /* 持久化失败不阻断热切 */ }
+    notice('info', `输出风格：${name}`)
+    setState()
+  }
+
+  const outputStyleList = (): { name: string; description: string }[] => [
+    { name: 'default', description: '默认（不额外注入风格）' },
+    ...outputStyleCache.map(s => ({ name: s.name, description: s.description })),
+  ]
+
   return {
     get state() { return state },
     send,
@@ -1218,6 +1238,8 @@ export function createChatCore(opts: {
     dispose: () => { fireSessionEnd('exit'); unsubNotification(); unsubSteer(); steerQueue.clear(); void mcpCleanup?.() },
     modelList: () => providerModelList(activeProvider(), model),
     applyModel,
+    outputStyleList,
+    applyOutputStyle,
   }
 }
 
