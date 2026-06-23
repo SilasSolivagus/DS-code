@@ -213,7 +213,7 @@ describe('createChatCore.runTurn', () => {
   })
 
   // ── Task 10: /model 参数化 ────────────────────────────────────────────────
-  it('/model <名> 切换到任意模型，notice 含 已切换到；非 deepseek 加计价提示', async () => {
+  it('/model <名> 切换到任意模型，notice 含 已切换到；非当前 provider 档加兜底提示', async () => {
     const core = createChatCore({ client: {} as any, yolo: true, cwd: '/tmp', sessionDir, onState: () => {} })
     await core.send('/model my-custom-model')
     expect(core.state.model).toBe('my-custom-model')

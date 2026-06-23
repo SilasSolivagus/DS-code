@@ -13,7 +13,7 @@ describe('costCNY 多 provider', () => {
   it('未知 glm 档走 defaultMeta（非零）', () => {
     expect(costCNY('glm-5.3', 1_000_000, 0, 0)).toBeGreaterThan(0)
   })
-  it('cacheSavingsCNY glm-5.2 非负', () => {
-    expect(cacheSavingsCNY('glm-5.2', 1000)).toBeGreaterThanOrEqual(0)
+  it('cacheSavingsCNY glm-5.2 恒正', () => {
+    expect(cacheSavingsCNY('glm-5.2', 1000)).toBeGreaterThan(0)
   })
 })

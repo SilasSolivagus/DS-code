@@ -6,7 +6,7 @@ export function resolveResumeModel(sessionModel: string, preset: ProviderPreset)
   return belongsToProvider(preset, sessionModel) ? sessionModel : preset.models.fast
 }
 
-/** /model 无参轮换：当前是 smart → fast，否则（fast 或自定义档）→ smart 的对立面；非 fast/smart → 落 fast。 */
+/** /model 无参轮换：smart → fast；fast → smart；非 fast/smart（自定义档）→ fast。 */
 export function rotateModel(current: string, preset: ProviderPreset): string {
   if (current === preset.models.smart) return preset.models.fast
   if (current === preset.models.fast) return preset.models.smart
