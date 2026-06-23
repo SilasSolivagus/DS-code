@@ -899,6 +899,18 @@ export function createChatCore(opts: {
       notice('info', `acceptEdits 模式：${permMode === 'acceptEdits' ? '开（Edit/Write 免确认，Bash 仍需确认）' : '关'}`)
       return
     }
+    if (line === '/cycle-mode') {
+      // Shift+Tab 用：default → acceptEdits → plan → default 三态循环（绝对定模式，回得到 default）。
+      if (opts.yolo) return // yolo 仅 --yolo 启动，不参与循环
+      if (permMode === 'default') permMode = 'acceptEdits'
+      else if (permMode === 'acceptEdits') { prePlanMode = 'default'; permMode = 'plan' }
+      else { permMode = 'default'; prePlanMode = 'default' } // plan → default
+      session.appendMeta({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id })
+      notice('info', permMode === 'plan'
+        ? 'plan 模式：只读探索 + 写计划，完成后调用 ExitPlanMode 请审批'
+        : `已切换到 ${permMode} 模式`)
+      return
+    }
     if (line === '/plan') {
       if (opts.yolo) { notice('info', '当前是 yolo 模式，所有操作均已放行，无需 plan 模式'); return }
       if (permMode === 'plan') {

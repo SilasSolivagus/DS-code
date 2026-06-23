@@ -78,14 +78,17 @@ export function App(props: {
   }, [!!state.pendingAsk, !!state.pendingQuestion, !!state.pendingPlanApproval, resumeMode, rewindStep])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ctrl+C 两次退出（App 层统一管理，exitOnCtrlC: false 时才需要）
-  // Ctrl+C 两次退出。
-  // （Shift+Tab 三态切换经真机冒烟确认在 ink 下是死键：Shift+Tab=ESC[Z 不被 useInput 识别——已移除。
-  //   进出 plan / acceptEdits 模式改用 /plan、/accept 命令，是保底可达路径。）
+  // Ctrl+C 两次退出 + Shift+Tab 循环权限模式（default→acceptEdits→plan→default）。
+  // Shift+Tab=ESC[Z，ink useInput 在多数终端识别为 key.tab+key.shift（QuestionDialog 亦用此键回上一题）；
+  // 个别终端不识别时此分支静默不触发，可用 /plan、/accept 命令作保底。
   useInput((input, key) => {
     if (key.ctrl && input === 'c') {
       const now = Date.now()
       if (now - lastSigint < 2000) exit()
       else setLastSigint(now)
+    }
+    if (key.shift && key.tab && !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion && !resumeMode && !rewindStep) {
+      void core.send('/cycle-mode')
     }
   })
 
