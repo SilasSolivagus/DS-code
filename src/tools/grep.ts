@@ -58,6 +58,7 @@ export const grepTool: Tool<typeof schema> = {
   inputSchema: schema,
   isReadOnly: true,
   needsPermission: () => false,
+  workspacePaths: (input, cwd) => [input.path ? path.resolve(cwd, input.path) : path.resolve(cwd)],
   async call(input, ctx) {
     const dir = input.path ? path.resolve(ctx.cwd(), input.path) : ctx.cwd()
     let result = await rgSearch(input.pattern, dir, input.glob)

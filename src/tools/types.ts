@@ -43,5 +43,7 @@ export interface Tool<S extends z.ZodTypeAny = z.ZodTypeAny> {
   needsPermission(input: z.infer<S>): false | string
   /** 本次调用会触碰的绝对路径（权限层 deny 检查用）。工具自管路径语义，无则不参与 deny。 */
   deniablePaths?(input: z.infer<S>, cwd: string): string[]
+  /** 本次调用会访问的绝对路径集（工作目录围栏用）。文件工具实现之；无则不参与围栏。 */
+  workspacePaths?(input: z.infer<S>, cwd: string): string[]
   call(input: z.infer<S>, ctx: ToolContext): Promise<string>
 }
