@@ -16,7 +16,7 @@ export interface AgentDefinition {
 
 // 全局子代理 deny（本期关键安全边界）：连通配也解析不到。
 // Edit/Write/NotebookEdit = 可写留给 L-020；Agent = 禁止子代理再派子代理（防无限递归）。
-export const GLOBAL_SUBAGENT_DENY = ['Edit', 'Write', 'Agent', 'NotebookEdit']
+export const GLOBAL_SUBAGENT_DENY = ['Edit', 'Write', 'Agent', 'NotebookEdit', 'ExitPlanMode']
 
 /**
  * 照搬 CC resolveAgentTools 三步：deny 永远赢 allow；无 allow = 通配 = 全池减 deny。

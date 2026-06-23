@@ -9,8 +9,9 @@ import { editTool } from './edit.js'
 import { writeTool } from './write.js'
 import { configTool } from './configTool.js'
 import { notebookEditTool } from './notebookEdit.js'
+import { exitPlanModeTool } from './exitPlanMode.js'
 
-export const allTools: Tool<any>[] = [readTool, globTool, grepTool, bashTool, editTool, writeTool, notebookEditTool, configTool]
+export const allTools: Tool<any>[] = [readTool, globTool, grepTool, bashTool, editTool, writeTool, notebookEditTool, configTool, exitPlanModeTool]
 
 export function toApiTools(tools: Tool<any>[]) {
   return tools.map(t => ({
