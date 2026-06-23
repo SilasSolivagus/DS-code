@@ -54,7 +54,7 @@ import { createRecaller } from '../services/memory/recall.js'
 import { findRelevantMemories } from '../memdir/findRelevantMemories.js'
 import { SteeringQueue, formatSteeringMessage, type SteeringItem } from '../steering.js'
 import { type SessionMemoryState, shouldUpdateSessionMemory, runSessionMemoryUpdate } from '../services/memory/sessionMemory.js'
-import { activeFastModel, activeProvider, belongsToProvider } from '../providers.js'
+import { activeFastModel, activeProvider, belongsToProvider, modelList as providerModelList } from '../providers.js'
 import { resolveResumeModel, rotateModel } from './resumeModel.js'
 
 /** ! 直跑：同步执行，30s 超时，stdout+stderr 合并，超 20k 截断 */
@@ -208,10 +208,12 @@ export interface ChatCore {
   rewind(toTurnId: number, mode: 'conversation' | 'code' | 'both'): void
   /** 退订后台任务通知订阅，避免泄漏（core 生命周期 = 进程，App 无需调用；测试与正确性需要） */
   dispose(): void
+  modelList(): import('../providers.js').ModelListItem[]
+  applyModel(id: string): void
 }
 
 const HELP_TEXT =
-  '/model  flash↔pro 切换\n/think  thinking 模式开关\n/effort 思考档位 low/medium/high/off\n/accept acceptEdits 模式开关（Edit/Write 免确认，Bash 仍确认）\n/plan   plan 模式开关（只读探索+写计划，ExitPlanMode 请用户审批）\n/add-dir <路径> 添加工作目录白名单（plan 模式围栏扩展）\n/cost   本会话花费明细\n/context 上下文占比与上次 usage\n/stats  本会话统计（轮数/工具/token/缓存/花费）\n/copy   复制上条回复到剪贴板\n/memory 查看当前生效的记忆文件\n/compact 手动压缩对话历史\n/clear  清空对话（开新会话文件，花费累计保留）\n/resume 列出并恢复本目录历史会话\n/rewind 回退到某轮之前（仅对话/仅代码/两者）\n/export 导出对话到 markdown 文件\n/permissions 查看/删除已保存权限规则（/permissions rm <编号>）\n/init   分析项目生成 DEEPCODE.md\n/keybindings 查看快捷键\n/exit   退出\n自定义命令：~/.deepcode/commands/*.md 或 <项目>/.deepcode/commands/*.md（$ARGUMENTS 占位）'
+  '/model  无参打开模型选择器；/model <名> 直接切到指定模型\n/think  thinking 模式开关\n/effort 思考档位 low/medium/high/off\n/accept acceptEdits 模式开关（Edit/Write 免确认，Bash 仍确认）\n/plan   plan 模式开关（只读探索+写计划，ExitPlanMode 请用户审批）\n/add-dir <路径> 添加工作目录白名单（plan 模式围栏扩展）\n/cost   本会话花费明细\n/context 上下文占比与上次 usage\n/stats  本会话统计（轮数/工具/token/缓存/花费）\n/copy   复制上条回复到剪贴板\n/memory 查看当前生效的记忆文件\n/compact 手动压缩对话历史\n/clear  清空对话（开新会话文件，花费累计保留）\n/resume 列出并恢复本目录历史会话\n/rewind 回退到某轮之前（仅对话/仅代码/两者）\n/export 导出对话到 markdown 文件\n/permissions 查看/删除已保存权限规则（/permissions rm <编号>）\n/init   分析项目生成 DEEPCODE.md\n/keybindings 查看快捷键\n/exit   退出\n自定义命令：~/.deepcode/commands/*.md 或 <项目>/.deepcode/commands/*.md（$ARGUMENTS 占位）'
 
 export function createChatCore(opts: {
   client: OpenAI
@@ -825,6 +827,15 @@ export function createChatCore(opts: {
   }
   const unsubNotification = onNotification(wakeOnNotification)
 
+  const applyModel = (id: string): void => {
+    model = id
+    const known = belongsToProvider(activeProvider(), id)
+    const suffix = known ? '' : '（非当前 provider 档，计价/上下文按兜底估算）'
+    session.appendMeta({ cwd, model, providerId: activeProvider().id, thinking, effortLevel, permMode })
+    notice('info', `已切换到 ${model}${suffix}`)
+    setState()
+  }
+
   /** 斜杠命令本地处理（/resume 由 UI 走 resumeList/resume，/exit 归 UI） */
   const send = async (line: string): Promise<void> => {
     line = line.trim()
@@ -855,14 +866,9 @@ export function createChatCore(opts: {
     if (line === '/model' || line.startsWith('/model ')) {
       const arg = line.slice('/model'.length).trim()
       if (arg) {
-        // /model <名>：切换到任意指定模型（配合自定义 baseURL 可接 OpenAI 兼容端点）
-        model = arg
-        const known = belongsToProvider(activeProvider(), arg)
-        const suffix = known ? '' : '（非当前 provider 档，计价/上下文按兜底估算）'
-        session.appendMeta({ cwd, model, providerId: activeProvider().id, thinking, effortLevel, permMode })
-        notice('info', `已切换到 ${model}${suffix}`)
+        applyModel(arg)
       } else {
-        // /model 无参：active fast↔smart 轮换（从自定义模型返回时，落到 fast）
+        // /model 无参：TUI 经 App.submit 拦截走 picker；此处为 headless/兜底，保留 fast↔smart 轮换
         model = rotateModel(model, activeProvider())
         session.appendMeta({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id })
         notice('info', `已切换到 ${model}`)
@@ -1209,6 +1215,8 @@ export function createChatCore(opts: {
       }
     },
     dispose: () => { fireSessionEnd('exit'); unsubNotification(); unsubSteer(); steerQueue.clear(); void mcpCleanup?.() },
+    modelList: () => providerModelList(activeProvider(), model),
+    applyModel,
   }
 }
 
