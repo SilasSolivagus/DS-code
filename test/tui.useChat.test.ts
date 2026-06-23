@@ -4,6 +4,20 @@ import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
+// 隔离真实 provider 配置：pinning activeProvider/activeFastModel 为 deepseek 档，
+// 使测试对 ~/.deepcode/settings.json 中 provider:glm 免疫（/model 切换、rotateModel 等依赖此）。
+vi.mock('../src/providers.js', async orig => {
+  const actual = await orig() as any
+  const deepseekPreset = actual.BUILTIN_PROVIDERS.deepseek
+  return {
+    ...actual,
+    activeProvider: () => deepseekPreset,
+    activeFastModel: () => 'deepseek-v4-flash',
+    activeSmartModel: () => 'deepseek-v4-pro',
+    belongsToProvider: (preset: any, modelId: string) => actual.belongsToProvider(deepseekPreset, modelId),
+  }
+})
+
 const script: Array<{ deltas?: any[]; result: any }> = []
 vi.mock('../src/api.js', async orig => ({
   ...(await orig() as any),

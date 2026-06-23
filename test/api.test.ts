@@ -3,6 +3,25 @@ import { writeFileSync, mkdtempSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
+// 隔离真实 provider 配置：mock loadSettings 始终返回默认 deepseek settings（无 provider），
+// 使 createClient 对真实 ~/.deepcode/settings.json 中 provider:glm 免疫。
+// flag 场景：从 flagPath 文件读取 JSON 并浅合并到默认 settings（baseURL/apiKey 字段透传给客户端）。
+vi.mock('../src/config.js', async orig => {
+  const actual = await orig() as any
+  const { readFileSync } = await import('node:fs')
+  return {
+    ...actual,
+    loadSettings: (_cwd?: string, flagPath?: string) => {
+      const base = { permissions: { allow: [] }, costWarnCNY: 15, maxToolResultChars: 100_000 }
+      if (!flagPath) return base
+      try {
+        const raw = JSON.parse(readFileSync(flagPath, 'utf8'))
+        return { ...base, ...raw }
+      } catch { return base }
+    },
+  }
+})
+
 // createClient 读取 process.env.DEEPSEEK_API_KEY，测试时注入哑值避免抛错
 const origKey = process.env.DEEPSEEK_API_KEY
 beforeAll(() => { process.env.DEEPSEEK_API_KEY = 'sk-test-dummy' })
@@ -11,9 +30,6 @@ afterAll(() => {
   else process.env.DEEPSEEK_API_KEY = origKey
 })
 
-// loadSettings 读取 ~/.deepcode/settings.json；测试只锁"缺省 baseURL = api.deepseek.com"，
-// 不注入文件（避免污染真实 HOME）。若机器恰好有本地 settings.json 且写了 baseURL，
-// 该测试在 CI 会绕过（接受：plan 明确说只锁缺省值）。
 import { createClient, chatStream } from '../src/api.js'
 
 describe('createClient', () => {
