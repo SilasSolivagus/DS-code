@@ -7,7 +7,7 @@ import type { SkillDefinition } from '../skillsLoader.js'
 import { substituteSkillArgs, formatSkillListing } from '../skillsLoader.js'
 import { acquire, release, runSubagent } from '../subagentRunner.js'
 import { resolveAgentTools, GLOBAL_SUBAGENT_DENY, type AgentDefinition } from './agentTypes.js'
-import { SUB_MODEL } from './constants.js'
+import { resolveSubModel } from '../providers.js'
 import { generateTaskId } from '../tasks.js'
 
 const schema = z.object({
@@ -44,7 +44,7 @@ export function makeSkillTool(
           ?? { agentType: type, whenToUse: '', getSystemPrompt: () => '' }
         const effectiveDef: AgentDefinition = skill.allowedTools ? { ...def, tools: skill.allowedTools } : def
         const tools = resolveAgentTools(effectiveDef, deps.skillPool, GLOBAL_SUBAGENT_DENY)
-        const model = !skill.model || skill.model === 'inherit' ? deps.getModel() : skill.model === 'flash' ? SUB_MODEL : skill.model
+        const model = resolveSubModel(skill.model, deps.getModel())
         await acquire()
         try {
           const result = await runSubagent({

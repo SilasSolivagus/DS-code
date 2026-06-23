@@ -7,7 +7,7 @@ import type { Tool } from './types.js'
 import type { Usage } from '../api.js'
 import { allTools } from './index.js'
 import { makeWebFetchTool } from './webfetch.js'
-import { SUB_MODEL } from './constants.js'
+import { resolveSubModel } from '../providers.js'
 import { isDangerous, type Decision } from '../permissions.js'
 import { BUILTIN_AGENTS, GLOBAL_SUBAGENT_DENY, resolveAgentTools, buildAgentDescription, type AgentDefinition } from './agentTypes.js'
 import { generateTaskId, registerTask, updateTask, getTask, enqueueNotification } from '../tasks.js'
@@ -46,7 +46,7 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
       }
       const tools = resolveAgentTools(def, pool, GLOBAL_SUBAGENT_DENY)
       const subModel =
-        !def.model || def.model === 'inherit' ? deps.getModel() : def.model === 'flash' ? SUB_MODEL : def.model
+        resolveSubModel(def.model, deps.getModel())
 
       // 后台路径：脱钩跑、立即返句柄；信号量在脱钩 async 的 finally 释放（不能在 call 返回前 release）。
       if (input.run_in_background === true) {

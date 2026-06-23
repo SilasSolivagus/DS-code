@@ -1,3 +1,4 @@
 // src/tools/constants.ts
-// 工具内部子调用统一用的便宜模型：Agent 探查子代理、WebFetch 网页总结都走它。
-export const SUB_MODEL = 'deepseek-v4-flash'
+import { activeFastModel } from '../providers.js'
+/** 工具内部子调用的便宜档：随 active provider 解析（Agent 探查、WebFetch 总结、hook、compact）。 */
+export function subModel(): string { return activeFastModel() }

@@ -53,6 +53,7 @@ import { createRecaller } from '../services/memory/recall.js'
 import { findRelevantMemories } from '../memdir/findRelevantMemories.js'
 import { SteeringQueue, formatSteeringMessage, type SteeringItem } from '../steering.js'
 import { type SessionMemoryState, shouldUpdateSessionMemory, runSessionMemoryUpdate } from '../services/memory/sessionMemory.js'
+import { activeFastModel } from '../providers.js'
 
 /** ! 直跑：同步执行，30s 超时，stdout+stderr 合并，超 20k 截断 */
 export function runBang(cmd: string, cwd: string): { output: string; code: number } {
@@ -516,8 +517,9 @@ export function createChatCore(opts: {
       } catch { /* summary.md 不存在则跳过 */ }
     }
     const { summary, usage: u, truncated } = await summarize(opts.client, messagesForSummarize, ac.signal)
-    usageLog.push({ usage: u, model: 'deepseek-v4-flash' })
-    session.appendUsage(u, 'deepseek-v4-flash')
+    const sub = activeFastModel()
+    usageLog.push({ usage: u, model: sub })
+    session.appendUsage(u, sub)
     const rebuilt = rebuildMessages(messages, summary)
     const before = messages.length
     messages.length = 0

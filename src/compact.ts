@@ -1,6 +1,7 @@
 // src/compact.ts
 import type OpenAI from 'openai'
 import { chatStream, type Usage } from './api.js'
+import { activeFastModel } from './providers.js'
 
 const SUMMARY_PROMPT = `请把以上对话压缩成一份结构化总结，供后续对话作为唯一上下文使用。必须包含：
 1. 任务背景：用户最初与最新的目标
@@ -16,7 +17,7 @@ export interface CompactResult { summary: string; usage: Usage; truncated: boole
 export async function summarize(client: OpenAI, messages: any[], signal: AbortSignal): Promise<CompactResult> {
   const convo = messages.filter(m => m.role !== 'system')
   const gen = chatStream(client, {
-    model: 'deepseek-v4-flash',
+    model: activeFastModel(),
     messages: [...convo, { role: 'user', content: SUMMARY_PROMPT }],
     tools: [],
     thinking: false,

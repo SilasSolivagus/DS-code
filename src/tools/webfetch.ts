@@ -7,7 +7,7 @@ import { fetch as undiciFetch, ProxyAgent } from 'undici'
 import type { Tool, ToolContext } from './types.js'
 import type { Usage } from '../api.js'
 import { runLoop } from '../loop.js'
-import { SUB_MODEL } from './constants.js'
+import { activeFastModel } from '../providers.js'
 
 const MAX_CHARS = 30_000
 
@@ -36,6 +36,7 @@ export function makeWebFetchTool(deps: { client: OpenAI; onUsage: (u: Usage, mod
       try { return `WebFetch ${new URL(input.url).host}` } catch { return `WebFetch ${input.url}` }
     },
     async call(input, ctx) {
+      const sub = activeFastModel()
       if (!/^https?:\/\//i.test(input.url)) return '错误：仅支持 http(s) URL'
       let body: string, ctype: string
       try {
@@ -67,7 +68,7 @@ export function makeWebFetchTool(deps: { client: OpenAI; onUsage: (u: Usage, mod
       const gen = runLoop(messages, {
         client: deps.client,
         tools: [],
-        model: SUB_MODEL,
+        model: sub,
         thinking: false,
         permission: { mode: 'default', rules: [], saveRule: () => {}, ask: async () => 'no' },
         ctx: subCtx,
@@ -75,7 +76,7 @@ export function makeWebFetchTool(deps: { client: OpenAI; onUsage: (u: Usage, mod
       })
       let step
       while (!(step = await gen.next()).done) {
-        if (step.value.type === 'turn_end') deps.onUsage(step.value.usage, SUB_MODEL)
+        if (step.value.type === 'turn_end') deps.onUsage(step.value.usage, sub)
       }
       const final = [...messages].reverse().find(m => m.role === 'assistant' && typeof m.content === 'string' && m.content)
       return final?.content ?? '（无返回）'
