@@ -1,6 +1,7 @@
 import OpenAI from 'openai'
 import { fetch as undiciFetch, ProxyAgent } from 'undici'
 import { loadSettings } from './config.js'
+import { resolveActiveProvider } from './providers.js'
 
 export interface Usage {
   prompt_tokens: number
@@ -87,12 +88,16 @@ export async function withRetry<T>(
 
 export function createClient(flagSettingsPath?: string): OpenAI {
   const settings = loadSettings(process.cwd(), flagSettingsPath)
-  const apiKey = process.env.DEEPSEEK_API_KEY ?? settings.apiKey
-  if (!apiKey) throw new Error('缺少 DeepSeek API key。运行 deepcode 进入首跑向导配置，或 export DEEPSEEK_API_KEY=sk-...')
+  const preset = resolveActiveProvider(settings)
+  const providerKey = (settings.providers as any)?.[preset.id]?.apiKey
+  const apiKey = process.env[preset.apiKeyEnv] ?? providerKey ?? settings.apiKey
+  if (!apiKey) {
+    throw new Error(`缺少 ${preset.id} API key。设置环境变量 ${preset.apiKeyEnv}=...，或在 ~/.deepcode/settings.json 的 providers.${preset.id}.apiKey 配置`)
+  }
   // Node fetch 不读代理环境变量；显式接入，否则需走代理的网络环境下请求会超时
   const proxy =
     process.env.https_proxy ?? process.env.HTTPS_PROXY ?? process.env.http_proxy ?? process.env.HTTP_PROXY
-  const baseURL = settings.baseURL ?? 'https://api.deepseek.com'
+  const baseURL = settings.baseURL ?? preset.baseURL
   return new OpenAI({
     apiKey,
     baseURL,
