@@ -17,7 +17,9 @@
 
 ---
 
-## 🔄 进度更新（2026-06-22 最新，下表状态列已同步本块）
+## 🔄 进度更新（2026-06-23 最新，下表状态列已同步本块）
+
+**2026-06-23**：✅✅**2.8 通用多 provider 已完成并合 main 并 push**（merge --no-ff `2e54497`，main=origin 全同步）。支持 GLM/智谱 + custom OpenAI 兼容后端。方案 A（运行时锁单一 active provider，主循环与 subagent 在该 provider 内切档，不做跨厂 per-subagent——两轮 opus 专家论证 + 实读 CC 确认 CC 本身也是同 provider 换档）。新模块 `src/providers.ts` 单一事实源；方言 adapter 三处（usage 缓存归一 in Assembler.push / thinking 三态门控 / createClient 读 preset）；信任边界双动作（DANGEROUS_TOP_KEYS+parsePresent，3.9 显式白名单新字段不自动安全）；前向兼容 v4.1/glm-5.3（defaultMeta+modelPrefix 前缀透传）。GLM preset smart=glm-5.2(1M)/fast=glm-5-turbo，meta 收录 8 个 /models 目录模型。11 任务 SDD + opus 全分支终审 Ready-to-merge + M6 性能 memoize + **真机 GLM 冒烟 PASS（bonus：缓存归一/per-model window 171k→971k 实证）** + 测试隔离修复（冒烟暴露 7 测试耦合真实 provider 配置）。1109 测试全绿。spec/plan `docs/{specs,plans}/2026-06-23-deepcode-2.8-multi-provider*`。**🎯 此件标志 CC 第 1-5 层全部对齐收官（非 TUI 件全完）。下一步 = TUI 攒最后批 或 第6层云平台。**
 
 **2026-06-22**：✅2.5 Token 计数已 push（`7dc78ea`，main=origin=`c8de188` 全同步）+ 状态栏 Row 2 加 contextBar 迷你进度条（`c8de188`）。✅C1（3.9+4.5）+ C2 记忆四件均已整批完成。**⭐新增 2.8 通用多 provider / GLM（用户钦定通用 preset，但拍板⏳后置——先把 CC 第 1-5 层对齐做完整再做）**——见第 2 层 2.8 详述。**剩余非 TUI 下一步（先做完 CC 对齐）= 2.1 余 / 2.3 余 / C4 工具批 / C5 Steering；CC 全做完后才做 2.8。**
 
@@ -25,7 +27,7 @@
 
 **🚀执行进度（2026-06-22）：✅3.5 #4 restore-only-if-differs(`19762b3`)✅2.1 Token budget 自动续跑(`a104f45`,opus 终审+真机签收)✅5.6 deny/来源层级展示(merge `31e5deb`,8 任务 TDD+opus 全分支终审 READY+TUI 真机冒烟过,已 push)✅C4 Notebook(merge `54a8ff9`,6 任务 TDD+opus 全分支终审 READY,1037 测试,纯逻辑免冒烟)✅✅C5 1.3 Steering(merge `32612a1`,1060 测试,opus 全分支终审 READY+真机冒烟 PASS,已 push)。🚀已 push，main=origin=`32612a1` 全同步。**
 
-**⭐⭐拐点（2026-06-22，C5 Steering 收官后）：CC 第 1-5 层「非 TUI 件」全部做完或已裁决（跳过/推迟）。** 非 TUI 对齐件清单：第1层 1.1/1.2/1.3/1.8 ✅；第2层 2.1/2.3/2.4/2.5/2.6 ✅（2.2 跳过）；第3层 3.1-3.4/3.5主干/3.7deny/3.9 ✅（3.8/3.10 推迟）；第4层 4.1/4.5/4.8 ✅（4.2/4.3/4.4 跳过，4.6/4.7/4.9 推迟/跳过，4.10→第6层）；第5层 5.6 ✅。**前置满足：⏳2.8 多 provider（当初钦定"等第1-5层做完才做"）现已解锁。** 下一会话三候选：①**2.8 通用多 provider/GLM**（底层抽象非 TUI 可全做）②**TUI 攒最后批**（1.4/1.5/1.6[依赖刚做完的1.3]/1.7/2.7/3.6/4.11/第5层）③回捡 C4 推迟件(LSP/Cron/Sandbox)或第6层云平台单独立项。**开新会话与用户确认挑哪个。**
+**⭐⭐拐点（2026-06-22，C5 Steering 收官后）：CC 第 1-5 层「非 TUI 件」全部做完或已裁决（跳过/推迟）。** 非 TUI 对齐件清单：第1层 1.1/1.2/1.3/1.8 ✅；第2层 2.1/2.3/2.4/2.5/2.6 ✅（2.2 跳过）；第3层 3.1-3.4/3.5主干/3.7deny/3.9 ✅（3.8/3.10 推迟）；第4层 4.1/4.5/4.8 ✅（4.2/4.3/4.4 跳过，4.6/4.7/4.9 推迟/跳过，4.10→第6层）；第5层 5.6 ✅。**前置满足：⏳2.8 多 provider 现已 ✅完成（2026-06-23 合 main 并 push）。** 至此 CC 第 1-5 层非 TUI 件**全部收官**。下一会话候选：①**TUI 攒最后批**（1.4 Plan mode/1.5 可写subagent+worktree/1.6 多agent[依赖1.3]/1.7 hooks①e/2.7 模型切换UI/3.6/4.11/第5层全部，一起真机冒烟）②回捡 C4 推迟件(LSP/Cron/Sandbox)③第6层云平台单独立项。**开新会话与用户确认挑哪个。**
 
 **✅✅C5 1.3 Steering 详情（merge `32612a1`，2026-06-22）：** 采纳 **CC 真实模型**（两次实读 pivot：①Alt+Enter=`\x1b\r` 经实读 ink `parse-keypress.js` 是死键 ②实读 CC 触发机制发现 CC 无 now 热键、Enter 恒入队 next、有 in-flight tool 时 Enter 同时 abort('interrupt')）。**实现**：新模块 `src/steering.ts`（SteeringQueue FIFO + formatSteeringMessage `<queued-user-message>`）；busy Enter→入队 next + toolInFlight 时软中断（abort 'interrupt'）；loop 按原生 `signal.reason` 二分 interrupt 续跑/user-cancel 硬中断 + `ctx.resetSignal` 重建信号 + mid-stream partial 保留；**三点 drain**（tool 边界/no-tool turn-end/中断点，drainAll 互斥不重复不丢，no-tool turn-end 那点是冒烟前置核对挖出的真缺口）；ESC 双语义（队列非空→拉回编辑/空→硬中断）；列队展示。spec/plan `docs/{specs,plans}/2026-06-22-deepcode-1.3-steering*`（spec §1 有设计修订段记录 pivot）。SDD 全仪式 6 任务+CC 模型 rework+gap fix，Task3 架构件+全分支 opus 终审 READY，**真机冒烟 PASS**（sleep20 软中断被杀退出码1+转向/纯文本无-tool 续跑答补充/ESC 拉回+列队展示三路验证）。**教训**：①TUI 触发键先实读 ink `parse-keypress.js` 验可达性 ②交互模型先实读 CC 真实做法别照直觉/roadmap ③冒烟前置核对能挖出设计缺口。**follow-up 非阻塞**：toolsRunning hook 异常 mid-RO-batch 理论泄漏（崩溃级前置，留 hardening）；Point A mid-stream 中断分支经 Enter 不可达=将来 SDK now 预留。
 
@@ -70,9 +72,10 @@
 | 2.5 | **Token 计数/估算**（精确计数 + 多后端） | `services/tokenEstimation.ts` | ✅ CJK 感知估算+模型感知 window+发送前预估 compact(`7dc78ea`)。CC 的 countTokens API/多后端 N/A(DeepSeek 无此端点) | ✅ | 否 | M |
 | 2.6 | **Cost 告警 hook**（累计 + 阈值告警；settings 已有 costWarnUSD） | `costHook.ts` `cost-tracker.ts` | ✅ costWarnUSD 阈值告警(`fa2cade`) | ✅ | 部分 | S |
 | 2.7 | **/model /effort /fast 模型切换**（DeepSeek 内 flash↔pro 切换命令） | `commands/{model,effort,fast}` | 🟡 useChat.ts:812 仅 flash↔pro 翻转 | 🟡 | 碰TUI | S |
-| 2.8 | **通用多 provider / 第三方模型切换（GLM 等任意 OpenAI 兼容后端）** ⭐用户钦定，⏳**后置（CC 对齐做完整后再做）** | （无 CC 对应；deepcode 专属扩展） | 🟡 `baseURL` 通道已在(api.ts:95)可指任意 OpenAI 兼容端点；但缺一等公民抽象 | 🟡 | 部分 | M |
+| 2.8 | **通用多 provider / 第三方模型切换（GLM 等任意 OpenAI 兼容后端）** ⭐用户钦定 — ✅**已完成（merge `2e54497`，已 push，main=origin）** | `src/providers.ts` 单一事实源（deepseek/glm/custom preset） | ✅ 方案 A 同 provider 内切档；方言 adapter 三处；信任边界双动作；前向兼容 v4.1/glm-5.3；GLM smart=glm-5.2/fast=glm-5-turbo；真机冒烟 PASS；1109 测试 | ✅ | 部分 | M |
 
-### 2.8 通用多 provider 详述（2026-06-22 用户钦定新增；⏳排序后置）
+### 2.8 通用多 provider 详述（2026-06-22 钦定新增；✅2026-06-23 已完成合 main 并 push，merge `2e54497`）
+**✅ 落地实情（与下方原设计的偏差/确认）**：方案 A（同 provider 内切档，不做跨厂 per-subagent——实读 CC 确认 CC 本身也是同 provider 换档，跨厂是 CC 盲区）。GLM 用 `/models` 端点实测真实目录（8 模型整代支持 thinking；glm-4-flash 是遗留不在目录）。方言差异收敛三处（非预想的难）：usage 缓存字段路径（DeepSeek 顶层 vs GLM 嵌套 prompt_tokens_details.cached_tokens）、thinking 三态门控、createClient 读 preset。砍了 B-ready（qualified key/client 池——方案 A 已否决跨厂，YAGNI）。token 比例 0.6/0.3 不挂 preset（差异 negligible）。详见 spec/plan `docs/{specs,plans}/2026-06-23-deepcode-2.8-multi-provider*`。↓ 以下为原设计记录：
 **目标**：做成**通用 provider preset**（不只 GLM）——deepcode 不绑死 DeepSeek，可加任意 OpenAI 兼容后端（deepseek/glm/其它），切 provider 即带出 baseURL + 模型列表。
 **排序（用户 2026-06-22 拍板）**：**先把第 1-5 层 CC 对齐做完整、该做的都做完，再回头做 2.8。** 不进当前 C3 收尾批，不抢 CC 对齐件的位。
 
