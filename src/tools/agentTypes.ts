@@ -91,5 +91,5 @@ export function buildAgentDescription(agents: AgentDefinition[] = BUILTIN_AGENTS
   const lines = agents.map(formatAgentLine).join('\n')
   return `派出一个专才子代理执行任务。子代理看不到当前对话，prompt 必须自包含。返回子代理的最终结论。可用类型：
 ${lines}
-省略 subagent_type 则用 general-purpose。`
+省略 subagent_type 则用 general-purpose。避免重复子代理正在做的工作；独立查询可并行委派多个子代理。`
 }

@@ -146,4 +146,10 @@ describe('formatAgentLine / buildAgentDescription', () => {
     const desc = buildAgentDescription([custom as any])
     expect(desc).toContain('x-agent: 干 X')
   })
+
+  it('buildAgentDescription 末尾含子代理并行提示', () => {
+    const d = buildAgentDescription()
+    expect(d).toContain('子代理')
+    expect(d).toContain('并行委派')
+  })
 })
