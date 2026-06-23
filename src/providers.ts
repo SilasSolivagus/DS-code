@@ -3,7 +3,7 @@ import { loadSettings, type Settings } from './config.js'
 
 export type Dialect = 'deepseek' | 'glm' | 'openai'
 
-/** 每模型元数据。hit/miss/out = CNY/1M（镜像 pricing.ts PRICES）。 */
+/** 每模型元数据。hit/miss/out = CNY/1M。 */
 export interface ModelMeta {
   hit: number
   miss: number

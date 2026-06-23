@@ -42,19 +42,17 @@ export function estimateMessagesTokens(messages: any[]): number {
   return Math.ceil(weighted)
 }
 
+import { activeModelMeta } from './providers.js'
+
 export const CONTEXT_WINDOW_DEFAULT = 200_000
-const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
-  'deepseek-v4-flash': 1_000_000,
-  'deepseek-v4-pro': 1_000_000,
-}
 const OUTPUT_RESERVE = 16_000
 const AUTOCOMPACT_BUFFER = 13_000
 
-/** 模型感知 context window：env 覆盖 → 模型表 → 默认。未知模型回落默认，绝不抛。 */
+/** 模型感知 context window：env 覆盖 → active provider meta（含 defaultMeta 兜底）。 */
 export function resolveContextWindow(model: string): number {
   const env = process.env.DEEPCODE_MAX_CONTEXT_TOKENS
   if (env) { const n = parseInt(env, 10); if (Number.isFinite(n) && n > 0) return n }
-  return MODEL_CONTEXT_WINDOWS[model] ?? CONTEXT_WINDOW_DEFAULT
+  return activeModelMeta(model).contextWindow
 }
 
 /** compact 触发派生阈值 = window − 输出预留 − autocompact buffer。 */
