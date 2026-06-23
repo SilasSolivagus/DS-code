@@ -60,6 +60,7 @@ export function App(props: {
   const state = useChat(core)
   const [draft, setDraft] = useState('')
   const [resumeMode, setResumeMode] = useState(false)
+  const [modelPickerMode, setModelPickerMode] = useState(false)
   const [rewindStep, setRewindStep] = useState<'point' | 'mode' | null>(null)
   const [rewindTurn, setRewindTurn] = useState<number | null>(null)
   const [lastSigint, setLastSigint] = useState(0)
@@ -70,12 +71,12 @@ export function App(props: {
 
   // pendingAsk / pendingPlanApproval / resumeMode / rewindStep 激活时清除 draft 和 valueOverride，防止 InputBox 卸载后 remount 时老值复活
   useEffect(() => {
-    if (state.pendingAsk || state.pendingQuestion || state.pendingPlanApproval || resumeMode || rewindStep) {
+    if (state.pendingAsk || state.pendingQuestion || state.pendingPlanApproval || resumeMode || modelPickerMode || rewindStep) {
       setDraft('')
       setValueOverride(undefined)
       justPickedRef.current = null
     }
-  }, [!!state.pendingAsk, !!state.pendingQuestion, !!state.pendingPlanApproval, resumeMode, rewindStep])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [!!state.pendingAsk, !!state.pendingQuestion, !!state.pendingPlanApproval, resumeMode, modelPickerMode, rewindStep])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ctrl+C 两次退出（App 层统一管理，exitOnCtrlC: false 时才需要）
   // Ctrl+C 两次退出 + Shift+Tab 循环权限模式（default→acceptEdits→plan→default）。
@@ -87,7 +88,7 @@ export function App(props: {
       if (now - lastSigint < 2000) exit()
       else setLastSigint(now)
     }
-    if (key.shift && key.tab && !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion && !resumeMode && !rewindStep) {
+    if (key.shift && key.tab && !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion && !resumeMode && !modelPickerMode && !rewindStep) {
       void core.send('/cycle-mode')
     }
   })
@@ -127,6 +128,7 @@ export function App(props: {
   const submit = (text: string) => {
     if (text === '/exit') { exit(); return }
     if (text === '/resume') { setResumeMode(true); return }
+    if (text === '/model') { setModelPickerMode(true); return }
     if (text === '/rewind') { setRewindStep('point'); return }
     setDraft('')
     setValueOverride(undefined)
@@ -172,7 +174,7 @@ export function App(props: {
   // 协作解法：包装 stdout.write——ink 每次写帧前，若光标处于停泊态，先把它移回底部（下移
   // 同样行数），让 eraseLines 从正确位置开始；写完帧后再把光标停回插入点。两者不再对抗。
   const parkRef = useRef<{ active: boolean; up: number }>({ active: false, up: 0 })
-  const inputActive = !state.pendingAsk && !state.pendingQuestion && !state.pendingPlanApproval && !resumeMode && !rewindStep && !state.busy
+  const inputActive = !state.pendingAsk && !state.pendingQuestion && !state.pendingPlanApproval && !resumeMode && !modelPickerMode && !rewindStep && !state.busy
 
   // 安装一次：包装 process.stdout.write，写帧前自动解除停泊（移回底部）
   // 诊断/逃生：DEEPCODE_NO_CURSOR_PARK=1 关掉整套光标停泊（退回原版 ink）——用于排查滚动/重绘问题。
@@ -225,6 +227,12 @@ export function App(props: {
               items={core.resumeList().map(s => s.preview)}
               onPick={i => { core.resume(core.resumeList()[i].file); setResumeMode(false) }}
               onCancel={() => setResumeMode(false)}
+            />
+          : modelPickerMode
+          ? <SelectList
+              items={core.modelList().map(m => m.label)}
+              onPick={i => { core.applyModel(core.modelList()[i].id); setModelPickerMode(false) }}
+              onCancel={() => setModelPickerMode(false)}
             />
           : rewindStep === 'point'
           ? (() => {
