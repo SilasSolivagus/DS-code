@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { parseFrontmatter, parseToolList, resolveAgentModelAlias, parseAgentFile, loadCustomAgents, mergeAgents, resolveAgents } from '../src/agentsLoader.js'
 import { BUILTIN_AGENTS } from '../src/tools/agentTypes.js'
+import { BUILTIN_PROVIDERS } from '../src/providers.js'
 
 const CC_FILE = `---
 name: code-reviewer
@@ -58,8 +59,9 @@ describe('resolveAgentModelAlias', () => {
     }
   })
   it('deepcode 原生透传', () => {
+    const ds = BUILTIN_PROVIDERS.deepseek
     expect(resolveAgentModelAlias('flash')).toBe('flash')
-    expect(resolveAgentModelAlias('deepseek-v4-pro')).toBe('deepseek-v4-pro')
+    expect(resolveAgentModelAlias('deepseek-v4-pro', ds)).toBe('deepseek-v4-pro')
   })
   it('空/非字符串 → undefined', () => {
     expect(resolveAgentModelAlias('')).toBeUndefined()

@@ -14,6 +14,7 @@ describe('resolveAgentModelAlias 档语义 + 前缀透传', () => {
     expect(resolveAgentModelAlias('opus', ds)).toBe('smart')
     expect(resolveAgentModelAlias('sonnet', ds)).toBe('smart')
     expect(resolveAgentModelAlias('best', ds)).toBe('smart')
+    expect(resolveAgentModelAlias('smart', ds)).toBe('smart')
     expect(resolveAgentModelAlias('haiku', ds)).toBe('flash')
     expect(resolveAgentModelAlias('flash', ds)).toBe('flash')
     expect(resolveAgentModelAlias('fast', ds)).toBe('flash')
