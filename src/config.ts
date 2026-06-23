@@ -188,8 +188,8 @@ export function parseProvidersConfig(raw: unknown): Settings['providers'] | unde
   const out: NonNullable<Settings['providers']> = {}
   const keyOnly = (v: unknown): { apiKey?: string } | undefined => {
     if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined
-    const k = (v as any).apiKey
-    return typeof k === 'string' && k ? { apiKey: k } : {}
+    const k = (v as Record<string, unknown>).apiKey
+    return typeof k === 'string' && k ? { apiKey: k } : undefined
   }
   const ds = keyOnly(r.deepseek); if (ds) out.deepseek = ds
   const glm = keyOnly(r.glm); if (glm) out.glm = glm

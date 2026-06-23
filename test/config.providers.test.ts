@@ -20,4 +20,8 @@ describe('parseProvidersConfig', () => {
     const p = parseProvidersConfig({ custom: { baseURL: 'https://x/v1', models: { fast: 'a', smart: 'b' }, dialect: 'bogus' } })
     expect(p?.custom?.dialect).toBeUndefined()
   })
+  it('deepseek.apiKey 字符串保留；空块 → 不产生 entry', () => {
+    expect(parseProvidersConfig({ deepseek: { apiKey: 'k' } })?.deepseek?.apiKey).toBe('k')
+    expect(parseProvidersConfig({ deepseek: {} })?.deepseek).toBeUndefined()
+  })
 })
