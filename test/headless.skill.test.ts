@@ -133,13 +133,13 @@ describe('headless Skills 接线', () => {
     script.push({ result: { content: '好的', toolCalls: [], usage, finishReason: 'stop' } })
     await runHeadless({ client: {} as any, prompt: '你好', yolo: true })
 
-    // 第一轮 chatStream 的 system message 应含 'keep'，不含 'drop'
+    // 第一轮 chatStream 的 system message 应含 'keep'，不含被 deny 的 skill（用描述文本判断）
     const firstCall = vi.mocked(chatStream).mock.calls[0]
     const messages = firstCall[1].messages as any[]
     const systemMsg = messages.find((m: any) => m.role === 'system')
     expect(systemMsg).toBeDefined()
-    expect(systemMsg.content).toContain('keep')
-    expect(systemMsg.content).not.toContain('drop')
+    expect(systemMsg.content).toContain('保留的 skill')
+    expect(systemMsg.content).not.toContain('被排除的 skill')
   })
 
   it('模型调用 Skill → inline 注入 → 正文以 user 消息出现在第二轮 messages 中', async () => {
