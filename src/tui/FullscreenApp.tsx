@@ -22,6 +22,8 @@ import { Spinner } from './components/Spinner.js'
 import { StatusFooter } from './components/StatusFooter.js'
 import { clamp, page, applyFollow, nextStuck, scrollInfo } from './scroll.js'
 import { onWheel } from './wheel.js'
+import { useThemeControl, themeNames } from './theme.js'
+import { loadRawUserSettings, saveRawUserSettings } from '../config.js'
 
 const CURSOR_PARK_OFF = process.env.DEEPCODE_NO_CURSOR_PARK === '1'
 
@@ -62,6 +64,8 @@ export function FullscreenApp(props: {
   const [resumeMode, setResumeMode] = useState(false)
   const [modelPickerMode, setModelPickerMode] = useState(false)
   const [outputStyleMode, setOutputStyleMode] = useState(false)
+  const [themeMode, setThemeMode] = useState(false)
+  const { themeName, setThemeName } = useThemeControl()
   const [lastSigint, setLastSigint] = useState(0)
   const justPickedRef = useRef<string | null>(null)
   const [valueOverride, setValueOverride] = useState<{ text: string; nonce: number } | undefined>(undefined)
@@ -88,10 +92,10 @@ export function FullscreenApp(props: {
   }, [])
 
   useEffect(() => {
-    if (state.pendingAsk || state.pendingQuestion || state.pendingPlanApproval || resumeMode || modelPickerMode || outputStyleMode) {
+    if (state.pendingAsk || state.pendingQuestion || state.pendingPlanApproval || resumeMode || modelPickerMode || outputStyleMode || themeMode) {
       setDraft(''); setValueOverride(undefined); justPickedRef.current = null
     }
-  }, [!!state.pendingAsk, !!state.pendingQuestion, !!state.pendingPlanApproval, resumeMode, modelPickerMode, outputStyleMode])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [!!state.pendingAsk, !!state.pendingQuestion, !!state.pendingPlanApproval, resumeMode, modelPickerMode, outputStyleMode, themeMode])  // eslint-disable-line react-hooks/exhaustive-deps
 
   useInput((input, key) => {
     const ms = Math.max(0, totalRef.current - viewportRef.current)
@@ -105,7 +109,7 @@ export function FullscreenApp(props: {
       else setLastSigint(now)
     }
     // Shift+Tab 循环权限模式（default→acceptEdits→plan→default）。
-    if (key.shift && key.tab && !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion && !resumeMode && !modelPickerMode && !outputStyleMode) {
+    if (key.shift && key.tab && !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion && !resumeMode && !modelPickerMode && !outputStyleMode && !themeMode) {
       void core.send('/cycle-mode')
     }
   })
@@ -146,6 +150,7 @@ export function FullscreenApp(props: {
     if (text === '/resume') { setResumeMode(true); return }
     if (text === '/model') { setModelPickerMode(true); return }
     if (text === '/output-style') { setOutputStyleMode(true); return }
+    if (text === '/theme') { setThemeMode(true); return }
     setDraft(''); setValueOverride(undefined); justPickedRef.current = null
     void core.send(text)
   }
@@ -177,7 +182,7 @@ export function FullscreenApp(props: {
     return order.map(name => ({ name, n: counts.get(name)! }))
   }, [state.transcript])
 
-  const inputActive = !state.pendingAsk && !state.pendingQuestion && !state.pendingPlanApproval && !resumeMode && !modelPickerMode && !outputStyleMode && !state.busy
+  const inputActive = !state.pendingAsk && !state.pendingQuestion && !state.pendingPlanApproval && !resumeMode && !modelPickerMode && !outputStyleMode && !themeMode && !state.busy
 
   // —— 全屏几何（每帧算）——
   const rows = stdout?.rows ?? 24
@@ -292,6 +297,17 @@ export function FullscreenApp(props: {
                 items={core.outputStyleList().map(s => `${s.name}${s.description ? ' — ' + s.description : ''}`)}
                 onPick={i => { core.applyOutputStyle(core.outputStyleList()[i].name); setOutputStyleMode(false) }}
                 onCancel={() => setOutputStyleMode(false)}
+              />
+            : themeMode
+            ? <SelectList
+                items={themeNames().map(n => (n === themeName ? '● ' : '  ') + n)}
+                onPick={i => {
+                  const name = themeNames()[i]
+                  setThemeName(name)
+                  try { const raw = loadRawUserSettings(); raw.theme = name; saveRawUserSettings(raw) } catch { /* 持久化失败不阻断热切 */ }
+                  setThemeMode(false)
+                }}
+                onCancel={() => setThemeMode(false)}
               />
             : <>
                 {state.busy && <Spinner turnStartAt={state.turnStartAt} turnOutTokens={state.turnOutTokens} />}

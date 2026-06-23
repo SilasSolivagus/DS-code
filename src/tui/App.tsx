@@ -20,6 +20,8 @@ import { QuestionDialog } from './components/QuestionDialog.js'
 import { SelectList } from './components/SelectList.js'
 import { Spinner } from './components/Spinner.js'
 import { StatusFooter } from './components/StatusFooter.js'
+import { useThemeControl, themeNames } from './theme.js'
+import { loadRawUserSettings, saveRawUserSettings } from '../config.js'
 
 // CJK/全角字符按 2 列宽计（终端等宽规则）；用于算输入框插入点的列号。
 // 逃生开关：设 DEEPCODE_NO_CURSOR_PARK=1 完全禁用 IME 光标停泊（退回原版 ink 行为）。
@@ -62,6 +64,8 @@ export function App(props: {
   const [resumeMode, setResumeMode] = useState(false)
   const [modelPickerMode, setModelPickerMode] = useState(false)
   const [outputStyleMode, setOutputStyleMode] = useState(false)
+  const [themeMode, setThemeMode] = useState(false)
+  const { themeName, setThemeName } = useThemeControl()
   const [rewindStep, setRewindStep] = useState<'point' | 'mode' | null>(null)
   const [rewindTurn, setRewindTurn] = useState<number | null>(null)
   const [lastSigint, setLastSigint] = useState(0)
@@ -72,12 +76,12 @@ export function App(props: {
 
   // pendingAsk / pendingPlanApproval / resumeMode / rewindStep 激活时清除 draft 和 valueOverride，防止 InputBox 卸载后 remount 时老值复活
   useEffect(() => {
-    if (state.pendingAsk || state.pendingQuestion || state.pendingPlanApproval || resumeMode || modelPickerMode || outputStyleMode || rewindStep) {
+    if (state.pendingAsk || state.pendingQuestion || state.pendingPlanApproval || resumeMode || modelPickerMode || outputStyleMode || themeMode || rewindStep) {
       setDraft('')
       setValueOverride(undefined)
       justPickedRef.current = null
     }
-  }, [!!state.pendingAsk, !!state.pendingQuestion, !!state.pendingPlanApproval, resumeMode, modelPickerMode, outputStyleMode, rewindStep])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [!!state.pendingAsk, !!state.pendingQuestion, !!state.pendingPlanApproval, resumeMode, modelPickerMode, outputStyleMode, themeMode, rewindStep])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ctrl+C 两次退出（App 层统一管理，exitOnCtrlC: false 时才需要）
   // Ctrl+C 两次退出 + Shift+Tab 循环权限模式（default→acceptEdits→plan→default）。
@@ -89,7 +93,7 @@ export function App(props: {
       if (now - lastSigint < 2000) exit()
       else setLastSigint(now)
     }
-    if (key.shift && key.tab && !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion && !resumeMode && !modelPickerMode && !outputStyleMode && !rewindStep) {
+    if (key.shift && key.tab && !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion && !resumeMode && !modelPickerMode && !outputStyleMode && !themeMode && !rewindStep) {
       void core.send('/cycle-mode')
     }
   })
@@ -131,6 +135,7 @@ export function App(props: {
     if (text === '/resume') { setResumeMode(true); return }
     if (text === '/model') { setModelPickerMode(true); return }
     if (text === '/output-style') { setOutputStyleMode(true); return }
+    if (text === '/theme') { setThemeMode(true); return }
     if (text === '/rewind') { setRewindStep('point'); return }
     setDraft('')
     setValueOverride(undefined)
@@ -176,7 +181,7 @@ export function App(props: {
   // 协作解法：包装 stdout.write——ink 每次写帧前，若光标处于停泊态，先把它移回底部（下移
   // 同样行数），让 eraseLines 从正确位置开始；写完帧后再把光标停回插入点。两者不再对抗。
   const parkRef = useRef<{ active: boolean; up: number }>({ active: false, up: 0 })
-  const inputActive = !state.pendingAsk && !state.pendingQuestion && !state.pendingPlanApproval && !resumeMode && !modelPickerMode && !outputStyleMode && !rewindStep && !state.busy
+  const inputActive = !state.pendingAsk && !state.pendingQuestion && !state.pendingPlanApproval && !resumeMode && !modelPickerMode && !outputStyleMode && !themeMode && !rewindStep && !state.busy
 
   // 安装一次：包装 process.stdout.write，写帧前自动解除停泊（移回底部）
   // 诊断/逃生：DEEPCODE_NO_CURSOR_PARK=1 关掉整套光标停泊（退回原版 ink）——用于排查滚动/重绘问题。
@@ -241,6 +246,17 @@ export function App(props: {
               items={core.outputStyleList().map(s => `${s.name}${s.description ? ' — ' + s.description : ''}`)}
               onPick={i => { core.applyOutputStyle(core.outputStyleList()[i].name); setOutputStyleMode(false) }}
               onCancel={() => setOutputStyleMode(false)}
+            />
+          : themeMode
+          ? <SelectList
+              items={themeNames().map(n => (n === themeName ? '● ' : '  ') + n)}
+              onPick={i => {
+                const name = themeNames()[i]
+                setThemeName(name)
+                try { const raw = loadRawUserSettings(); raw.theme = name; saveRawUserSettings(raw) } catch { /* 持久化失败不阻断热切 */ }
+                setThemeMode(false)
+              }}
+              onCancel={() => setThemeMode(false)}
             />
           : rewindStep === 'point'
           ? (() => {
