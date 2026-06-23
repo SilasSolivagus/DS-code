@@ -90,7 +90,7 @@ export function App(props: {
     // Shift+Tab 三态：default→acceptEdits→plan→default（\x1b[Z）
     // 注意：ink useInput 能否收到 key.shift && key.tab 需真机冒烟确认（Shift+Tab = ESC[Z）。
     // 不可达时此分支永不触发；/plan 和 /accept 命令是保底可达路径。
-    if (key.shift && key.tab && !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !resumeMode && !rewindStep) {
+    if (key.shift && key.tab && !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion && !resumeMode && !rewindStep) {
       // default → acceptEdits → plan → default 循环
       if (state.permMode === 'default') void core.send('/accept')
       else if (state.permMode === 'acceptEdits') void core.send('/plan')

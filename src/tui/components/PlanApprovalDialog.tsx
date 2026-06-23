@@ -1,6 +1,9 @@
 // src/tui/components/PlanApprovalDialog.tsx
 // ExitPlanMode 计划审批弹窗：展示模型写好的计划，用户批准/拒绝。
 // 复用 PermissionDialog 的 UI 风格（accent 边框，数字键+方向键+Enter）。
+// 注：此组件独立新建而非复用 PermissionDialog，原因：计划审批是纯 boolean 批准/拒绝语义，
+// 而 PermissionDialog 的决策类型为 yes/always/no 三态 Decision，语义不兼容；
+// 强行复用需要额外转接层，反而增加耦合和理解成本。
 import React, { useState, useEffect } from 'react'
 import { Box, Text, useInput } from 'ink'
 import { T } from '../theme.js'
