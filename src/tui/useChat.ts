@@ -15,11 +15,12 @@ import { makeAgentTool } from '../tools/agent.js'
 import { makeWebFetchTool } from '../tools/webfetch.js'
 import { makeWebSearchTool, resolveWebSearchConfig } from '../tools/webSearchTool.js'
 import { makeAskUserQuestionTool, type Question, type Answer } from '../tools/askUserQuestion.js'
+import { makeExitPlanModeTool, type AllowedPrompt } from '../tools/exitPlanMode.js'
 import { bgTaskListTool, taskOutputTool, taskStopTool } from '../tools/taskTools.js'
 import { taskCreateTool, taskGetTool, taskUpdateTool, taskListTool } from '../tools/taskListTools.js'
 import { onNotification, drainNotifications, formatNotification, registerTask, updateTask, enqueueNotification, getTask, generateTaskId } from '../tasks.js'
 import { runAutoDream } from '../services/memory/autoDream.js'
-import { buildSystemPrompt, findMemoryFiles } from '../prompt.js'
+import { buildSystemPrompt, findMemoryFiles, PLAN_MODE_GUIDANCE } from '../prompt.js'
 import { formatMemory } from '../memory.js'
 import { loadSettings, loadRawUserSettings, addUserAllowRule, removeUserAllowRule, listUserAllowRules, SETTINGS_FILE } from '../config.js'
 import { loadLayeredSettings } from '../settingsLayers.js'
@@ -161,6 +162,7 @@ export function transcriptReducer(state: TranscriptItem[], a: ReducerAction): Tr
 
 export interface PendingAsk { toolName: string; desc: string; dangerous: boolean; reason?: PermissionDecisionReason; resolve: (d: Decision) => void }
 export interface PendingQuestion { questions: Question[]; resolve: (a: Answer[] | null) => void }
+export interface PendingPlanApproval { plan: string; allowedPrompts?: AllowedPrompt[]; resolve: (approved: boolean) => void }
 
 export interface ChatState {
   transcript: TranscriptItem[]
@@ -171,6 +173,7 @@ export interface ChatState {
   permMode: PermissionMode
   pendingAsk: PendingAsk | null
   pendingQuestion: PendingQuestion | null
+  pendingPlanApproval: PendingPlanApproval | null
   usageLog: UsageRecord[]
   lastTokPerSec: number | null
   turnStartAt: number | null // 当前轮开始时间戳（spinner 计算耗时秒数；空闲为 null）
@@ -194,6 +197,7 @@ export interface ChatCore {
   steerQueue(): readonly SteeringItem[]
   resolveAsk(d: Decision): void // 权限弹窗回答
   resolveQuestion(answers: Answer[] | null): void // AskUserQuestion 弹窗回答
+  resolvePlanApproval(approved: boolean): void // ExitPlanMode 计划审批回答
   resumeList(): { file: string; preview: string }[]
   resume(file: string): void
   customCommands: Map<string, string>
@@ -207,7 +211,7 @@ export interface ChatCore {
 }
 
 const HELP_TEXT =
-  '/model  flash↔pro 切换\n/think  thinking 模式开关\n/effort 思考档位 low/medium/high/off\n/accept acceptEdits 模式开关（Edit/Write 免确认，Bash 仍确认）\n/cost   本会话花费明细\n/context 上下文占比与上次 usage\n/stats  本会话统计（轮数/工具/token/缓存/花费）\n/copy   复制上条回复到剪贴板\n/memory 查看当前生效的记忆文件\n/compact 手动压缩对话历史\n/clear  清空对话（开新会话文件，花费累计保留）\n/resume 列出并恢复本目录历史会话\n/rewind 回退到某轮之前（仅对话/仅代码/两者）\n/export 导出对话到 markdown 文件\n/permissions 查看/删除已保存权限规则（/permissions rm <编号>）\n/init   分析项目生成 DEEPCODE.md\n/keybindings 查看快捷键\n/exit   退出\n自定义命令：~/.deepcode/commands/*.md 或 <项目>/.deepcode/commands/*.md（$ARGUMENTS 占位）'
+  '/model  flash↔pro 切换\n/think  thinking 模式开关\n/effort 思考档位 low/medium/high/off\n/accept acceptEdits 模式开关（Edit/Write 免确认，Bash 仍确认）\n/plan   plan 模式开关（只读探索+写计划，ExitPlanMode 请用户审批）\n/add-dir <路径> 添加工作目录白名单（plan 模式围栏扩展）\n/cost   本会话花费明细\n/context 上下文占比与上次 usage\n/stats  本会话统计（轮数/工具/token/缓存/花费）\n/copy   复制上条回复到剪贴板\n/memory 查看当前生效的记忆文件\n/compact 手动压缩对话历史\n/clear  清空对话（开新会话文件，花费累计保留）\n/resume 列出并恢复本目录历史会话\n/rewind 回退到某轮之前（仅对话/仅代码/两者）\n/export 导出对话到 markdown 文件\n/permissions 查看/删除已保存权限规则（/permissions rm <编号>）\n/init   分析项目生成 DEEPCODE.md\n/keybindings 查看快捷键\n/exit   退出\n自定义命令：~/.deepcode/commands/*.md 或 <项目>/.deepcode/commands/*.md（$ARGUMENTS 占位）'
 
 export function createChatCore(opts: {
   client: OpenAI
@@ -234,6 +238,8 @@ export function createChatCore(opts: {
   let thinking = false
   let effortLevel: 'low' | 'medium' | 'high' = 'medium'
   let permMode: PermissionMode = opts.yolo ? 'yolo' : 'default'
+  let prePlanMode: PermissionMode = 'default'  // plan 模式进入前的模式，退出时恢复
+  let additionalDirs: string[] = []            // /add-dir 会话内白名单（不落盘）
   const taskList = new TaskListStore()
   let nextTurnId = 1
   let currentTurnId = 0
@@ -297,6 +303,7 @@ export function createChatCore(opts: {
 
   // —— UI 状态 ——
   let transcript: TranscriptItem[] = []
+  let pendingPlanApproval: PendingPlanApproval | null = null
   let busy = false
   let pendingAsk: PendingAsk | null = null
   let pendingQuestion: PendingQuestion | null = null
@@ -330,7 +337,7 @@ export function createChatCore(opts: {
   // 所有状态变更走 setState：换新快照对象 → onState 回调 + 订阅者通知
   const listeners = new Set<() => void>()
   const snap = (): ChatState => ({
-    transcript, busy, model, thinking, effortLevel, permMode, pendingAsk, pendingQuestion, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, sessionCost, cacheHitRate, cacheSavings, contextPct, contextUsed, contextWindow, tokenBudget: tokenBudgetGet, budgetUsed: budgetUsedGet,
+    transcript, busy, model, thinking, effortLevel, permMode, pendingAsk, pendingQuestion, pendingPlanApproval, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, sessionCost, cacheHitRate, cacheSavings, contextPct, contextUsed, contextWindow, tokenBudget: tokenBudgetGet, budgetUsed: budgetUsedGet,
   })
   let state = snap()
   const setState = (): void => {
@@ -457,8 +464,17 @@ export function createChatCore(opts: {
       setState()
     })
 
+  // ExitPlanMode 审批桥：挂起 Promise + pendingPlanApproval 状态，UI 用 resolvePlanApproval 回答
+  const approvePlan = (plan: string, allowedPrompts?: AllowedPrompt[]): Promise<{ approved: boolean }> =>
+    new Promise<{ approved: boolean }>(res => {
+      pendingPlanApproval = { plan, allowedPrompts, resolve: (approved: boolean) => res({ approved }) }
+      setState()
+    })
+
   const tools = [
-    ...allTools,
+    // allTools 中的静态 exitPlanModeTool 替换为工厂版（含审批回调）
+    ...allTools.filter(t => t.name !== 'ExitPlanMode'),
+    makeExitPlanModeTool({ approvePlan }),
     taskCreateTool,
     taskGetTool,
     taskUpdateTool,
@@ -579,12 +595,14 @@ export function createChatCore(opts: {
     turnStartAt = Date.now()
     turnOutTokens = 0
     let sendOutTokens = 0 // 本次 send 累计真实输出 token（每个 turn_end 校准 turnOutTokens）
-    // 用户消息边界提醒：compact 一次性提示 + fileState 外部修改检测
+    // 用户消息边界提醒：compact 一次性提示 + plan 模式指引 + fileState 外部修改检测
     const boundary: string[] = []
     if (compacted) {
       boundary.push('以上对话历史为有损总结，修改任何关键文件前请先 Read 重新确认其当前内容。')
       compacted = false
     }
+    // plan 模式：每轮注入指引，确保模型始终感知约束（仿 CC system-reminder 注入）
+    if (permMode === 'plan') boundary.push(PLAN_MODE_GUIDANCE)
     for (const [p, mtime] of ctx.fileState) {
       try {
         if (fs.statSync(p).mtimeMs !== mtime) {
@@ -632,6 +650,7 @@ export function createChatCore(opts: {
           rules: settings.permissions.allow,
           deny: resolveDenyList(settings.permissions.deny),
           cwd,
+          additionalDirs,
           saveRule: r => {
             addUserAllowRule(r)        // 持久化到 user scope（raw RMW）
             if (!settings.permissions.allow.includes(r)) settings.permissions.allow.push(r) // 内存合并即时生效
@@ -880,6 +899,45 @@ export function createChatCore(opts: {
       notice('info', `acceptEdits 模式：${permMode === 'acceptEdits' ? '开（Edit/Write 免确认，Bash 仍需确认）' : '关'}`)
       return
     }
+    if (line === '/plan') {
+      if (opts.yolo) { notice('info', '当前是 yolo 模式，所有操作均已放行，无需 plan 模式'); return }
+      if (permMode === 'plan') {
+        // 退出 plan 模式：恢复进入前的模式
+        permMode = prePlanMode
+        session.appendMeta({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id })
+        notice('info', `plan 模式已关闭，已恢复 ${permMode} 模式`)
+      } else {
+        // 进入 plan 模式：记录当前模式供退出时恢复
+        prePlanMode = permMode
+        permMode = 'plan'
+        session.appendMeta({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id })
+        notice('info', 'plan 模式已开启：只读探索 + 写计划，完成后调用 ExitPlanMode 请用户审批（/plan 可退出）')
+      }
+      setState()
+      return
+    }
+    if (line.startsWith('/add-dir')) {
+      const arg = line.slice('/add-dir'.length).trim()
+      if (!arg) {
+        notice('info', `当前附加目录：${additionalDirs.length ? additionalDirs.join(', ') : '（无）'}\n用法：/add-dir <路径>`)
+        return
+      }
+      const resolved = path.resolve(cwd, arg)
+      try {
+        const stat = fs.statSync(resolved)
+        if (!stat.isDirectory()) { notice('warn', `路径不是目录：${resolved}`); return }
+      } catch {
+        notice('warn', `路径不存在：${resolved}`)
+        return
+      }
+      if (!additionalDirs.includes(resolved)) {
+        additionalDirs = [...additionalDirs, resolved]
+        notice('info', `已添加工作目录白名单：${resolved}`)
+      } else {
+        notice('info', `已在白名单中：${resolved}`)
+      }
+      return
+    }
     if (line === '/cost') {
       const mainLog = usageLog.filter(u => u.kind !== 'memory')
       const inTok = mainLog.reduce((s, u) => s + u.usage.prompt_tokens, 0)
@@ -1033,6 +1091,7 @@ export function createChatCore(opts: {
       // generator 永不返回，busy 永远 true——必须先拒绝掉再 abort，否则死锁。
       if (pendingAsk) { const p = pendingAsk; pendingAsk = null; setState(); p.resolve('no') }
       if (pendingQuestion) { const p = pendingQuestion; pendingQuestion = null; setState(); p.resolve(null) }
+      if (pendingPlanApproval) { const p = pendingPlanApproval; pendingPlanApproval = null; setState(); p.resolve(false) }
       abort.abort('user-cancel')
     },
     steer: (text: string) => {
@@ -1055,6 +1114,27 @@ export function createChatCore(opts: {
       pendingQuestion = null
       setState()
       p.resolve(answers)
+    },
+    resolvePlanApproval: (approved: boolean) => {
+      if (!pendingPlanApproval) return
+      const p = pendingPlanApproval
+      pendingPlanApproval = null
+      if (approved) {
+        // 退出 plan 模式，恢复进入前的模式
+        permMode = prePlanMode
+        session.appendMeta({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id })
+        // allowedPrompts → Bash 规则（仿 saveRule 机制，前缀形式 Bash(<prompt>:*)）
+        for (const ap of (p.allowedPrompts ?? [])) {
+          const rule = `Bash(${ap.prompt}:*)`
+          addUserAllowRule(rule)
+          if (!settings.permissions.allow.includes(rule)) settings.permissions.allow.push(rule)
+          ruleSources[rule] = 'user'
+        }
+        if ((p.allowedPrompts ?? []).length > 0) fireConfigChange()
+        notice('info', `计划已批准，已退出 plan 模式（恢复 ${permMode} 模式）`)
+      }
+      setState()
+      p.resolve(approved)
     },
     resumeList: () => listSessions(cwd, sessionDir).slice(0, 10).map(s => ({ file: s.file, preview: s.preview })),
     resume: (file: string) => {

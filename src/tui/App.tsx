@@ -15,6 +15,7 @@ import { Transcript } from './components/Transcript.js'
 import { InputBox } from './components/InputBox.js'
 import { Suggestions } from './components/Suggestions.js'
 import { PermissionDialog } from './components/PermissionDialog.js'
+import { PlanApprovalDialog } from './components/PlanApprovalDialog.js'
 import { QuestionDialog } from './components/QuestionDialog.js'
 import { SelectList } from './components/SelectList.js'
 import { Spinner } from './components/Spinner.js'
@@ -67,21 +68,33 @@ export function App(props: {
   // InputBox value 注入：通过 nonce 强制 InputBox 接受新值
   const [valueOverride, setValueOverride] = useState<{ text: string; nonce: number } | undefined>(undefined)
 
-  // pendingAsk / resumeMode / rewindStep 激活时清除 draft 和 valueOverride，防止 InputBox 卸载后 remount 时老值复活
+  // pendingAsk / pendingPlanApproval / resumeMode / rewindStep 激活时清除 draft 和 valueOverride，防止 InputBox 卸载后 remount 时老值复活
   useEffect(() => {
-    if (state.pendingAsk || state.pendingQuestion || resumeMode || rewindStep) {
+    if (state.pendingAsk || state.pendingQuestion || state.pendingPlanApproval || resumeMode || rewindStep) {
       setDraft('')
       setValueOverride(undefined)
       justPickedRef.current = null
     }
-  }, [!!state.pendingAsk, !!state.pendingQuestion, resumeMode, rewindStep])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [!!state.pendingAsk, !!state.pendingQuestion, !!state.pendingPlanApproval, resumeMode, rewindStep])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ctrl+C 两次退出（App 层统一管理，exitOnCtrlC: false 时才需要）
+  // Shift+Tab 三态循环：default→acceptEdits→plan→default（\x1b[Z）
+  // 注意：Shift+Tab 可达性依赖终端实现——实现代码在此，但需真机冒烟确认 ink useInput 能收到 key.shift+key.tab。
+  // 不可达时（ink 无法区分 Shift+Tab 与 Tab）降级使用 /plan 命令（保底路径）。
   useInput((input, key) => {
     if (key.ctrl && input === 'c') {
       const now = Date.now()
       if (now - lastSigint < 2000) exit()
       else setLastSigint(now)
+    }
+    // Shift+Tab 三态：default→acceptEdits→plan→default（\x1b[Z）
+    // 注意：ink useInput 能否收到 key.shift && key.tab 需真机冒烟确认（Shift+Tab = ESC[Z）。
+    // 不可达时此分支永不触发；/plan 和 /accept 命令是保底可达路径。
+    if (key.shift && key.tab && !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !resumeMode && !rewindStep) {
+      // default → acceptEdits → plan → default 循环
+      if (state.permMode === 'default') void core.send('/accept')
+      else if (state.permMode === 'acceptEdits') void core.send('/plan')
+      else void core.send('/plan') // plan → 退出回 prePlanMode
     }
   })
 
@@ -142,7 +155,7 @@ export function App(props: {
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps
   const memoryCount = useMemo(() => findMemoryFiles(props.cwd).length, [])  // eslint-disable-line react-hooks/exhaustive-deps
   // 模式标签：权限模式 + thinking 后缀
-  const modeLabel = (state.permMode === 'acceptEdits' ? 'accept' : state.permMode === 'yolo' ? 'yolo' : 'default')
+  const modeLabel = (state.permMode === 'acceptEdits' ? 'accept' : state.permMode === 'yolo' ? 'yolo' : state.permMode === 'plan' ? 'plan' : 'default')
     + (state.thinking ? '·think' : '')
   // 工具调用计数：按首次出现顺序分组（transcript 中 kind==='tool' 的条目）
   const toolCounts = useMemo(() => {
@@ -165,7 +178,7 @@ export function App(props: {
   // 协作解法：包装 stdout.write——ink 每次写帧前，若光标处于停泊态，先把它移回底部（下移
   // 同样行数），让 eraseLines 从正确位置开始；写完帧后再把光标停回插入点。两者不再对抗。
   const parkRef = useRef<{ active: boolean; up: number }>({ active: false, up: 0 })
-  const inputActive = !state.pendingAsk && !state.pendingQuestion && !resumeMode && !rewindStep && !state.busy
+  const inputActive = !state.pendingAsk && !state.pendingQuestion && !state.pendingPlanApproval && !resumeMode && !rewindStep && !state.busy
 
   // 安装一次：包装 process.stdout.write，写帧前自动解除停泊（移回底部）
   // 诊断/逃生：DEEPCODE_NO_CURSOR_PARK=1 关掉整套光标停泊（退回原版 ink）——用于排查滚动/重绘问题。
@@ -211,6 +224,8 @@ export function App(props: {
         ? <QuestionDialog questions={state.pendingQuestion.questions} onDone={a => core.resolveQuestion(a)} />
         : state.pendingAsk
         ? <PermissionDialog ask={state.pendingAsk} onDecide={d => core.resolveAsk(d)} />
+        : state.pendingPlanApproval
+        ? <PlanApprovalDialog pending={state.pendingPlanApproval} onDecide={approved => core.resolvePlanApproval(approved)} />
         : resumeMode
           ? <SelectList
               items={core.resumeList().map(s => s.preview)}

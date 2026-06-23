@@ -12,6 +12,10 @@ const schema = z.object({
   })).optional().describe('批准计划时一并放行的 Bash 语义操作（如 "run tests"）'),
 })
 
+export type PlanApprovalResult = { approved: boolean }
+export type AllowedPrompt = { tool: 'Bash'; prompt: string }
+
+/** 静态版（无审批回调）：仅写盘，用于 headless/子代理场景。 */
 export const exitPlanModeTool: Tool<typeof schema> = {
   name: 'ExitPlanMode',
   description:
@@ -20,11 +24,38 @@ export const exitPlanModeTool: Tool<typeof schema> = {
   isReadOnly: true,
   needsPermission: () => false,
   async call(input, ctx) {
-    // 写盘计划作团队/云前向底座（未来 leader 审批 / cloud resume 回填的接入点）；当前仅持久化。
     const dir = planDirFor(ctx.cwd())
     fs.mkdirSync(dir, { recursive: true })
     const filePath = path.join(dir, `${ctx.sessionId?.() ?? 'plan'}.md`)
     fs.writeFileSync(filePath, input.plan)
     return JSON.stringify({ plan: input.plan, isAgent: false, filePath })
   },
+}
+
+/** 工厂版（TUI 场景）：注入审批回调，工具调用时挂起直到用户审批完成。 */
+export function makeExitPlanModeTool(deps: {
+  approvePlan: (plan: string, allowedPrompts?: AllowedPrompt[]) => Promise<PlanApprovalResult>
+}): Tool<typeof schema> {
+  return {
+    name: 'ExitPlanMode',
+    description: exitPlanModeTool.description,
+    inputSchema: schema,
+    isReadOnly: true,
+    needsPermission: () => false,
+    async call(input, ctx) {
+      // 写盘（底座）
+      const dir = planDirFor(ctx.cwd())
+      fs.mkdirSync(dir, { recursive: true })
+      const filePath = path.join(dir, `${ctx.sessionId?.() ?? 'plan'}.md`)
+      fs.writeFileSync(filePath, input.plan)
+      // 等待 TUI 审批
+      const result = await deps.approvePlan(input.plan, input.allowedPrompts)
+      if (result.approved) {
+        return JSON.stringify({ plan: input.plan, isAgent: false, filePath, approved: true })
+      } else {
+        return JSON.stringify({ plan: input.plan, isAgent: false, filePath, approved: false,
+          feedback: '用户拒绝了该计划，请根据此反馈修改计划后重新调用 ExitPlanMode。' })
+      }
+    },
+  }
 }
