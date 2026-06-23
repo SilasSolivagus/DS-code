@@ -205,6 +205,21 @@ describe('raw user settings 读写', () => {
       saveRawUserSettings(before) // 还原，避免污染真 ~/.deepcode
     }
   })
+
+  it('C1 round-trip: outputStyle 与 theme 经 loadRawUserSettings/saveRawUserSettings 不丢失', () => {
+    fs.mkdirSync(path.dirname(settingsFile), { recursive: true })
+    fs.writeFileSync(settingsFile, JSON.stringify({ model: 'deepseek-v3', outputStyle: 'minimal', theme: 'light' }))
+    const loaded = loadRawUserSettings()
+    expect(loaded.outputStyle).toBe('minimal')
+    expect(loaded.theme).toBe('light')
+    expect(loaded.model).toBe('deepseek-v3')
+    // round-trip: save 再 load 两字段仍在
+    saveRawUserSettings(loaded)
+    const reloaded = loadRawUserSettings()
+    expect(reloaded.outputStyle).toBe('minimal')
+    expect(reloaded.theme).toBe('light')
+    expect(reloaded.model).toBe('deepseek-v3')
+  })
 })
 
 describe('user-scope allow 规则 RMW', () => {

@@ -6,10 +6,10 @@ import React from 'react'
 import { Box, Text } from 'ink'
 import { useTheme, DEFAULT_THEME } from '../theme.js'
 
-export function contextBarColor(pct: number): string {
-  if (pct >= 95) return DEFAULT_THEME.err
-  if (pct >= 80) return DEFAULT_THEME.warn
-  return DEFAULT_THEME.accent
+export function contextBarColor(pct: number, theme: typeof DEFAULT_THEME = DEFAULT_THEME): string {
+  if (pct >= 95) return theme.err
+  if (pct >= 80) return theme.warn
+  return theme.accent
 }
 
 function fmtK(n: number): string {
@@ -65,9 +65,9 @@ export function StatusFooter(props: {
       {/* Row 2：上下文绝对值 used/window + 缓存命中（仅有命中时）+ 累计花费 */}
       <Text>
         <Text dimColor>Context </Text>
-        <Text color={contextBarColor(usedPct)}>{fmtK(props.contextUsed)} / {fmtK(props.contextWindow)}</Text>
+        <Text color={contextBarColor(usedPct, T)}>{fmtK(props.contextUsed)} / {fmtK(props.contextWindow)}</Text>
         <Text dimColor>{` [`}</Text>
-        <Text color={contextBarColor(usedPct)}>{contextBar(usedPct)}</Text>
+        <Text color={contextBarColor(usedPct, T)}>{contextBar(usedPct)}</Text>
         <Text dimColor>{`]`}</Text>
         {props.hitRate > 0 && (
           <Text dimColor>{` · cache ${Math.round(props.hitRate * 100)}% (−¥${props.cacheSavings.toFixed(4)})`}</Text>

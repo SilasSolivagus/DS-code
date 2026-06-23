@@ -122,6 +122,8 @@ export function loadRawUserSettings(): Settings {
     memory: parseMemoryConfig(raw?.memory),
     provider: raw?.provider === 'glm' || raw?.provider === 'custom' || raw?.provider === 'deepseek' ? raw.provider : undefined,
     providers: parseProvidersConfig(raw?.providers),
+    outputStyle: raw?.outputStyle,
+    theme: raw?.theme,
   }
 }
 
