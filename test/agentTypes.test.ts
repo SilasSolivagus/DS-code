@@ -18,7 +18,7 @@ const fake = (name: string): Tool<any> => ({
   needsPermission: () => false,
   call: async () => '',
 })
-const POOL = ['Read', 'Glob', 'Grep', 'Bash', 'Edit', 'Write', 'Agent', 'WebFetch'].map(fake)
+const POOL = ['Read', 'Glob', 'Grep', 'Bash', 'Edit', 'Write', 'Agent', 'WebFetch', 'NotebookEdit', 'ExitPlanMode'].map(fake)
 const names = (ts: Tool<any>[]) => ts.map(t => t.name).sort()
 
 const def = (over: Partial<AgentDefinition>): AgentDefinition => ({
@@ -39,11 +39,13 @@ describe('resolveAgentTools', () => {
     expect(names(r)).toEqual(['Bash', 'Glob', 'Grep', 'Read', 'WebFetch'])
   })
 
-  it('全局 deny 移除 Edit/Write/Agent', () => {
+  it('全局 deny 移除 Edit/Write/Agent/NotebookEdit/ExitPlanMode', () => {
     const r = resolveAgentTools(def({ tools: ['*'] }), POOL, GLOBAL_SUBAGENT_DENY)
     expect(r.find(t => t.name === 'Edit')).toBeUndefined()
     expect(r.find(t => t.name === 'Write')).toBeUndefined()
     expect(r.find(t => t.name === 'Agent')).toBeUndefined()
+    expect(r.find(t => t.name === 'NotebookEdit')).toBeUndefined()
+    expect(r.find(t => t.name === 'ExitPlanMode')).toBeUndefined()
   })
 
   it('类型 deny 叠加在全局 deny 之上', () => {
@@ -85,22 +87,26 @@ describe('BUILTIN_AGENTS', () => {
     for (const a of BUILTIN_AGENTS) expect(a.getSystemPrompt().length).toBeGreaterThan(0)
   })
 
-  it('general-purpose 解析含 Bash，不含 Edit/Write/Agent', () => {
+  it('general-purpose 解析含 Bash，不含 Edit/Write/Agent/NotebookEdit/ExitPlanMode', () => {
     const a = BUILTIN_AGENTS.find(x => x.agentType === 'general-purpose')!
     const r = names(resolveAgentTools(a, POOL, GLOBAL_SUBAGENT_DENY))
     expect(r).toContain('Bash')
     expect(r).not.toContain('Edit')
     expect(r).not.toContain('Write')
     expect(r).not.toContain('Agent')
+    expect(r).not.toContain('NotebookEdit')
+    expect(r).not.toContain('ExitPlanMode')
   })
 
-  it('Explore/Plan 解析不含 Edit/Write/Agent', () => {
+  it('Explore/Plan 解析不含 Edit/Write/Agent/NotebookEdit/ExitPlanMode', () => {
     for (const type of ['Explore', 'Plan']) {
       const a = BUILTIN_AGENTS.find(x => x.agentType === type)!
       const r = names(resolveAgentTools(a, POOL, GLOBAL_SUBAGENT_DENY))
       expect(r).not.toContain('Edit')
       expect(r).not.toContain('Write')
       expect(r).not.toContain('Agent')
+      expect(r).not.toContain('NotebookEdit')
+      expect(r).not.toContain('ExitPlanMode')
     }
   })
 })
