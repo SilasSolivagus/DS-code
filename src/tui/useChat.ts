@@ -53,7 +53,8 @@ import { createRecaller } from '../services/memory/recall.js'
 import { findRelevantMemories } from '../memdir/findRelevantMemories.js'
 import { SteeringQueue, formatSteeringMessage, type SteeringItem } from '../steering.js'
 import { type SessionMemoryState, shouldUpdateSessionMemory, runSessionMemoryUpdate } from '../services/memory/sessionMemory.js'
-import { activeFastModel } from '../providers.js'
+import { activeFastModel, activeProvider } from '../providers.js'
+import { resolveResumeModel } from './resumeModel.js'
 
 /** ! 直跑：同步执行，30s 超时，stdout+stderr 合并，超 20k 截断 */
 export function runBang(cmd: string, cwd: string): { output: string; code: number } {
@@ -351,7 +352,7 @@ export function createChatCore(opts: {
     const loaded = loadSession(file)
     messages.length = 0
     messages.push(...loaded.messages)
-    model = loaded.meta.model
+    model = resolveResumeModel(loaded.meta.model, activeProvider())
     thinking = loaded.meta.thinking
     effortLevel = loaded.meta.effortLevel ?? 'medium'
     // yolo 必须每次启动显式 --yolo，恢复的模式只允许 default/acceptEdits（含篡改文件兜底）
@@ -418,7 +419,7 @@ export function createChatCore(opts: {
     notice('info', `已恢复会话（${turns} 轮对话），继续写入 ${recovered.file}`)
     fireSessionStart('resume')
   } else {
-    session = newSession({ cwd, model, thinking, effortLevel, permMode }, sessionDir)
+    session = newSession({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id }, sessionDir)
     session.appendMessage(messages[0]) // 持久化 system 消息
     checkpointer = createCheckpointer(checkpointStoreFor(session.file))
     taskList.bind(sessionIdFromFile(session.file))
@@ -839,19 +840,19 @@ export function createChatCore(opts: {
         model = arg
         const isDeepSeek = arg.startsWith('deepseek')
         const suffix = isDeepSeek ? '' : '（非 deepseek 系列计价按 0 估算）'
-        session.appendMeta({ cwd, model, thinking, effortLevel, permMode })
+        session.appendMeta({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id })
         notice('info', `已切换到 ${model}${suffix}`)
       } else {
         // /model 无参：flash↔pro 轮换（从自定义模型返回时，落到 flash）
         model = model === 'deepseek-v4-flash' ? 'deepseek-v4-pro' : 'deepseek-v4-flash'
-        session.appendMeta({ cwd, model, thinking, effortLevel, permMode })
+        session.appendMeta({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id })
         notice('info', `已切换到 ${model}`)
       }
       return
     }
     if (line === '/think') {
       thinking = !thinking
-      session.appendMeta({ cwd, model, thinking, effortLevel, permMode })
+      session.appendMeta({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id })
       notice('info', `thinking 模式：${thinking ? '开' : '关'}`)
       return
     }
@@ -859,12 +860,12 @@ export function createChatCore(opts: {
       const arg = line.slice('/effort'.length).trim().toLowerCase()
       if (arg === 'off') {
         thinking = false
-        session.appendMeta({ cwd, model, thinking, effortLevel, permMode })
+        session.appendMeta({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id })
         notice('info', 'thinking 模式：关')
       } else if (arg === 'low' || arg === 'medium' || arg === 'high') {
         effortLevel = arg
         thinking = true
-        session.appendMeta({ cwd, model, thinking, effortLevel, permMode })
+        session.appendMeta({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id })
         notice('info', `思考档位：${arg}（thinking 开）`)
       } else {
         notice('info', `当前思考档位：${thinking ? effortLevel : 'off'}。用法：/effort low|medium|high|off`)
@@ -875,7 +876,7 @@ export function createChatCore(opts: {
     if (line === '/accept') {
       if (opts.yolo) { notice('info', '当前是 yolo 模式，所有操作均已放行'); return }
       permMode = permMode === 'acceptEdits' ? 'default' : 'acceptEdits'
-      session.appendMeta({ cwd, model, thinking, effortLevel, permMode })
+      session.appendMeta({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id })
       notice('info', `acceptEdits 模式：${permMode === 'acceptEdits' ? '开（Edit/Write 免确认，Bash 仍需确认）' : '关'}`)
       return
     }
@@ -909,7 +910,7 @@ export function createChatCore(opts: {
       compactWarned = false
       consecutiveCompactFailures = 0
       pendingSessionContext = null
-      session = newSession({ cwd, model, thinking, effortLevel, permMode }, sessionDir)
+      session = newSession({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id }, sessionDir)
       session.appendMessage(messages[0])
       checkpointer = createCheckpointer(checkpointStoreFor(session.file))
       taskList.bind(sessionIdFromFile(session.file))

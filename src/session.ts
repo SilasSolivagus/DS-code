@@ -6,6 +6,7 @@ import os from 'node:os'
 export interface SessionMeta {
   cwd: string
   model: string
+  providerId?: string
   thinking: boolean
   effortLevel?: 'low' | 'medium' | 'high'
   permMode: string
@@ -101,6 +102,7 @@ export function loadSession(file: string): LoadedSession {
       meta = {
         cwd: sawMeta ? meta.cwd : (r.cwd ?? ''),
         model: r.model ?? 'deepseek-v4-flash',
+        providerId: r.providerId,
         thinking: r.thinking ?? false,
         effortLevel: r.effortLevel,
         permMode: r.permMode ?? 'default',
