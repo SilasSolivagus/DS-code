@@ -188,7 +188,8 @@ export function FullscreenApp(props: {
   // 输入框光标行（1-based 从顶算）：ScrollView(scrollH) + 提示行(1) + 上方 suggestions + 输入框上边线(1) + 光标内容行(1)。±1 由 pty 微调
   const caretRow = Math.max(1, scrollH + 1 + aboveInput + 2)
 
-  const parkRef = useRef<{ active: boolean }>({ active: false })
+  // 停泊状态：active=已泊待解；row/col=最新停泊目标；enabled=输入框激活可泊；id=重停泊去抖句柄。
+  const parkRef = useRef<{ active: boolean; row: number; col: number; enabled: boolean; id?: ReturnType<typeof setTimeout> }>({ active: false, row: 1, col: 1, enabled: false })
 
   // 量底部区域高（提示行+输入框/弹窗+页脚）→ 算可用高 → 应用 auto-follow + 位置提示。每帧跑，稳定后幂等不再 setState。
   useLayoutEffect(() => {
@@ -217,16 +218,28 @@ export function FullscreenApp(props: {
         parkRef.current.active = false
         orig(`\x1b[${frameHRef.current};1H`)  // 移回实际渲染底部，让 ink eraseLines 从正确处起
       }
-      return (orig as any)(chunk, ...rest)
+      const r = (orig as any)(chunk, ...rest)
+      // ink 写完后补一次重停泊（去抖）：否则 ink 收尾把光标留在全屏底部，一次性 setTimeout 停泊会输掉竞争。
+      if (parkRef.current.enabled) {
+        clearTimeout(parkRef.current.id)
+        parkRef.current.id = setTimeout(() => {
+          try { orig(`\x1b[?25h\x1b[${parkRef.current.row};${parkRef.current.col}H`); parkRef.current.active = true } catch { /* 忽略 */ }
+        }, 0)
+      }
+      return r
     }) as typeof out.write
     return () => { out.write = orig; delete out.__origWrite }
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!inputActive || !stdout?.isTTY || CURSOR_PARK_OFF) return
+    parkRef.current.enabled = !!inputActive && !!stdout?.isTTY && !CURSOR_PARK_OFF
+    if (!parkRef.current.enabled) return
     const out = stdout as NodeJS.WriteStream & { __origWrite?: typeof stdout.write }
     const orig = out.__origWrite ?? out.write.bind(out)
     const col = parkCol(draft, stdout.columns ?? 80, dispWidth)
+    // 记录最新停泊目标，供 write-wrapper 在 ink 每次写完后补停泊（赢得与 ink 收尾的竞争）。
+    parkRef.current.row = caretRow
+    parkRef.current.col = col
     const id = setTimeout(() => {
       try {
         ;(orig as any)(`\x1b[?25h\x1b[${caretRow};${col}H`)
@@ -235,13 +248,6 @@ export function FullscreenApp(props: {
     }, 0)
     return () => clearTimeout(id)
   })
-
-  // 启动补一次重渲：首帧 totalH 未收敛→scrollH=availableH→caretRow 算到屏幕底部，光标会泊到左下。
-  // 布局稳定后强制重渲一次，让 IME 光标重新停泊到输入框真实行，无需用户先打字才归位。
-  useEffect(() => {
-    const id = setTimeout(() => setTick(x => x + 1), 60)
-    return () => clearTimeout(id)
-  }, [])
 
   return (
     <Box flexDirection="column" height={rows}>
