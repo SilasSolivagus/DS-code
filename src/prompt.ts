@@ -6,6 +6,9 @@ import type { SkillDefinition } from './skillsLoader.js'
 import { formatSkillListing } from './skillsLoader.js'
 import { loadMemoryPrompt } from './memdir/memdir.js'
 
+/** plan 模式指引：进入 plan 模式时由 TUI 作为 <system-reminder> 注入，退出时停注。 */
+export const PLAN_MODE_GUIDANCE = `你当前处于 plan（计划）模式：只读。先用 Read/Glob/Grep 探索代码、理解现状与约束，写出一份可执行的实施计划；此模式下禁止任何落地修改（不写文件、不跑改动性命令）。计划写好后调用 ExitPlanMode 工具把计划交给用户审批；用户批准后才会退出 plan 模式开始执行。`
+
 /** 从 cwd 向上逐层找 DEEPCODE.md/CLAUDE.md/AGENTS.md（每层取一个，DEEPCODE.md 优先），最后加全局 ~/.deepcode/DEEPCODE.md */
 export function findMemoryFiles(cwd: string, home: string = os.homedir()): string[] {
   const found: string[] = []
