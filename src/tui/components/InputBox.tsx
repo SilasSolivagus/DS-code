@@ -133,7 +133,9 @@ export function InputBox(props: {
         <Text color={T.accent}>{'❯ '}</Text>
         {value === '' && pending === ''
           ? <Text dimColor>{props.busy ? '生成中… esc 中断' : '随便问点什么…'}</Text>
-          : <Text>{value}<Text inverse> </Text></Text>}
+          : <Text>{value}</Text>}
+        {/* 不画假光标块：真终端光标由 FullscreenApp 的 IME 停泊精确定位（parkCol+parkRowOffset），
+            画假块会与真光标不重合显成两个、且其占位空格扰乱 value 折行宽度致 parkCol 列偏移。 */}
       </Box>
     </Box>
   )
