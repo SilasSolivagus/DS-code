@@ -1,6 +1,6 @@
 // test/promptSections.test.ts
 import { describe, it, expect } from 'vitest'
-import { SYSTEM_SECTION, DOING_TASKS_SECTION, TOOLS_SECTION, CARE_SECTION } from '../src/prompt.js'
+import { SYSTEM_SECTION, DOING_TASKS_SECTION, TOOLS_SECTION, CARE_SECTION, TONE_SECTION } from '../src/prompt.js'
 
 describe('SYSTEM_SECTION', () => {
   it('以 # 系统 标题开头', () => {
@@ -83,5 +83,20 @@ describe('CARE_SECTION', () => {
   it('含「别用破坏性动作走捷径」+ 意外状态先调查', () => {
     expect(CARE_SECTION).toContain('--no-verify')
     expect(CARE_SECTION).toContain('调查')
+  })
+})
+
+describe('TONE_SECTION', () => {
+  it('以 # 语气与风格 开头', () => {
+    expect(TONE_SECTION.startsWith('# 语气与风格')).toBe(true)
+  })
+  it('含 file:line 引用规则', () => {
+    expect(TONE_SECTION).toContain('src/loop.ts:42')
+  })
+  it('含「先给答案再给理由」', () => {
+    expect(TONE_SECTION).toContain('先给答案')
+  })
+  it('含不用 emoji 规则', () => {
+    expect(TONE_SECTION).toContain('emoji')
   })
 })
