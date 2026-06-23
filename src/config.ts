@@ -5,7 +5,7 @@ import os from 'node:os'
 import { HOOK_EVENTS, type HooksConfig, type HookEvent, runHooks } from './hooks.js'
 import { loadLayeredSettings } from './settingsLayers.js'
 import { parseMemoryConfig } from './memdir/memoryConfig.js'
-import type { CustomProvider } from './providers.js'
+import type { CustomProvider, ModelMeta } from './providers.js'
 
 export interface McpStdioServerConfig {
   command: string
@@ -116,6 +116,8 @@ export function loadRawUserSettings(): Settings {
     allowedHttpHookUrls: parseStringArray(raw?.allowedHttpHookUrls),
     httpHookAllowedEnvVars: parseStringArray(raw?.httpHookAllowedEnvVars),
     memory: parseMemoryConfig(raw?.memory),
+    provider: raw?.provider === 'glm' || raw?.provider === 'custom' || raw?.provider === 'deepseek' ? raw.provider : undefined,
+    providers: parseProvidersConfig(raw?.providers),
   }
 }
 
@@ -176,6 +178,38 @@ export function parseSkillsConfig(raw: unknown): SkillsConfig | undefined {
     out.listingBudgetChars = r.listingBudgetChars
   }
   return out
+}
+
+/** 宽松解析 settings.providers：deepseek/glm 取 {apiKey:string}；custom 须有 baseURL + models.fast/smart。
+ *  custom.dialect 非 deepseek/glm/openai 则丢弃。非对象 → undefined。 */
+export function parseProvidersConfig(raw: unknown): Settings['providers'] | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const r = raw as Record<string, unknown>
+  const out: NonNullable<Settings['providers']> = {}
+  const keyOnly = (v: unknown): { apiKey?: string } | undefined => {
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined
+    const k = (v as any).apiKey
+    return typeof k === 'string' && k ? { apiKey: k } : {}
+  }
+  const ds = keyOnly(r.deepseek); if (ds) out.deepseek = ds
+  const glm = keyOnly(r.glm); if (glm) out.glm = glm
+  const c = r.custom
+  if (c && typeof c === 'object' && !Array.isArray(c)) {
+    const cc = c as Record<string, any>
+    const models = cc.models
+    if (typeof cc.baseURL === 'string' && cc.baseURL &&
+        models && typeof models === 'object' &&
+        typeof models.fast === 'string' && typeof models.smart === 'string') {
+      const custom: CustomProvider = { baseURL: cc.baseURL, models: { fast: models.fast, smart: models.smart } }
+      if (typeof cc.apiKeyEnv === 'string') custom.apiKeyEnv = cc.apiKeyEnv
+      if (typeof cc.apiKey === 'string') custom.apiKey = cc.apiKey
+      if (cc.dialect === 'deepseek' || cc.dialect === 'glm' || cc.dialect === 'openai') custom.dialect = cc.dialect
+      if (cc.meta && typeof cc.meta === 'object') custom.meta = cc.meta as Record<string, ModelMeta>
+      if (cc.defaultMeta && typeof cc.defaultMeta === 'object') custom.defaultMeta = cc.defaultMeta as ModelMeta
+      out.custom = custom
+    }
+  }
+  return Object.keys(out).length ? out : undefined
 }
 
 /** 宽松解析 settings.webSearch：bocha/tavily 须为含非空 string apiKey 的对象才留；provider 留作向后兼容。非对象→undefined。 */
