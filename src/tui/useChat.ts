@@ -56,6 +56,7 @@ import { SteeringQueue, formatSteeringMessage, type SteeringItem } from '../stee
 import { type SessionMemoryState, shouldUpdateSessionMemory, runSessionMemoryUpdate } from '../services/memory/sessionMemory.js'
 import { activeFastModel, activeProvider, belongsToProvider, modelList as providerModelList } from '../providers.js'
 import { resolveResumeModel, rotateModel } from './resumeModel.js'
+import { loadOutputStyles, resolveOutputStyle } from '../outputStyles.js'
 
 /** ! 直跑：同步执行，30s 超时，stdout+stderr 合并，超 20k 截断 */
 export function runBang(cmd: string, cwd: string): { output: string; code: number } {
@@ -282,7 +283,7 @@ export function createChatCore(opts: {
         }),
       })
     : null
-  const messages: any[] = [{ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars, memdir) }]
+  const messages: any[] = [{ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars, memdir, resolveOutputStyle(settings.outputStyle, loadOutputStyles())) }]
   const usageLog: UsageRecord[] = []
   let session!: SessionHandle
   const hookDeps = {
@@ -378,7 +379,7 @@ export function createChatCore(opts: {
     taskList.bind(sessionIdFromFile(session.file)); compacted = false; lastPromptTokens = 0; baselineLen = 0; consecutiveCompactFailures = 0; compactWarned = false
     // doCompact 崩溃在 appendCompact 与首条 re-append 之间的兜底
     if (messages.length === 0 || messages[0]?.role !== 'system') {
-      messages.unshift({ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars, memdir) })
+      messages.unshift({ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars, memdir, resolveOutputStyle(settings.outputStyle, loadOutputStyles())) })
       session.appendMessage(messages[0])
     }
     nextTurnId = loaded.maxTurnId + 1

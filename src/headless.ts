@@ -13,6 +13,7 @@ import { bgTaskListTool, taskOutputTool, taskStopTool } from './tools/taskTools.
 import { taskCreateTool, taskGetTool, taskUpdateTool, taskListTool } from './tools/taskListTools.js'
 import { installTaskCleanup } from './tasks.js'
 import { buildSystemPrompt, findMemoryFiles } from './prompt.js'
+import { loadOutputStyles, resolveOutputStyle } from './outputStyles.js'
 import { loadLayeredSettings } from './settingsLayers.js'
 import { runHooks } from './hooks.js'
 import { makeHookRuntime } from './hookRuntime.js'
@@ -74,7 +75,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
   }
   ctx.hookDispatch = (event, payload) => runHooks(event, payload, settings.hooks, hookDeps)
   // SessionStart：会话开始（headless 恒 startup）。await 注入 additionalContext 到初始上下文。
-  const initMsgs: any[] = [{ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars) }]
+  const initMsgs: any[] = [{ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars, undefined, resolveOutputStyle(settings.outputStyle, loadOutputStyles())) }]
   if (settings.hooks) {
     const ss = await runHooks('SessionStart', {
       hook_event_name: 'SessionStart', cwd, session_id: ctx.sessionId?.(), source: 'startup',
