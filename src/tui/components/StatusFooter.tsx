@@ -51,7 +51,10 @@ export function StatusFooter(props: {
       <Text>
         <Text dimColor>[</Text>
         <Text color={T.accent}>{props.model}</Text>
-        <Text dimColor>{` | ${props.mode}`}</Text>
+        <Text dimColor>{' | '}</Text>
+        {props.mode === 'default'
+          ? <Text dimColor>{props.mode}</Text>
+          : <Text bold color={props.mode === 'yolo' ? T.err : props.mode === 'plan' ? T.warn : T.ok}>{props.mode}</Text>}
         {props.thinking && <Text dimColor>{` | think:${props.effortLevel}`}</Text>}
         <Text dimColor>{`]`}</Text>
         <Text dimColor>{` | ${props.cwdBase}`}</Text>

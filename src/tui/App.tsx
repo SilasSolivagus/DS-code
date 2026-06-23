@@ -78,23 +78,14 @@ export function App(props: {
   }, [!!state.pendingAsk, !!state.pendingQuestion, !!state.pendingPlanApproval, resumeMode, rewindStep])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ctrl+C 两次退出（App 层统一管理，exitOnCtrlC: false 时才需要）
-  // Shift+Tab 三态循环：default→acceptEdits→plan→default（\x1b[Z）
-  // 注意：Shift+Tab 可达性依赖终端实现——实现代码在此，但需真机冒烟确认 ink useInput 能收到 key.shift+key.tab。
-  // 不可达时（ink 无法区分 Shift+Tab 与 Tab）降级使用 /plan 命令（保底路径）。
+  // Ctrl+C 两次退出。
+  // （Shift+Tab 三态切换经真机冒烟确认在 ink 下是死键：Shift+Tab=ESC[Z 不被 useInput 识别——已移除。
+  //   进出 plan / acceptEdits 模式改用 /plan、/accept 命令，是保底可达路径。）
   useInput((input, key) => {
     if (key.ctrl && input === 'c') {
       const now = Date.now()
       if (now - lastSigint < 2000) exit()
       else setLastSigint(now)
-    }
-    // Shift+Tab 三态：default→acceptEdits→plan→default（\x1b[Z）
-    // 注意：ink useInput 能否收到 key.shift && key.tab 需真机冒烟确认（Shift+Tab = ESC[Z）。
-    // 不可达时此分支永不触发；/plan 和 /accept 命令是保底可达路径。
-    if (key.shift && key.tab && !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion && !resumeMode && !rewindStep) {
-      // default → acceptEdits → plan → default 循环
-      if (state.permMode === 'default') void core.send('/accept')
-      else if (state.permMode === 'acceptEdits') void core.send('/plan')
-      else void core.send('/plan') // plan → 退出回 prePlanMode
     }
   })
 
