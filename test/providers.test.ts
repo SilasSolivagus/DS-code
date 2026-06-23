@@ -1,11 +1,13 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 vi.mock('../src/config.js', () => ({
   loadSettings: () => ({ permissions: { allow: [] }, costWarnCNY: 15, maxToolResultChars: 100000 }),
 }))
 import {
   BUILTIN_PROVIDERS, resolveActiveProvider, modelMeta, belongsToProvider,
-  resolveSubModel, type ProviderPreset, type Settings,
+  resolveSubModel, __resetProviderCache, type ProviderPreset, type Settings,
 } from '../src/providers.js'
+
+beforeEach(() => __resetProviderCache())
 
 const baseSettings = (over: Partial<any> = {}): any => ({
   permissions: { allow: [] }, costWarnCNY: 15, maxToolResultChars: 100000, ...over,

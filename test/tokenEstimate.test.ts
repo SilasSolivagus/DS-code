@@ -1,8 +1,11 @@
-import { describe, it, expect, afterEach, vi } from 'vitest'
+import { describe, it, expect, afterEach, vi, beforeEach } from 'vitest'
 
 vi.mock('../src/config.js', () => ({ loadSettings: vi.fn(() => ({ provider: 'deepseek', permissions: { allow: [] }, costWarnCNY: 15, maxToolResultChars: 100000 })) }))
 
 import { estimateTextTokens, estimateMessagesTokens, resolveContextWindow, computeCompactThreshold, effectiveThreshold } from '../src/tokenEstimate.js'
+import { __resetProviderCache } from '../src/providers.js'
+
+beforeEach(() => __resetProviderCache())
 
 describe('estimateTextTokens', () => {
   it('空/undefined/null → 0', () => {

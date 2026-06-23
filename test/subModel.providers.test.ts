@@ -1,7 +1,9 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('../src/config.js', () => ({ loadSettings: vi.fn(() => ({ provider: 'glm', permissions: { allow: [] }, costWarnCNY: 15, maxToolResultChars: 100000 })) }))
-import { resolveSubModel, activeFastModel } from '../src/providers.js'
+import { resolveSubModel, activeFastModel, __resetProviderCache } from '../src/providers.js'
+
+beforeEach(() => __resetProviderCache())
 
 describe('active=glm 下子调用 model', () => {
   it('activeFastModel = glm-5-turbo', () => {

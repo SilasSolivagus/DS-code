@@ -1,7 +1,10 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 
 vi.mock('../src/config.js', () => ({ loadSettings: vi.fn(() => ({ provider: 'glm', permissions: { allow: [] }, costWarnCNY: 15, maxToolResultChars: 100000 })) }))
 import { costCNY, cacheSavingsCNY } from '../src/pricing.js'
+import { __resetProviderCache } from '../src/providers.js'
+
+beforeEach(() => __resetProviderCache())
 
 describe('costCNY 多 provider', () => {
   it('active=glm 时 glm-5.2 成本非零', () => {

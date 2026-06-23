@@ -1,8 +1,11 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('../src/config.js', () => ({ loadSettings: vi.fn(() => ({ provider: 'deepseek', permissions: { allow: [] }, costWarnCNY: 15, maxToolResultChars: 100000 })) }))
 
 import { costCNY, cacheSavingsCNY } from '../src/pricing.js'
+import { __resetProviderCache } from '../src/providers.js'
+
+beforeEach(() => __resetProviderCache())
 
 describe('costCNY', () => {
   it('flash：命中/未命中/输出 分别计费（CNY）', () => {

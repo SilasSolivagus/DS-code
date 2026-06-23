@@ -102,10 +102,13 @@ export function belongsToProvider(preset: ProviderPreset, modelId: string): bool
   return modelId in preset.meta || modelId === preset.models.fast || modelId === preset.models.smart
 }
 
-/** 便利封装：读 settings 解析 active preset。 */
+let _cachedProvider: ProviderPreset | undefined
+/** 便利封装：读 settings 解析 active preset（结果 memoize，provider 运行期锁定）。 */
 export function activeProvider(): ProviderPreset {
-  return resolveActiveProvider(loadSettings())
+  return (_cachedProvider ??= resolveActiveProvider(loadSettings()))
 }
+/** 测试用：清 active provider 缓存（运行期 provider 锁定，仅测试切换 mock 时需重置）。 */
+export function __resetProviderCache(): void { _cachedProvider = undefined }
 export function activeModelMeta(modelId: string): ModelMeta {
   return modelMeta(activeProvider(), modelId)
 }
