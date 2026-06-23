@@ -5,6 +5,7 @@ import os from 'node:os'
 import { HOOK_EVENTS, type HooksConfig, type HookEvent, runHooks } from './hooks.js'
 import { loadLayeredSettings } from './settingsLayers.js'
 import { parseMemoryConfig } from './memdir/memoryConfig.js'
+import type { CustomProvider } from './providers.js'
 
 export interface McpStdioServerConfig {
   command: string
@@ -44,6 +45,14 @@ export interface Settings {
   baseURL?: string
   /** DeepSeek API key（首跑向导写入；env DEEPSEEK_API_KEY 优先级更高） */
   apiKey?: string
+  /** active provider 选择（缺省 deepseek）。仅信任 user scope（project 剥离，见 settingsLayers）。 */
+  provider?: 'deepseek' | 'glm' | 'custom'
+  /** per-provider 覆盖（apiKey）+ custom 后端定义。仅信任 user scope。 */
+  providers?: {
+    deepseek?: { apiKey?: string }
+    glm?: { apiKey?: string }
+    custom?: CustomProvider
+  }
   /** 启动用内联模式（退回非全屏 TUI；env DEEPCODE_INLINE=1 / CLI --inline 优先） */
   inline?: boolean
   /** hooks 生命周期配置（会话启动快照；见 src/hooks.ts） */
