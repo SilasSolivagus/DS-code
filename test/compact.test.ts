@@ -1,6 +1,6 @@
 // test/compact.test.ts
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { summarize, rebuildMessages, shouldAutoCompact } from '../src/compact.js'
+import { summarize, rebuildMessages, shouldAutoCompact, SUMMARY_PROMPT } from '../src/compact.js'
 
 // 隔离真实 provider 配置：pinning activeFastModel 为 deepseek 档，使测试对 ~/.deepcode/settings.json 免疫
 vi.mock('../src/providers.js', async orig => ({
@@ -115,5 +115,16 @@ describe('shouldAutoCompact', () => {
   })
   it('达到连续失败上限 → false（熔断）', () => {
     expect(shouldAutoCompact(999_999, 971_000, 3, 3)).toBe(false)
+  })
+})
+
+describe('SUMMARY_PROMPT 9 段结构', () => {
+  it('含全部 9 段关键词', () => {
+    for (const s of ['主要请求与意图', '关键技术概念', '文件与代码', '错误与修复', '解题思路', '所有用户消息', '未完成事项', '当前工作', '下一步']) {
+      expect(SUMMARY_PROMPT).toContain(s)
+    }
+  })
+  it('要求先在 <analysis> 标签内梳理', () => {
+    expect(SUMMARY_PROMPT).toContain('<analysis>')
   })
 })
