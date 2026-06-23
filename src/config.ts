@@ -71,6 +71,8 @@ export interface Settings {
   httpHookAllowedEnvVars?: string[]
   /** 记忆子系统配置（缺省全默认，见 memoryConfig.ts）。 */
   memory?: import('./memdir/memoryConfig.js').MemoryConfig
+  /** 主题名（undefined = 运行期 Provider 兜底 dark；见 src/tui/theme.ts THEMES）。 */
+  theme?: string
 }
 
 const DIR = path.join(os.homedir(), '.deepcode')
