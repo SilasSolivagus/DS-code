@@ -41,6 +41,8 @@ export interface Settings {
   maxToolResultChars: number
   /** 启动默认模型（undefined = 内置缺省 deepseek-v4-flash） */
   model?: string
+  /** 输出风格名（undefined = 不注入特殊风格；'default' 同) */
+  outputStyle?: string
   /** 自定义 API baseURL（undefined = https://api.deepseek.com） */
   baseURL?: string
   /** DeepSeek API key（首跑向导写入；env DEEPSEEK_API_KEY 优先级更高） */

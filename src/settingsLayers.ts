@@ -147,6 +147,7 @@ function parsePresent(raw: any): Record<string, unknown> {
   for (const k of ['compactTokens', 'costWarnCNY', 'maxToolResultChars', 'model', 'baseURL', 'apiKey', 'inline', 'provider'] as const) {
     if (raw[k] !== undefined) p[k] = raw[k]
   }
+  if (typeof raw.outputStyle === 'string') p.outputStyle = raw.outputStyle
   if ('hooks' in raw) { const h = parseHooksConfig(raw.hooks); if (h) p.hooks = h }
   if ('mcpServers' in raw) { const m = parseMcpServers(raw.mcpServers); if (m) p.mcpServers = m }
   if ('skills' in raw) { const s = parseSkillsConfig(raw.skills); if (s) p.skills = s }
