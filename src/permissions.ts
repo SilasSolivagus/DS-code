@@ -67,7 +67,7 @@ export function splitBashCommand(command: string): { tooComplex: boolean; comman
   return { tooComplex: false, commands }
 }
 
-export type PermissionMode = 'default' | 'acceptEdits' | 'yolo'
+export type PermissionMode = 'default' | 'acceptEdits' | 'yolo' | 'plan'
 export type Decision = 'yes' | 'no' | 'always'
 
 export type PermissionRuleSource = 'builtin' | 'user' | 'project' | 'local' | 'flag'
@@ -212,6 +212,12 @@ export async function checkPermission(
       await hooks?.onDenied?.(tool.name, tool.needsPermission(input) || tool.name, reason)
       return { ok: false, reason, decisionReason: { type: 'rule', rule: { source: src, behavior: 'deny', value: hit } } }
     }
+  }
+  // [新] plan 门：plan 模式非只读一律拒（不带 !forceAsk——严于 deny 降级 ask；deny 已在上方优先处理）
+  if (pc.mode === 'plan' && !tool.isReadOnly) {
+    const reason = 'plan 模式为只读，需先退出 plan 模式（ExitPlanMode）'
+    await hooks?.onDenied?.(tool.name, tool.needsPermission(input) || tool.name, reason)
+    return { ok: false, reason, decisionReason: { type: 'other', reason: 'plan 模式只读' } }
   }
   if (tool.isReadOnly && !forceAsk) return { ok: true }
   const desc = tool.needsPermission(input)
