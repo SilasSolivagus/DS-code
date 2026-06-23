@@ -15,6 +15,7 @@ import { ScrollView } from './ScrollView.js'
 import { InputBox } from './components/InputBox.js'
 import { Suggestions } from './components/Suggestions.js'
 import { PermissionDialog } from './components/PermissionDialog.js'
+import { PlanApprovalDialog } from './components/PlanApprovalDialog.js'
 import { QuestionDialog } from './components/QuestionDialog.js'
 import { SelectList } from './components/SelectList.js'
 import { Spinner } from './components/Spinner.js'
@@ -85,10 +86,10 @@ export function FullscreenApp(props: {
   }, [])
 
   useEffect(() => {
-    if (state.pendingAsk || state.pendingQuestion || resumeMode) {
+    if (state.pendingAsk || state.pendingQuestion || state.pendingPlanApproval || resumeMode) {
       setDraft(''); setValueOverride(undefined); justPickedRef.current = null
     }
-  }, [!!state.pendingAsk, !!state.pendingQuestion, resumeMode])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [!!state.pendingAsk, !!state.pendingQuestion, !!state.pendingPlanApproval, resumeMode])  // eslint-disable-line react-hooks/exhaustive-deps
 
   useInput((input, key) => {
     const ms = Math.max(0, totalRef.current - viewportRef.current)
@@ -100,6 +101,10 @@ export function FullscreenApp(props: {
       const now = Date.now()
       if (now - lastSigint < 2000) exit()
       else setLastSigint(now)
+    }
+    // Shift+Tab 循环权限模式（default→acceptEdits→plan→default）。
+    if (key.shift && key.tab && !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion && !resumeMode) {
+      void core.send('/cycle-mode')
     }
   })
 
@@ -154,7 +159,7 @@ export function FullscreenApp(props: {
     } catch { return null }
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps
   const memoryCount = useMemo(() => findMemoryFiles(props.cwd).length, [])  // eslint-disable-line react-hooks/exhaustive-deps
-  const modeLabel = (state.permMode === 'acceptEdits' ? 'accept' : state.permMode === 'yolo' ? 'yolo' : 'default')
+  const modeLabel = (state.permMode === 'acceptEdits' ? 'accept' : state.permMode === 'yolo' ? 'yolo' : state.permMode === 'plan' ? 'plan' : 'default')
     + (state.thinking ? '·think' : '')
   const toolCounts = useMemo(() => {
     const order: string[] = []
@@ -168,7 +173,7 @@ export function FullscreenApp(props: {
     return order.map(name => ({ name, n: counts.get(name)! }))
   }, [state.transcript])
 
-  const inputActive = !state.pendingAsk && !state.pendingQuestion && !resumeMode && !state.busy
+  const inputActive = !state.pendingAsk && !state.pendingQuestion && !state.pendingPlanApproval && !resumeMode && !state.busy
 
   // —— 全屏几何（每帧算）——
   const rows = stdout?.rows ?? 24
@@ -250,6 +255,8 @@ export function FullscreenApp(props: {
           ? <QuestionDialog questions={state.pendingQuestion.questions} onDone={a => core.resolveQuestion(a)} />
           : state.pendingAsk
           ? <PermissionDialog ask={state.pendingAsk} onDecide={d => core.resolveAsk(d)} />
+          : state.pendingPlanApproval
+          ? <PlanApprovalDialog pending={state.pendingPlanApproval} onDecide={approved => core.resolvePlanApproval(approved)} />
           : resumeMode
             ? <SelectList
                 items={core.resumeList().map(s => s.preview)}
