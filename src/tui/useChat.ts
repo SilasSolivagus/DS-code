@@ -903,7 +903,7 @@ export function createChatCore(opts: {
       // Shift+Tab 用：default → acceptEdits → plan → default 三态循环（绝对定模式，回得到 default）。
       if (opts.yolo) return // yolo 仅 --yolo 启动，不参与循环
       if (permMode === 'default') permMode = 'acceptEdits'
-      else if (permMode === 'acceptEdits') { prePlanMode = 'default'; permMode = 'plan' }
+      else if (permMode === 'acceptEdits') { prePlanMode = permMode; permMode = 'plan' } // 记进入前模式供 /plan 退出恢复（cycle 的 plan→default 走下一分支不读 prePlanMode）
       else { permMode = 'default'; prePlanMode = 'default' } // plan → default
       session.appendMeta({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id })
       notice('info', permMode === 'plan'

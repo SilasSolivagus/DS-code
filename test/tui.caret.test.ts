@@ -54,12 +54,12 @@ describe('parkRowOffset：光标视觉行相对输入框首行的偏移（折行
     expect(parkRowOffset('a'.repeat(100), 80, len)).toBe(1) // floor((2+100)/78)=1
     expect(parkRowOffset('a'.repeat(200), 80, len)).toBe(2) // floor((2+200)/78)=2
   })
-  it('含硬换行：逐逻辑行折行数 + 换行各占 1 行', () => {
-    expect(parkRowOffset('xxxx\nbb', 80, len)).toBe(1) // 行0 floor(4/76)=0 +1换行；末行 floor(2/76)=0 → 1
-    expect(parkRowOffset('abc\n', 80, len)).toBe(1)    // 行0 0 +1换行；末行空 0 → 1
+  it('含硬换行：逐逻辑行视觉行数（ceil）+ 末行光标折行（floor）', () => {
+    expect(parkRowOffset('xxxx\nbb', 80, len)).toBe(1) // 行0 ceil((2+4)/78)=1；末行'bb'(无前缀) floor(2/78)=0 → 1
+    expect(parkRowOffset('abc\n', 80, len)).toBe(1)    // 行0 ceil((2+3)/78)=1；末行空 floor(0/78)=0 → 1
   })
   it('CJK 双宽计入折行', () => {
-    // avail=76，39 个 CJK = 宽 78 > 76 → floor(78/76)=1
+    // flowW=78，❯ (2)+39 个 CJK(宽78) = 80 > 78 → floor(80/78)=1
     expect(parkRowOffset('你'.repeat(39), 80, cjk)).toBe(1)
   })
 })
