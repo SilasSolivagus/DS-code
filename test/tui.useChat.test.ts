@@ -219,7 +219,7 @@ describe('createChatCore.runTurn', () => {
     expect(core.state.model).toBe('my-custom-model')
     const notices = core.state.transcript.filter(i => i.kind === 'notice') as any[]
     expect(notices.some(n => n.text.includes('已切换到') && n.text.includes('my-custom-model'))).toBe(true)
-    expect(notices.some(n => n.text.includes('非 deepseek 系列计价按 0 估算'))).toBe(true)
+    expect(notices.some(n => n.text.includes('非当前 provider 档，计价/上下文按兜底估算'))).toBe(true)
   })
 
   it('/model 无参从自定义模型切回 flash', async () => {

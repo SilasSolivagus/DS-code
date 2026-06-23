@@ -53,8 +53,8 @@ import { createRecaller } from '../services/memory/recall.js'
 import { findRelevantMemories } from '../memdir/findRelevantMemories.js'
 import { SteeringQueue, formatSteeringMessage, type SteeringItem } from '../steering.js'
 import { type SessionMemoryState, shouldUpdateSessionMemory, runSessionMemoryUpdate } from '../services/memory/sessionMemory.js'
-import { activeFastModel, activeProvider } from '../providers.js'
-import { resolveResumeModel } from './resumeModel.js'
+import { activeFastModel, activeProvider, belongsToProvider } from '../providers.js'
+import { resolveResumeModel, rotateModel } from './resumeModel.js'
 
 /** ! 直跑：同步执行，30s 超时，stdout+stderr 合并，超 20k 截断 */
 export function runBang(cmd: string, cwd: string): { output: string; code: number } {
@@ -228,7 +228,7 @@ export function createChatCore(opts: {
   let abort = new AbortController()
   const steerQueue = new SteeringQueue()
   let toolsRunning = 0 // 并发 tool 计数；steer() 据此判定是否附带软中断
-  let model = settings.model ?? 'deepseek-v4-flash'
+  let model = settings.model ?? activeFastModel()
   let tokenBudget: number | null = null // 2.1 sticky 预算（进程内，不落 session；+0k 清除）
   let budgetUsed = 0                     // 2.1 本次 send 累计输出 token（状态栏 budget 段分子）
   let thinking = false
@@ -838,13 +838,13 @@ export function createChatCore(opts: {
       if (arg) {
         // /model <名>：切换到任意指定模型（配合自定义 baseURL 可接 OpenAI 兼容端点）
         model = arg
-        const isDeepSeek = arg.startsWith('deepseek')
-        const suffix = isDeepSeek ? '' : '（非 deepseek 系列计价按 0 估算）'
-        session.appendMeta({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id })
+        const known = belongsToProvider(activeProvider(), arg)
+        const suffix = known ? '' : '（非当前 provider 档，计价/上下文按兜底估算）'
+        session.appendMeta({ cwd, model, providerId: activeProvider().id, thinking, effortLevel, permMode })
         notice('info', `已切换到 ${model}${suffix}`)
       } else {
-        // /model 无参：flash↔pro 轮换（从自定义模型返回时，落到 flash）
-        model = model === 'deepseek-v4-flash' ? 'deepseek-v4-pro' : 'deepseek-v4-flash'
+        // /model 无参：active fast↔smart 轮换（从自定义模型返回时，落到 fast）
+        model = rotateModel(model, activeProvider())
         session.appendMeta({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id })
         notice('info', `已切换到 ${model}`)
       }
