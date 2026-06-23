@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { Assembler } from '../src/api.js'
+import { Assembler, chatStream } from '../src/api.js'
 
 describe('Assembler usage 归一', () => {
   it('deepseek dialect 读顶层 prompt_cache_hit_tokens', () => {
@@ -21,6 +21,67 @@ describe('Assembler usage 归一', () => {
     const a = new Assembler()
     a.push({ usage: { prompt_tokens: 1, completion_tokens: 1, prompt_cache_hit_tokens: 1 }, choices: [] })
     expect(a.finish().usage.prompt_cache_hit_tokens).toBe(1)
+  })
+})
+
+function fakeClient(captured: any[]) {
+  return {
+    chat: {
+      completions: {
+        create: async (payload: any) => {
+          captured.push(payload)
+          return (async function* () {
+            yield {
+              choices: [{ delta: { content: 'hi' }, finish_reason: 'stop' }],
+              usage: { prompt_tokens: 1, completion_tokens: 1 },
+            }
+          })()
+        },
+      },
+    },
+  } as any
+}
+
+describe('chatStream thinking 字段不泄漏', () => {
+  const drain = async (gen: AsyncGenerator<any, any>) => {
+    let s = await gen.next()
+    while (!s.done) s = await gen.next()
+    return s.value
+  }
+
+  it('supportsThinking=false → payload 不含 thinking/reasoning_effort', async () => {
+    const cap: any[] = []
+    await drain(
+      chatStream(fakeClient(cap), {
+        model: 'm',
+        messages: [{ role: 'user', content: 'x' }],
+        tools: [],
+        thinking: true,
+        signal: new AbortController().signal,
+        dialect: 'openai',
+        supportsThinking: false,
+      }),
+    )
+    expect(cap[0]).not.toHaveProperty('thinking')
+    expect(cap[0]).not.toHaveProperty('reasoning_effort')
+  })
+
+  it('supportsThinking=true + thinking → payload 含 thinking enabled + reasoning_effort', async () => {
+    const cap: any[] = []
+    await drain(
+      chatStream(fakeClient(cap), {
+        model: 'm',
+        messages: [{ role: 'user', content: 'x' }],
+        tools: [],
+        thinking: true,
+        effortLevel: 'high',
+        signal: new AbortController().signal,
+        dialect: 'deepseek',
+        supportsThinking: true,
+      }),
+    )
+    expect(cap[0].thinking).toEqual({ type: 'enabled' })
+    expect(cap[0].reasoning_effort).toBe('high')
   })
 })
 
