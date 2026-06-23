@@ -61,6 +61,7 @@ export function FullscreenApp(props: {
   const [draft, setDraft] = useState('')
   const [resumeMode, setResumeMode] = useState(false)
   const [modelPickerMode, setModelPickerMode] = useState(false)
+  const [outputStyleMode, setOutputStyleMode] = useState(false)
   const [lastSigint, setLastSigint] = useState(0)
   const justPickedRef = useRef<string | null>(null)
   const [valueOverride, setValueOverride] = useState<{ text: string; nonce: number } | undefined>(undefined)
@@ -87,10 +88,10 @@ export function FullscreenApp(props: {
   }, [])
 
   useEffect(() => {
-    if (state.pendingAsk || state.pendingQuestion || state.pendingPlanApproval || resumeMode || modelPickerMode) {
+    if (state.pendingAsk || state.pendingQuestion || state.pendingPlanApproval || resumeMode || modelPickerMode || outputStyleMode) {
       setDraft(''); setValueOverride(undefined); justPickedRef.current = null
     }
-  }, [!!state.pendingAsk, !!state.pendingQuestion, !!state.pendingPlanApproval, resumeMode, modelPickerMode])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [!!state.pendingAsk, !!state.pendingQuestion, !!state.pendingPlanApproval, resumeMode, modelPickerMode, outputStyleMode])  // eslint-disable-line react-hooks/exhaustive-deps
 
   useInput((input, key) => {
     const ms = Math.max(0, totalRef.current - viewportRef.current)
@@ -104,7 +105,7 @@ export function FullscreenApp(props: {
       else setLastSigint(now)
     }
     // Shift+Tab 循环权限模式（default→acceptEdits→plan→default）。
-    if (key.shift && key.tab && !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion && !resumeMode && !modelPickerMode) {
+    if (key.shift && key.tab && !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion && !resumeMode && !modelPickerMode && !outputStyleMode) {
       void core.send('/cycle-mode')
     }
   })
@@ -144,6 +145,7 @@ export function FullscreenApp(props: {
     if (text === '/exit') { exit(); return }
     if (text === '/resume') { setResumeMode(true); return }
     if (text === '/model') { setModelPickerMode(true); return }
+    if (text === '/output-style') { setOutputStyleMode(true); return }
     setDraft(''); setValueOverride(undefined); justPickedRef.current = null
     void core.send(text)
   }
@@ -175,7 +177,7 @@ export function FullscreenApp(props: {
     return order.map(name => ({ name, n: counts.get(name)! }))
   }, [state.transcript])
 
-  const inputActive = !state.pendingAsk && !state.pendingQuestion && !state.pendingPlanApproval && !resumeMode && !modelPickerMode && !state.busy
+  const inputActive = !state.pendingAsk && !state.pendingQuestion && !state.pendingPlanApproval && !resumeMode && !modelPickerMode && !outputStyleMode && !state.busy
 
   // —— 全屏几何（每帧算）——
   const rows = stdout?.rows ?? 24
@@ -284,6 +286,12 @@ export function FullscreenApp(props: {
                 items={core.modelList().map(m => m.label)}
                 onPick={i => { core.applyModel(core.modelList()[i].id); setModelPickerMode(false) }}
                 onCancel={() => setModelPickerMode(false)}
+              />
+            : outputStyleMode
+            ? <SelectList
+                items={core.outputStyleList().map(s => `${s.name}${s.description ? ' — ' + s.description : ''}`)}
+                onPick={i => { core.applyOutputStyle(core.outputStyleList()[i].name); setOutputStyleMode(false) }}
+                onCancel={() => setOutputStyleMode(false)}
               />
             : <>
                 {state.busy && <Spinner turnStartAt={state.turnStartAt} turnOutTokens={state.turnOutTokens} />}
