@@ -19,7 +19,7 @@ describe('modelList /model 选择器列表', () => {
 
   it('label 含 window 与三段价格', () => {
     const items = modelList(BUILTIN_PROVIDERS.glm, 'glm-5-turbo')
-    const turbo = items.find(i => i.id === 'glm-5-turbo' && !i.label.includes('档（'))!
+    const turbo = items.find(i => i.id === 'glm-5-turbo' && i.label.includes('[fast]'))!
     expect(turbo.label).toContain('200k')
     expect(turbo.label).toContain('¥0.2') // hit
     expect(turbo.label).toContain('¥3')   // out
