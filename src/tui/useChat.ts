@@ -219,6 +219,9 @@ export interface ChatCore {
   applyOutputStyle(name: string): void
 }
 
+/** 压缩（summarize LLM 调用）超时上限：到点自动 abort，防 provider 卡住流时 /compact 与自动压缩无限挂起。 */
+export const COMPACT_TIMEOUT_MS = 120_000
+
 const HELP_TEXT =
   '/model  无参打开模型选择器；/model <名> 直接切到指定模型\n/think  thinking 模式开关\n/effort 思考档位 low/medium/high/off\n/accept acceptEdits 模式开关（Edit/Write 免确认，Bash 仍确认）\n/plan   plan 模式开关（只读探索+写计划，ExitPlanMode 请用户审批）\n/add-dir <路径> 添加工作目录白名单（plan 模式围栏扩展）\n/cost   本会话花费明细\n/context 上下文占比与上次 usage\n/stats  本会话统计（轮数/工具/token/缓存/花费）\n/copy   复制上条回复到剪贴板\n/memory 查看当前生效的记忆文件\n/compact 手动压缩对话历史\n/clear  清空对话（开新会话文件，花费累计保留）\n/resume 列出并恢复本目录历史会话\n/rewind 回退到某轮之前（仅对话/仅代码/两者）\n/fork   分叉当前对话到新会话继续（原会话冻结，新会话标题加 (Branch)）\n/rename <名> 给当前会话命名（显示在 /resume 列表）\n/export 导出对话到 markdown 文件\n/permissions 查看/删除已保存权限规则（/permissions rm <编号>）\n/init   分析项目生成 DEEPCODE.md\n/keybindings 查看快捷键\n/output-style 选择输出风格（default/Explanatory/Learning/自定义）\n/commit 生成并创建 git commit（预跑 git 状态+遵循仓库风格，带 Co-Authored-By: deepcode）\n/commit-push-pr 提交+推送+创建或更新 PR（## Summary/## Test plan，需 gh CLI）\n/exit   退出\n自定义命令：~/.deepcode/commands/*.md 或 <项目>/.deepcode/commands/*.md（$ARGUMENTS 占位）'
 
@@ -306,6 +309,7 @@ export function createChatCore(opts: {
     allowedHttpHookUrls: settings.allowedHttpHookUrls,
     httpHookAllowedEnvVars: settings.httpHookAllowedEnvVars,
   }
+  let compactAbort: AbortController | null = null // 进行中压缩的中止句柄（超时 + interrupt/ESC 用；空闲为 null）
   let compacted = false       // compact 后首条用户消息的一次性提醒
   let lastPromptTokens = 0    // 自动 compact 触发依据
   let baselineLen = 0         // 与 lastPromptTokens 原子配对：lastPromptTokens 覆盖的 messages 前缀长度（发送前预估只估超出此前缀的新消息）
@@ -541,48 +545,56 @@ export function createChatCore(opts: {
   /** compact：总结→重建消息→落盘 compact 记录与新前缀。失败不破坏现场（messages 仅在成功后替换）。 */
   const doCompact = async (trigger: 'auto' | 'manual' = 'auto'): Promise<void> => {
     notice('info', '[compact 总结中…]')
+    // ac 须可被中止：① 超时定时器（防 provider 卡住流无限挂起）② interrupt()/ESC（compactAbort 引用）。
     const ac = new AbortController()
-    if (settings.hooks) {
-      await runHooks('PreCompact', {
-        hook_event_name: 'PreCompact', cwd, trigger, messages_count: messages.length,
-      }, settings.hooks, hookDeps)
+    compactAbort = ac
+    const timeoutTimer = setTimeout(() => ac.abort(new Error(`compact 超时（${COMPACT_TIMEOUT_MS / 1000}s 内 provider 无响应）`)), COMPACT_TIMEOUT_MS)
+    try {
+      if (settings.hooks) {
+        await runHooks('PreCompact', {
+          hook_event_name: 'PreCompact', cwd, trigger, messages_count: messages.length,
+        }, settings.hooks, hookDeps)
+      }
+      // SessionMemory 并入：若 summary.md 存在，将其内容作为 user 前置消息注入 summarize 输入，保留会话状态
+      let messagesForSummarize = messages
+      const sid = ctx.sessionId?.()
+      if (mem.enabled && mem.sessionMemory.enabled && sid) {
+        const smPath = sessionMemoryPathFor(cwd, sid, os.homedir())
+        try {
+          const smContent = fs.readFileSync(smPath, 'utf8')
+          messagesForSummarize = [
+            ...messages.slice(0, 1), // system
+            { role: 'user', content: `<会话记忆>\n${smContent}\n</会话记忆>` },
+            ...messages.slice(1),
+          ]
+        } catch { /* summary.md 不存在则跳过 */ }
+      }
+      const { summary, usage: u, truncated } = await summarize(opts.client, messagesForSummarize, ac.signal)
+      const sub = activeFastModel()
+      usageLog.push({ usage: u, model: sub })
+      session.appendUsage(u, sub)
+      const rebuilt = rebuildMessages(messages, summary)
+      const before = messages.length
+      messages.length = 0
+      messages.push(...rebuilt)
+      session.appendCompact()
+      for (const m of messages) session.appendMessage(m)
+      compacted = true
+      lastPromptTokens = 0
+      baselineLen = 0
+      compactWarned = false
+      if (settings.hooks) {
+        await runHooks('PostCompact', {
+          hook_event_name: 'PostCompact', cwd, trigger, summary, truncated,
+          messages_before: before, messages_after: messages.length,
+        }, settings.hooks, hookDeps)
+      }
+      notice('info', 'compact 完成：历史已压缩为总结 + 最近 8 条（fileState 保留）')
+      if (truncated) notice('warn', '[compact 警告] 总结被长度截断，信息可能有损')
+    } finally {
+      clearTimeout(timeoutTimer)
+      compactAbort = null
     }
-    // SessionMemory 并入：若 summary.md 存在，将其内容作为 user 前置消息注入 summarize 输入，保留会话状态
-    let messagesForSummarize = messages
-    const sid = ctx.sessionId?.()
-    if (mem.enabled && mem.sessionMemory.enabled && sid) {
-      const smPath = sessionMemoryPathFor(cwd, sid, os.homedir())
-      try {
-        const smContent = fs.readFileSync(smPath, 'utf8')
-        messagesForSummarize = [
-          ...messages.slice(0, 1), // system
-          { role: 'user', content: `<会话记忆>\n${smContent}\n</会话记忆>` },
-          ...messages.slice(1),
-        ]
-      } catch { /* summary.md 不存在则跳过 */ }
-    }
-    const { summary, usage: u, truncated } = await summarize(opts.client, messagesForSummarize, ac.signal)
-    const sub = activeFastModel()
-    usageLog.push({ usage: u, model: sub })
-    session.appendUsage(u, sub)
-    const rebuilt = rebuildMessages(messages, summary)
-    const before = messages.length
-    messages.length = 0
-    messages.push(...rebuilt)
-    session.appendCompact()
-    for (const m of messages) session.appendMessage(m)
-    compacted = true
-    lastPromptTokens = 0
-    baselineLen = 0
-    compactWarned = false
-    if (settings.hooks) {
-      await runHooks('PostCompact', {
-        hook_event_name: 'PostCompact', cwd, trigger, summary, truncated,
-        messages_before: before, messages_after: messages.length,
-      }, settings.hooks, hookDeps)
-    }
-    notice('info', 'compact 完成：历史已压缩为总结 + 最近 8 条（fileState 保留）')
-    if (truncated) notice('warn', '[compact 警告] 总结被长度截断，信息可能有损')
   }
 
   // 权限确认桥：挂起 Promise + pendingAsk 状态，UI 用 resolveAsk 回答
@@ -1234,6 +1246,7 @@ export function createChatCore(opts: {
       if (pendingAsk) { const p = pendingAsk; pendingAsk = null; setState(); p.resolve('no') }
       if (pendingQuestion) { const p = pendingQuestion; pendingQuestion = null; setState(); p.resolve(null) }
       if (pendingPlanApproval) { const p = pendingPlanApproval; pendingPlanApproval = null; setState(); p.resolve(false) }
+      compactAbort?.abort('user-cancel') // 压缩进行中：ESC 也能中断（否则卡在 doCompact 的 ac，永远逃不出）
       abort.abort('user-cancel')
     },
     steer: (text: string) => {
