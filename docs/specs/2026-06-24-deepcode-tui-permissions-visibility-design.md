@@ -10,10 +10,11 @@ deepcode 的权限内核已具备来源层级追踪（`ruleSources`/`denySources
 - `/permissions` 命令（useChat.ts:1123-1140）只列 **user 层 allow 规则**，不显示来源、不显示 deny 规则。
 - 权限弹窗（PermissionDialog.tsx）批准「总是允许」前，**看不到将保存的规则文本**——规则在 `pc.ask` 之后才在 permissions.ts:270-277 生成。
 
-本批 = **把已有内核能力暴露到 UI 的 3 件纯可见性改动**，不改权限判定逻辑、不改既有规则生成/写层约定：
+本批 = **把已有内核能力暴露到 UI 的 2 件纯可见性改动**，不改权限判定逻辑、不改既有规则生成/写层约定：
 1. `/permissions` 合并多层视图 + deny 段 + `deny-rm` 子命令 + 按值删除。
 2. 弹窗「总是允许」选项 label **内嵌将保存的规则文本**（对齐 CC「Yes, and don't ask again for `<rule>`」内联呈现）。
-3. 弹窗在 **forceAsk 窄路径**（高危 Bash 但命中 allow 规则）显示 allow 规则来源行（让现有 deny 来源行机制的 allow 对偶真触达，非死铺）。
+
+> **2026-06-24 写 plan 时核对真实代码砍掉的原 item 3（forceAsk 窄路径 allow 来源行）**：`forceAsk` 在 permissions.ts 仅第 212 行设 true，而该行在 deny 命中分支内（`denyHit = hit` 之后），即 **`forceAsk === true` 必然伴随 `denyHit` 已设值**。askReason 中 deny 永远优先于 allow → allow 来源行**永远不可达（死代码）**。唯一「命中 allow 又仍弹窗」的场景不存在（非 forceAsk 命中 allow 在 permissions.ts:250 提前放行、不弹窗）。调研/专家均漏看此 `forceAsk ⟹ denyHit` 耦合。要做须新增 forceAsk 触发条件=改判定行为，超本批范围 → **剔除**。
 
 ## 2. 范围裁剪（实证后剔除 / 不做）
 
@@ -61,36 +62,15 @@ export function suggestRule(toolName: string, desc: string): string {
   const decision = await pc.ask(tool.name, desc, askReason, previewRule)
   if (decision === 'always') { pc.saveRule(previewRule); return { ok: true } }
   ```
-- 围栏 ask（permissions.ts:233）不传 previewRule，`=== 'no'` 判断不变。
+- 围栏 ask（permissions.ts:233）不传 previewRule，`=== 'no'` 判断不变。`askReason` 沿用现有 denyHit 构造（permissions.ts:265-267），**本批不动**。
 
-### 3.3 forceAsk 窄路径 allow 来源行（permissions.ts askReason 构造）
-
-现 askReason（permissions.ts:265-267）仅从 `denyHit` 构造。改为 deny 优先、否则 forceAsk+命中 allow 规则时带上该 allow 规则：
-
-```ts
-const askReason: PermissionDecisionReason | undefined = denyHit
-  ? { type: 'rule', rule: { source: pc.denySources?.[denyHit] ?? 'builtin', behavior: 'deny', value: denyHit } }
-  : (forceAsk && matched)
-    ? { type: 'rule', rule: { source: pc.ruleSources?.[matched] ?? 'user', behavior: 'allow', value: matched } }
-    : undefined
-```
-
-> `matched` 来自 permissions.ts:247-249；`forceAsk && matched` 是唯一会落到 ask 又带 allow 规则的路径（非 forceAsk 命中即在 250 行提前放行、不弹窗）。
-
-### 3.4 PendingAsk + PermissionDialog（useChat.ts:166 + PermissionDialog.tsx）
+### 3.3 PendingAsk + PermissionDialog（useChat.ts:166 + PermissionDialog.tsx）
 
 - `PendingAsk`（useChat.ts:166）加 `previewRule?: string`。
 - `ask` 实现（useChat.ts:601-610）加 `previewRule` 形参并写入 `pendingAsk.previewRule`。headless.ts:123 `ask: async () => 'no'` 忽略入参，不受影响。
-- PermissionDialog.tsx：
-  - **「总是允许」label 内嵌规则**：OPTIONS 由组件内按 `ask.previewRule` 构建——有则 `总是允许 — ${ask.previewRule}`，无则回退原文案 `总是允许（本会话不再询问）`（围栏 ask 等无 previewRule 场景）。
-  - **allow 来源行**：在现 deny 来源行（46-48）旁加 allow 分支：
-    ```tsx
-    {ask.reason?.type === 'rule' && ask.reason.rule.behavior === 'allow' && (
-      <Text dimColor>✓ 命中 allow 规则 {ask.reason.rule.value}（来自 {permissionSourceName(ask.reason.rule.source)}），因高危仍需确认</Text>
-    )}
-    ```
+- PermissionDialog.tsx **「总是允许」label 内嵌规则**：OPTIONS 由组件内按 `ask.previewRule` 构建——有则 `总是允许 — ${ask.previewRule}`，无则回退原文案 `总是允许（本会话不再询问）`（围栏 ask 等无 previewRule 场景）。
 
-### 3.5 `/permissions` 合并视图（useChat.ts:1123-1140 重写）
+### 3.4 `/permissions` 合并视图（useChat.ts:1123-1140 重写）
 
 展示合并后的 allow + deny 两段，每行带来源标签，按值删除、仅用户层可删：
 
@@ -102,7 +82,7 @@ const askReason: PermissionDecisionReason | undefined = denyHit
   - `/permissions deny-rm <n>`：取 Deny 段索引 n 的 pattern `p` → 若来源 `=== 'user'`：`removeUserDenyRuleByValue(p)` + 内存同步；否则提示（builtin/project/local 不可删）。
   - 无参：渲染两段 + 操作提示行。空规则：`没有已保存的权限规则`。
 
-### 3.6 config.ts 新增 helper
+### 3.5 config.ts 新增 helper
 
 按值删除（因显示是合并视图，索引不对应 user 文件行）：
 
@@ -120,9 +100,8 @@ export function removeUserDenyRuleByValue(value: string): boolean   // 从 raw u
 工具请求 → checkPermission
   ├─ 命中 allow 且非 forceAsk → 直接放行（不弹窗，不变）
   ├─ previewRule = suggestRule(tool, desc)
-  ├─ askReason = deny命中 ? deny规则 : (forceAsk&&matched ? allow规则 : undefined)
-  ├─ pc.ask(tool, desc, askReason, previewRule)  ← previewRule 入 PendingAsk
-  │     → PermissionDialog：always label 内嵌 previewRule + (窄路径) allow 来源行
+  ├─ pc.ask(tool, desc, askReason, previewRule)  ← askReason 沿用既有 deny 构造；previewRule 入 PendingAsk
+  │     → PermissionDialog：always label 内嵌 previewRule
   └─ decision==='always' → pc.saveRule(previewRule)  ← 与预览同一字符串
 
 /permissions → 合并 allow(ruleSources) + deny(denySources) 两段带来源
@@ -135,11 +114,10 @@ export function removeUserDenyRuleByValue(value: string): boolean   // 从 raw u
 - **单测 `suggestRule`**：Bash 普通（前 2 词 + `:*`）/ 高危（精确整行）/ 复合（精确）/ 非 Bash（精确）。
 - **单测 config helper**：`listUserDenyRules` / `removeUserAllowRuleByValue` / `removeUserDenyRuleByValue`（命中删、未命中返回 false、不误删其它值）。mock 文件层避免污染真实 `~/.deepcode`（沿用既有测试隔离教训）。
 - **`/permissions` 格式化与删除**：合并两段渲染含来源标签、`rm`/`deny-rm` 按值删 user 规则、删非 user 规则走警告分支。
-- **弹窗逻辑**：always label 在有/无 previewRule 时的文案；forceAsk 窄路径 allow 来源行可触达（构造 forceAsk + matched 场景断言 askReason 携带 allow 规则）。
+- **弹窗逻辑**（ink-testing-library render PermissionDialog 断言 lastFrame）：always label 在有 previewRule 时显示 `总是允许 — <rule>`、无 previewRule 时回退原文案。
 - **真机冒烟**（默认全屏 FullscreenApp，配置文件放家目录非 harness scratchpad）：
   ① `/permissions` 显示合并 allow+deny+来源；rm 用户规则成功 / rm 项目（或内置 deny）规则走警告。
   ② 普通工具「总是允许」弹窗显示 `总是允许 — Tool(...)` 内嵌规则。
-  ③ 高危 Bash（命中既有 allow 规则）forceAsk 弹窗显示 allow 来源行。
 
 ## 6. 向后兼容与风险
 
