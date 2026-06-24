@@ -57,6 +57,8 @@ const updateSchema = z.object({
   activeForm: z.string().optional().describe('进行时文案'),
   status: z.enum(['pending', 'in_progress', 'completed', 'deleted']).optional().describe('新状态；deleted 删除任务'),
   metadata: z.record(z.string(), z.unknown()).optional().describe('合并进 metadata；值设 null 删该键'),
+  addBlocks: z.array(z.string()).optional().describe('本任务阻塞的下游任务 id（追加去重）'),
+  addBlockedBy: z.array(z.string()).optional().describe('阻塞本任务的上游任务 id；全部 completed/删除前不能转 in_progress'),
 })
 export const taskUpdateTool: Tool<typeof updateSchema> = {
   name: 'TaskUpdate',
@@ -75,6 +77,9 @@ export const taskUpdateTool: Tool<typeof updateSchema> = {
       if (outcome?.block) return `任务 #${taskId} 完成被 hook 拦截，状态未变。`
     }
     const r = ctx.taskList.update(taskId, patch)
+    if (r.blockedByOpen?.length) {
+      return `任务 #${taskId} 被未完成依赖阻塞，无法转 in_progress：${r.blockedByOpen.map(id => `#${id}`).join('、')}（先完成或删除这些依赖）`
+    }
     if (!r.ok) return `任务 ${taskId} 不存在`
     return `已更新任务 #${taskId}：${r.updatedFields.join('、') || '（无改动）'}`
   },
