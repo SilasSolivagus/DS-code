@@ -7,12 +7,6 @@ import { buildPreview } from '../diffPreview.js'
 import type { PendingAsk } from '../useChat.js'
 import { type Decision, permissionSourceName } from '../../permissions.js'
 
-const OPTIONS: Array<{ label: string; decision: Decision }> = [
-  { label: '允许', decision: 'yes' },
-  { label: '总是允许（本会话不再询问）', decision: 'always' },
-  { label: '拒绝', decision: 'no' },
-]
-
 export function PermissionDialog(props: {
   ask: PendingAsk
   onDecide: (d: Decision) => void
@@ -22,14 +16,21 @@ export function PermissionDialog(props: {
   const preview = buildPreview(ask.toolName, ask.desc)
   const [idx, setIdx] = useState(0)
 
+  const alwaysLabel = ask.previewRule ? `总是允许 — ${ask.previewRule}` : '总是允许（本会话不再询问）'
+  const options: Array<{ label: string; decision: Decision }> = [
+    { label: '允许', decision: 'yes' },
+    { label: alwaysLabel, decision: 'always' },
+    { label: '拒绝', decision: 'no' },
+  ]
+
   // 连续两个弹窗间组件可能不卸载（resolve→下一个 ask 仅隔一个微任务），
   // 选中位置必须随 ask 重置，否则上一个弹窗选到"总是允许"后快速 Enter 会误授下一个工具。
   useEffect(() => { setIdx(0) }, [ask])
 
   useInput((input, key) => {
     if (key.upArrow) { setIdx(i => Math.max(0, i - 1)); return }
-    if (key.downArrow) { setIdx(i => Math.min(OPTIONS.length - 1, i + 1)); return }
-    if (key.return) { onDecide(OPTIONS[idx].decision); return }
+    if (key.downArrow) { setIdx(i => Math.min(options.length - 1, i + 1)); return }
+    if (key.return) { onDecide(options[idx].decision); return }
     if (key.escape) { onDecide('no'); return }
     const k = input.toLowerCase()
     if (k === 'y' || k === '1') { onDecide('yes'); return }
@@ -59,7 +60,7 @@ export function PermissionDialog(props: {
         <Text dimColor>… (仅显示前 40 行)</Text>
       )}
       <Text>要执行这个操作吗？</Text>
-      {OPTIONS.map((opt, i) => (
+      {options.map((opt, i) => (
         <Text key={opt.decision} color={i === idx ? T.accent : undefined} dimColor={i !== idx}>
           {i === idx ? '❯ ' : '  '}
           {i + 1}. {opt.label}
