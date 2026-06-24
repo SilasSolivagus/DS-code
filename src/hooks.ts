@@ -191,6 +191,8 @@ export interface HookEngineDeps {
     initialStdout?: string
     initialStderr?: string
   }) => void
+  /** 慢阶段 hook 进度回调（喂 TUI Spinner）。label 非空=开始；undefined=结束清除。仅慢阶段事件触发。 */
+  onProgress?: (label?: string) => void
 }
 
 interface ResolvedHookDeps {
@@ -414,6 +416,9 @@ async function execOneHook(hook: HookCommand, payload: Record<string, unknown>, 
   return { outcome: 'non_blocking_error', label: `(${(hook as any).type} 未支持)`, durationMs: deps.now() - start }
 }
 
+/** 值得在 TUI 显示进度的慢阶段事件（热事件 PreToolUse/PostToolUse 等不显，防刷屏）。 */
+const SLOW_PROGRESS_EVENTS = new Set<HookEvent>(['PreCompact', 'PostCompact', 'SessionStart', 'Stop', 'SubagentStop'])
+
 /** 引擎入口：选 matcher → 过 if → 并行执行 → 合并。未配置该事件→零开销空结果。 */
 export async function runHooks(
   event: HookEvent,
@@ -438,26 +443,30 @@ export async function runHooks(
   }
   if (selected.length === 0) return empty
 
-  const full: ResolvedHookDeps = {
-    spawn: deps.spawn ?? nodeSpawn,
-    now: deps.now ?? Date.now,
-    sessionEnvBase: deps.sessionEnvBase ?? DEFAULT_SESSION_ENV_BASE,
-    fetch: deps.fetch ?? (undiciFetch as unknown as typeof fetch),
-    allowedHttpHookUrls: deps.allowedHttpHookUrls,
-    httpHookAllowedEnvVars: deps.httpHookAllowedEnvVars,
-    llm: deps.llm,
-    runAgent: deps.runAgent,
-    registerAsync: deps.registerAsync,
+  const showProgress = SLOW_PROGRESS_EVENTS.has(event) && !!deps.onProgress
+  if (showProgress) deps.onProgress!(`正在运行 ${event} 钩子…`)
+  try {
+    const full: ResolvedHookDeps = {
+      spawn: deps.spawn ?? nodeSpawn,
+      now: deps.now ?? Date.now,
+      sessionEnvBase: deps.sessionEnvBase ?? DEFAULT_SESSION_ENV_BASE,
+      fetch: deps.fetch ?? (undiciFetch as unknown as typeof fetch),
+      allowedHttpHookUrls: deps.allowedHttpHookUrls,
+      httpHookAllowedEnvVars: deps.httpHookAllowedEnvVars,
+      llm: deps.llm,
+      runAgent: deps.runAgent,
+      registerAsync: deps.registerAsync,
+    }
+    const sid = typeof payload.session_id === 'string' && payload.session_id ? payload.session_id : undefined
+    let envDir: string | undefined
+    if (sid && ENV_FILE_EVENTS.has(event) && selected.some(h => h.type === 'command')) {
+      envDir = ensureSessionEnvDir(sid, full.sessionEnvBase)
+    }
+    const results = await Promise.all(selected.map((h, i) =>
+      execOneHook(h, payload, full, (envDir && h.type === 'command') ? path.join(envDir, hookEnvFileName(event, i)) : undefined),
+    ))
+    return mergeResults(results, event)
+  } finally {
+    if (showProgress) deps.onProgress!()
   }
-
-  // env-file 机制：Setup/SessionStart/CwdChanged/FileChanged 的 command hook 注入 DEEPCODE_ENV_FILE。
-  const sid = typeof payload.session_id === 'string' && payload.session_id ? payload.session_id : undefined
-  let envDir: string | undefined
-  if (sid && ENV_FILE_EVENTS.has(event) && selected.some(h => h.type === 'command')) {
-    envDir = ensureSessionEnvDir(sid, full.sessionEnvBase)
-  }
-  const results = await Promise.all(selected.map((h, i) =>
-    execOneHook(h, payload, full, (envDir && h.type === 'command') ? path.join(envDir, hookEnvFileName(event, i)) : undefined),
-  ))
-  return mergeResults(results, event)
 }

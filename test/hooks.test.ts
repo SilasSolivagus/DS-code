@@ -440,3 +440,27 @@ describe('isAsyncFirstLine', () => {
     expect(isAsyncFirstLine('{"async":true,"asyncTimeout":"x"}')).toEqual({ async: true })
   })
 })
+
+describe('1.7 hooks 进度 onProgress', () => {
+  const cmdHook = { PreCompact: [{ hooks: [{ type: 'command', command: 'echo {}' }] }] } as any
+  const toolHook = { PreToolUse: [{ hooks: [{ type: 'command', command: 'echo {}' }] }] } as any
+
+  it('慢阶段事件触发 onProgress(label) 再 onProgress() 清除', async () => {
+    const calls: (string | undefined)[] = []
+    await runHooks('PreCompact', { hook_event_name: 'PreCompact' }, cmdHook, { onProgress: l => calls.push(l) })
+    expect(calls[0]).toContain('PreCompact')
+    expect(calls[calls.length - 1]).toBeUndefined() // 结束清除
+  })
+
+  it('热事件不触发 onProgress', async () => {
+    const calls: (string | undefined)[] = []
+    await runHooks('PreToolUse', { hook_event_name: 'PreToolUse', tool_name: 'Bash' }, toolHook, { onProgress: l => calls.push(l) })
+    expect(calls).toEqual([])
+  })
+
+  it('无命中 hook 时不触发 onProgress（防闪烁）', async () => {
+    const calls: (string | undefined)[] = []
+    await runHooks('PreCompact', { hook_event_name: 'PreCompact' }, undefined, { onProgress: l => calls.push(l) })
+    expect(calls).toEqual([])
+  })
+})

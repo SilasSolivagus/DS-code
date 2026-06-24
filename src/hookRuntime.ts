@@ -29,7 +29,8 @@ export function makeHookRuntime(opts: {
   getModel: () => string
   onUsage?: (u: Usage, model: string) => void
   cwd: () => string
-}): Pick<HookEngineDeps, 'llm' | 'runAgent' | 'registerAsync'> {
+  onProgress?: (label?: string) => void
+}): Pick<HookEngineDeps, 'llm' | 'runAgent' | 'registerAsync' | 'onProgress'> {
   const llm: HookEngineDeps['llm'] = async (prompt, model, signal) => {
     const gen = chatStream(opts.client, {
       model: resolveModel(model, opts.getModel),
@@ -81,5 +82,5 @@ export function makeHookRuntime(opts: {
     }
   }
 
-  return { llm, runAgent, registerAsync }
+  return { llm, runAgent, registerAsync, onProgress: opts.onProgress }
 }
