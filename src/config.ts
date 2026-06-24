@@ -73,6 +73,8 @@ export interface Settings {
   memory?: import('./memdir/memoryConfig.js').MemoryConfig
   /** 主题名（undefined = 运行期 Provider 兜底 dark；见 src/tui/theme.ts THEMES）。 */
   theme?: string
+  /** 用户自设状态栏命令：执行取 stdout 附加进状态栏。仅信任 user scope（DANGEROUS_TOP_KEYS 剥离 project）。 */
+  statusLineCommand?: string
 }
 
 const DIR = path.join(os.homedir(), '.deepcode')
@@ -124,6 +126,7 @@ export function loadRawUserSettings(): Settings {
     providers: parseProvidersConfig(raw?.providers),
     outputStyle: raw?.outputStyle,
     theme: raw?.theme,
+    statusLineCommand: raw?.statusLineCommand,
   }
 }
 
