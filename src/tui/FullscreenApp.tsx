@@ -343,6 +343,7 @@ export function FullscreenApp(props: {
           thinking={state.thinking}
           effortLevel={state.effortLevel}
           toolCounts={toolCounts}
+          statusLineOutput={state.statusLineOutput}
         />
       </Box>
     </Box>

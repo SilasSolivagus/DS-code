@@ -204,7 +204,7 @@ export function App(props: {
   // 每帧渲染后把硬件光标停到输入框插入点（用原始 write 绕过上面的解除逻辑）。
   // 上移行数 = 底边线(1) + 页脚行数 + ink 末尾换行(1)；页脚 = 行1/行2/提示(3 固定) + 记忆行 + 工具行。
   // 故 = 5 + 记忆行(0/1) + 工具行(0/1)。页脚行数随内容变 → 必须动态算，否则光标偏。
-  const linesBelowCaret = 5 + (memoryCount > 0 ? 1 : 0) + (toolCounts.length > 0 ? 1 : 0)
+  const linesBelowCaret = 5 + (memoryCount > 0 ? 1 : 0) + (toolCounts.length > 0 ? 1 : 0) + (state.statusLineOutput ? 1 : 0)
   useEffect(() => {
     if (!inputActive || !process.stdout.isTTY || CURSOR_PARK_OFF) return
     const out = process.stdout as NodeJS.WriteStream & { __origWrite?: typeof process.stdout.write }
@@ -316,6 +316,7 @@ export function App(props: {
         thinking={state.thinking}
         effortLevel={state.effortLevel}
         toolCounts={toolCounts}
+        statusLineOutput={state.statusLineOutput}
       />
     </Box>
   )

@@ -57,6 +57,7 @@ import { type SessionMemoryState, shouldUpdateSessionMemory, runSessionMemoryUpd
 import { activeFastModel, activeProvider, belongsToProvider, modelList as providerModelList } from '../providers.js'
 import { resolveResumeModel, rotateModel } from './resumeModel.js'
 import { loadOutputStyles, resolveOutputStyle } from '../outputStyles.js'
+import { createStatusLineRunner, execStatusLineCommand } from '../statusLine.js'
 import { COMMIT_GUIDANCE, COMMIT_PUSH_PR_GUIDANCE, buildCommitContext, buildPrContext, isEmptyDiff, resolveBaseBranch } from '../commitGuidance.js'
 
 /** ! 直跑：同步执行，30s 超时，stdout+stderr 合并，超 20k 截断 */
@@ -189,6 +190,7 @@ export interface ChatState {
   contextWindow(): number // 当前模型生效阈值（状态栏上下文条分母）
   tokenBudget(): number | null // 2.1 sticky token 预算目标（null=未设）
   budgetUsed(): number // 2.1 本次/上次 send 累计输出 token（状态栏 budget 段分子）
+  statusLineOutput: string | null // 5.7 自定义状态栏命令输出缓存（null=无/未设）
 }
 
 export interface ChatCore {
@@ -347,8 +349,10 @@ export function createChatCore(opts: {
 
   // 所有状态变更走 setState：换新快照对象 → onState 回调 + 订阅者通知
   const listeners = new Set<() => void>()
+  // 5.7 statusLine 输出（onChange 闭包按引用捕获 setState，运行期才调用，无 TDZ）
+  let statusLineOutput: string | null = null
   const snap = (): ChatState => ({
-    transcript, busy, model, thinking, effortLevel, permMode, pendingAsk, pendingQuestion, pendingPlanApproval, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, hookProgress, sessionCost, cacheHitRate, cacheSavings, contextPct, contextUsed, contextWindow, tokenBudget: tokenBudgetGet, budgetUsed: budgetUsedGet,
+    transcript, busy, model, thinking, effortLevel, permMode, pendingAsk, pendingQuestion, pendingPlanApproval, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, hookProgress, sessionCost, cacheHitRate, cacheSavings, contextPct, contextUsed, contextWindow, tokenBudget: tokenBudgetGet, budgetUsed: budgetUsedGet, statusLineOutput,
   })
   let state = snap()
   const setState = (): void => {
@@ -356,6 +360,16 @@ export function createChatCore(opts: {
     opts.onState(state)
     for (const l of listeners) l()
   }
+  // 5.7 statusLine runner：仅当配置了命令才建
+  const statusLineRunner = settings.statusLineCommand
+    ? createStatusLineRunner({
+        exec: () => execStatusLineCommand(settings.statusLineCommand!, {
+          model, cwd, permission_mode: permMode, session_id: ctx.sessionId?.(),
+        }),
+        onChange: text => { statusLineOutput = text ?? null; setState() },
+      })
+    : undefined
+  const refreshStatusLine = (): void => { statusLineRunner?.schedule() }
   // steering 队列变化驱动 React 重渲染（steer/steerPop → subscribe → setState）
   const unsubSteer = steerQueue.subscribe(setState)
   const dispatch = (a: ReducerAction): void => {
@@ -819,6 +833,7 @@ export function createChatCore(opts: {
     busy = false
     turnStartAt = null
     setState()
+    refreshStatusLine() // 5.7 turn 结束触发 statusLine 刷新
     // 收尾自检：若某后台任务在本轮终止点 drain 之后、busy 复位之前完成入队，会滞留队列；
     // 此处 busy 已 false，重新唤醒一次把滞留通知补上（无则即返），避免拖到下次用户输入。
     wakeOnNotification()
@@ -882,6 +897,7 @@ export function createChatCore(opts: {
         session.appendMeta({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id })
         notice('info', `已切换到 ${model}`)
       }
+      refreshStatusLine() // 5.7 模型变化触发 statusLine 刷新
       return
     }
     if (line === '/think') {
@@ -912,6 +928,7 @@ export function createChatCore(opts: {
       permMode = permMode === 'acceptEdits' ? 'default' : 'acceptEdits'
       session.appendMeta({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id })
       notice('info', `acceptEdits 模式：${permMode === 'acceptEdits' ? '开（Edit/Write 免确认，Bash 仍需确认）' : '关'}`)
+      refreshStatusLine() // 5.7 权限模式变化触发 statusLine 刷新
       return
     }
     if (line === '/cycle-mode') {
@@ -924,6 +941,7 @@ export function createChatCore(opts: {
       notice('info', permMode === 'plan'
         ? 'plan 模式：只读探索 + 写计划，完成后调用 ExitPlanMode 请审批'
         : `已切换到 ${permMode} 模式`)
+      refreshStatusLine() // 5.7 权限模式变化触发 statusLine 刷新
       return
     }
     if (line === '/plan') {
@@ -941,6 +959,7 @@ export function createChatCore(opts: {
         notice('info', 'plan 模式已开启：只读探索 + 写计划，完成后调用 ExitPlanMode 请用户审批（/plan 可退出）')
       }
       setState()
+      refreshStatusLine() // 5.7 plan 模式变化触发 statusLine 刷新
       return
     }
     if (line.startsWith('/add-dir')) {
@@ -1168,6 +1187,9 @@ export function createChatCore(opts: {
     ...outputStyleCache.map(s => ({ name: s.name, description: s.description })),
   ]
 
+  // 5.7 会话建立后跑一次 statusLine（recovered 与新建两条路径都到这里）
+  refreshStatusLine()
+
   return {
     get state() { return state },
     send,
@@ -1281,7 +1303,7 @@ export function createChatCore(opts: {
         notice('info', `[rewind] 代码：${parts.join('、')}`)
       }
     },
-    dispose: () => { fireSessionEnd('exit'); unsubNotification(); unsubSteer(); steerQueue.clear(); void mcpCleanup?.() },
+    dispose: () => { fireSessionEnd('exit'); unsubNotification(); unsubSteer(); steerQueue.clear(); statusLineRunner?.dispose(); void mcpCleanup?.() },
     modelList: () => providerModelList(activeProvider(), model),
     applyModel,
     outputStyleList,
