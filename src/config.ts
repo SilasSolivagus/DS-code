@@ -284,3 +284,30 @@ export function removeUserAllowRule(index: number): string | undefined {
 export function listUserAllowRules(): string[] {
   return loadRawUserSettings().permissions.allow
 }
+
+/** 读 user scope deny 列表（/permissions 显示用）。 */
+export function listUserDenyRules(): string[] {
+  return loadRawUserSettings().permissions.deny ?? []
+}
+
+/** 按值从 user scope allow 删除（合并视图索引不对应 user 文件行，故按值）。删到返 true。 */
+export function removeUserAllowRuleByValue(value: string): boolean {
+  const s = loadRawUserSettings()
+  const i = s.permissions.allow.indexOf(value)
+  if (i < 0) return false
+  s.permissions.allow.splice(i, 1)
+  saveRawUserSettings(s)
+  return true
+}
+
+/** 按值从 user scope deny 删除。删到返 true。 */
+export function removeUserDenyRuleByValue(value: string): boolean {
+  const s = loadRawUserSettings()
+  const deny = s.permissions.deny
+  if (!deny) return false
+  const i = deny.indexOf(value)
+  if (i < 0) return false
+  deny.splice(i, 1)
+  saveRawUserSettings(s)
+  return true
+}
