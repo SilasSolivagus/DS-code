@@ -6,7 +6,7 @@
 // handler 读 ref，render 读 state/tick。
 import React, { useState, useRef } from 'react'
 import { Box, Text, useInput } from 'ink'
-import { T } from '../theme.js'
+import { useTheme } from '../theme.js'
 import { renderMarkdown } from '../markdown.js'
 import type { Question, Answer } from '../../tools/askUserQuestion.js'
 
@@ -18,6 +18,7 @@ export function QuestionDialog(props: {
   questions: Question[]
   onDone: (answers: Answer[] | null) => void
 }) {
+  const T = useTheme()
   const { questions, onDone } = props
   const N = questions.length
   const hideSubmitTab = N === 1 && !questions[0].multiSelect

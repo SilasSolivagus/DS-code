@@ -9,18 +9,21 @@ import { Box, Text, measureElement, useApp, useInput, useStdout, type DOMElement
 import { createChatCore, useChat } from './useChat.js'
 import { findMemoryFiles } from '../prompt.js'
 import { computeSuggestions } from './suggest.js'
-import { parkCol } from './caret.js'
+import { parkCol, parkRowOffset } from './caret.js'
 import { Banner } from './components/Banner.js'
 import { ScrollView } from './ScrollView.js'
 import { InputBox } from './components/InputBox.js'
 import { Suggestions } from './components/Suggestions.js'
 import { PermissionDialog } from './components/PermissionDialog.js'
+import { PlanApprovalDialog } from './components/PlanApprovalDialog.js'
 import { QuestionDialog } from './components/QuestionDialog.js'
 import { SelectList } from './components/SelectList.js'
 import { Spinner } from './components/Spinner.js'
 import { StatusFooter } from './components/StatusFooter.js'
 import { clamp, page, applyFollow, nextStuck, scrollInfo } from './scroll.js'
 import { onWheel } from './wheel.js'
+import { useThemeControl, themeNames } from './theme.js'
+import { loadRawUserSettings, saveRawUserSettings } from '../config.js'
 
 const CURSOR_PARK_OFF = process.env.DEEPCODE_NO_CURSOR_PARK === '1'
 
@@ -59,6 +62,10 @@ export function FullscreenApp(props: {
   const state = useChat(core)
   const [draft, setDraft] = useState('')
   const [resumeMode, setResumeMode] = useState(false)
+  const [modelPickerMode, setModelPickerMode] = useState(false)
+  const [outputStyleMode, setOutputStyleMode] = useState(false)
+  const [themeMode, setThemeMode] = useState(false)
+  const { themeName, setThemeName } = useThemeControl()
   const [lastSigint, setLastSigint] = useState(0)
   const justPickedRef = useRef<string | null>(null)
   const [valueOverride, setValueOverride] = useState<{ text: string; nonce: number } | undefined>(undefined)
@@ -85,10 +92,10 @@ export function FullscreenApp(props: {
   }, [])
 
   useEffect(() => {
-    if (state.pendingAsk || state.pendingQuestion || resumeMode) {
+    if (state.pendingAsk || state.pendingQuestion || state.pendingPlanApproval || resumeMode || modelPickerMode || outputStyleMode || themeMode) {
       setDraft(''); setValueOverride(undefined); justPickedRef.current = null
     }
-  }, [!!state.pendingAsk, !!state.pendingQuestion, resumeMode])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [!!state.pendingAsk, !!state.pendingQuestion, !!state.pendingPlanApproval, resumeMode, modelPickerMode, outputStyleMode, themeMode])  // eslint-disable-line react-hooks/exhaustive-deps
 
   useInput((input, key) => {
     const ms = Math.max(0, totalRef.current - viewportRef.current)
@@ -100,6 +107,10 @@ export function FullscreenApp(props: {
       const now = Date.now()
       if (now - lastSigint < 2000) exit()
       else setLastSigint(now)
+    }
+    // Shift+Tab 循环权限模式（default→acceptEdits→plan→default）。
+    if (key.shift && key.tab && !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion && !resumeMode && !modelPickerMode && !outputStyleMode && !themeMode) {
+      void core.send('/cycle-mode')
     }
   })
 
@@ -137,6 +148,9 @@ export function FullscreenApp(props: {
   const submit = (text: string) => {
     if (text === '/exit') { exit(); return }
     if (text === '/resume') { setResumeMode(true); return }
+    if (text === '/model') { setModelPickerMode(true); return }
+    if (text === '/output-style') { setOutputStyleMode(true); return }
+    if (text === '/theme') { setThemeMode(true); return }
     setDraft(''); setValueOverride(undefined); justPickedRef.current = null
     void core.send(text)
   }
@@ -154,7 +168,7 @@ export function FullscreenApp(props: {
     } catch { return null }
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps
   const memoryCount = useMemo(() => findMemoryFiles(props.cwd).length, [])  // eslint-disable-line react-hooks/exhaustive-deps
-  const modeLabel = (state.permMode === 'acceptEdits' ? 'accept' : state.permMode === 'yolo' ? 'yolo' : 'default')
+  const modeLabel = (state.permMode === 'acceptEdits' ? 'accept' : state.permMode === 'yolo' ? 'yolo' : state.permMode === 'plan' ? 'plan' : 'default')
     + (state.thinking ? '·think' : '')
   const toolCounts = useMemo(() => {
     const order: string[] = []
@@ -168,7 +182,7 @@ export function FullscreenApp(props: {
     return order.map(name => ({ name, n: counts.get(name)! }))
   }, [state.transcript])
 
-  const inputActive = !state.pendingAsk && !state.pendingQuestion && !resumeMode && !state.busy
+  const inputActive = !state.pendingAsk && !state.pendingQuestion && !state.pendingPlanApproval && !resumeMode && !modelPickerMode && !outputStyleMode && !themeMode && !state.busy
 
   // —— 全屏几何（每帧算）——
   const rows = stdout?.rows ?? 24
@@ -180,10 +194,12 @@ export function FullscreenApp(props: {
   const frameH = Math.min(scrollH + bottomH, rows) // 实际渲染总高（un-park 用：ink 把光标留在此底部）
   frameHRef.current = frameH
   const aboveInput = suggestionsActive ? suggestions.length : 0
-  // 输入框光标行（1-based 从顶算）：ScrollView(scrollH) + 提示行(1) + 上方 suggestions + 输入框上边线(1) + 光标内容行(1)。±1 由 pty 微调
-  const caretRow = Math.max(1, scrollH + 1 + aboveInput + 2)
+  // 输入框光标行（1-based 从顶算）：ScrollView(scrollH) + 提示行(1) + 上方 suggestions + 输入框上边线(1) + 光标内容行(1)。
+  // 末项加 parkRowOffset：value 折行时光标落到末视觉行（否则停在折行首行）。±1 由 pty 微调
+  const caretRow = Math.max(1, scrollH + 1 + aboveInput + 2 + parkRowOffset(draft, stdout?.columns ?? 80, dispWidth))
 
-  const parkRef = useRef<{ active: boolean }>({ active: false })
+  // 停泊状态：active=已泊待解；row/col=最新停泊目标；enabled=输入框激活可泊；id=重停泊去抖句柄。
+  const parkRef = useRef<{ active: boolean; row: number; col: number; enabled: boolean; id?: ReturnType<typeof setTimeout> }>({ active: false, row: 1, col: 1, enabled: false })
 
   // 量底部区域高（提示行+输入框/弹窗+页脚）→ 算可用高 → 应用 auto-follow + 位置提示。每帧跑，稳定后幂等不再 setState。
   useLayoutEffect(() => {
@@ -212,16 +228,28 @@ export function FullscreenApp(props: {
         parkRef.current.active = false
         orig(`\x1b[${frameHRef.current};1H`)  // 移回实际渲染底部，让 ink eraseLines 从正确处起
       }
-      return (orig as any)(chunk, ...rest)
+      const r = (orig as any)(chunk, ...rest)
+      // ink 写完后补一次重停泊（去抖）：否则 ink 收尾把光标留在全屏底部，一次性 setTimeout 停泊会输掉竞争。
+      if (parkRef.current.enabled) {
+        clearTimeout(parkRef.current.id)
+        parkRef.current.id = setTimeout(() => {
+          try { orig(`\x1b[?25h\x1b[${parkRef.current.row};${parkRef.current.col}H`); parkRef.current.active = true } catch { /* 忽略 */ }
+        }, 0)
+      }
+      return r
     }) as typeof out.write
     return () => { out.write = orig; delete out.__origWrite }
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!inputActive || !stdout?.isTTY || CURSOR_PARK_OFF) return
+    parkRef.current.enabled = !!inputActive && !!stdout?.isTTY && !CURSOR_PARK_OFF
+    if (!parkRef.current.enabled) return
     const out = stdout as NodeJS.WriteStream & { __origWrite?: typeof stdout.write }
     const orig = out.__origWrite ?? out.write.bind(out)
     const col = parkCol(draft, stdout.columns ?? 80, dispWidth)
+    // 记录最新停泊目标，供 write-wrapper 在 ink 每次写完后补停泊（赢得与 ink 收尾的竞争）。
+    parkRef.current.row = caretRow
+    parkRef.current.col = col
     const id = setTimeout(() => {
       try {
         ;(orig as any)(`\x1b[?25h\x1b[${caretRow};${col}H`)
@@ -250,11 +278,36 @@ export function FullscreenApp(props: {
           ? <QuestionDialog questions={state.pendingQuestion.questions} onDone={a => core.resolveQuestion(a)} />
           : state.pendingAsk
           ? <PermissionDialog ask={state.pendingAsk} onDecide={d => core.resolveAsk(d)} />
+          : state.pendingPlanApproval
+          ? <PlanApprovalDialog pending={state.pendingPlanApproval} onDecide={approved => core.resolvePlanApproval(approved)} />
           : resumeMode
             ? <SelectList
                 items={core.resumeList().map(s => s.preview)}
                 onPick={i => { core.resume(core.resumeList()[i].file); setResumeMode(false) }}
                 onCancel={() => setResumeMode(false)}
+              />
+            : modelPickerMode
+            ? <SelectList
+                items={core.modelList().map(m => m.label)}
+                onPick={i => { core.applyModel(core.modelList()[i].id); setModelPickerMode(false) }}
+                onCancel={() => setModelPickerMode(false)}
+              />
+            : outputStyleMode
+            ? <SelectList
+                items={core.outputStyleList().map(s => `${s.name}${s.description ? ' — ' + s.description : ''}`)}
+                onPick={i => { core.applyOutputStyle(core.outputStyleList()[i].name); setOutputStyleMode(false) }}
+                onCancel={() => setOutputStyleMode(false)}
+              />
+            : themeMode
+            ? <SelectList
+                items={themeNames().map(n => (n === themeName ? '● ' : '  ') + n)}
+                onPick={i => {
+                  const name = themeNames()[i]
+                  setThemeName(name)
+                  try { const raw = loadRawUserSettings(); raw.theme = name; saveRawUserSettings(raw) } catch { /* 持久化失败不阻断热切 */ }
+                  setThemeMode(false)
+                }}
+                onCancel={() => setThemeMode(false)}
               />
             : <>
                 {state.busy && <Spinner turnStartAt={state.turnStartAt} turnOutTokens={state.turnOutTokens} />}

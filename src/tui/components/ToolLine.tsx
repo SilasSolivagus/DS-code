@@ -3,7 +3,7 @@
 // 运行中只显示 ⏺ 行；整体"工作中"由底部 Spinner 指示，本行不做 per-tool 计时/spinner。
 import React from 'react'
 import { Box, Text } from 'ink'
-import { T } from '../theme.js'
+import { useTheme } from '../theme.js'
 import { formatToolArg } from '../toolArg.js'
 
 interface ToolLineProps {
@@ -17,6 +17,7 @@ interface ToolLineProps {
 }
 
 export function ToolLine({ name, desc, running, ok, preview, previewExtra }: ToolLineProps) {
+  const T = useTheme()
   // 多行预览（对照 CC）：首行 `  ⎿  内容`，续行缩进 5 列对齐内容；错误用红，否则 dim。
   const lines = (preview ?? '').split('\n')
   const isErr = ok === false

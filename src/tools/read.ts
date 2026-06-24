@@ -22,6 +22,7 @@ export const readTool: Tool<typeof schema> = {
   isReadOnly: true,
   needsPermission: () => false,
   deniablePaths: (input, cwd) => [path.resolve(cwd, input.file_path)],
+  workspacePaths: (input, cwd) => [path.resolve(cwd, input.file_path)],
   async call(input, ctx) {
     const p = path.resolve(ctx.cwd(), input.file_path)
     let stat: fs.Stats

@@ -7,7 +7,7 @@ import React from 'react'
 import os from 'node:os'
 import path from 'node:path'
 import { Box, Text } from 'ink'
-import { T } from '../theme.js'
+import { useTheme } from '../theme.js'
 import { VERSION } from '../../version.js'
 
 // 鲸鱼吉祥物（像素块）：头朝右，左侧尾鳍 ◀，头顶喷水，圆身，眼睛用负空间（块中留空）透出
@@ -46,6 +46,7 @@ function tildify(p: string, home: string = os.homedir()): string {
 type Seg = { text: string; color?: string; dim?: boolean; bold?: boolean; whale?: boolean }
 
 export function Banner(p: { cwd: string; model: string }) {
+  const T = useTheme()
   let user = ''
   try { user = os.userInfo().username } catch { /* 兜底空 */ }
 

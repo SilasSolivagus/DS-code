@@ -7,7 +7,7 @@
 // 读 ref 而非闭包，避免连续按键（↑↑↓）时读到旧状态。
 import React, { useState, useRef, useEffect } from 'react'
 import { Box, Text, useInput } from 'ink'
-import { T } from '../theme.js'
+import { useTheme } from '../theme.js'
 
 export function InputBox(props: {
   onSubmit: (text: string) => void
@@ -28,6 +28,7 @@ export function InputBox(props: {
   /** 当前 steer 队列项（展示排队预览） */
   steerQueueItems?: readonly { value: string; priority?: string }[]
 }) {
+  const T = useTheme()
   const [value, setValue] = useState('')
   const [pending, setPending] = useState('')        // \ 续行累积
   const [histIdx, setHistIdx] = useState(-1)        // -1 = 不在历史
@@ -133,7 +134,9 @@ export function InputBox(props: {
         <Text color={T.accent}>{'❯ '}</Text>
         {value === '' && pending === ''
           ? <Text dimColor>{props.busy ? '生成中… esc 中断' : '随便问点什么…'}</Text>
-          : <Text>{value}<Text inverse> </Text></Text>}
+          : <Text>{value}</Text>}
+        {/* 不画假光标块：真终端光标由 FullscreenApp 的 IME 停泊精确定位（parkCol+parkRowOffset），
+            画假块会与真光标不重合显成两个、且其占位空格扰乱 value 折行宽度致 parkCol 列偏移。 */}
       </Box>
     </Box>
   )

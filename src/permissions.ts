@@ -3,6 +3,7 @@ import { parse, type ParseEntry } from 'shell-quote'
 import type { Tool } from './tools/types.js'
 import type { HookOutcome } from './hooks.js'
 import { isDeniedPath } from './deny.js'
+import { isInsideWorkspace } from './workspace.js'
 
 const SEPARATORS = new Set(['&&', '||', ';', '|', '&'])
 const REDIR = new Set(['>', '>>', '<', '>&', '<&'])
@@ -67,7 +68,7 @@ export function splitBashCommand(command: string): { tooComplex: boolean; comman
   return { tooComplex: false, commands }
 }
 
-export type PermissionMode = 'default' | 'acceptEdits' | 'yolo'
+export type PermissionMode = 'default' | 'acceptEdits' | 'yolo' | 'plan'
 export type Decision = 'yes' | 'no' | 'always'
 
 export type PermissionRuleSource = 'builtin' | 'user' | 'project' | 'local' | 'flag'
@@ -105,6 +106,8 @@ export interface PermissionContext {
   cwd?: string
   ruleSources?: Record<string, PermissionRuleSource>
   denySources?: Record<string, PermissionRuleSource>
+  /** 工作目录围栏白名单（/add-dir 注入，会话内）。cwd 与这些目录之外的路径触发 ask。 */
+  additionalDirs?: string[]
 }
 
 export interface PermissionHooks {
@@ -211,6 +214,28 @@ export async function checkPermission(
       const reason = `路径被 deny 规则拒绝（${hit}，来自 ${permissionSourceName(src)}）`
       await hooks?.onDenied?.(tool.name, tool.needsPermission(input) || tool.name, reason)
       return { ok: false, reason, decisionReason: { type: 'rule', rule: { source: src, behavior: 'deny', value: hit } } }
+    }
+  }
+  // [新] plan 门：plan 模式非只读一律拒（不带 !forceAsk——严于 deny 降级 ask；deny 已在上方优先处理）
+  if (pc.mode === 'plan' && !tool.isReadOnly) {
+    const reason = 'plan 模式为只读，需先退出 plan 模式（ExitPlanMode）'
+    await hooks?.onDenied?.(tool.name, tool.needsPermission(input) || tool.name, reason)
+    return { ok: false, reason, decisionReason: { type: 'other', reason: 'plan 模式只读' } }
+  }
+  // [新] 工作目录围栏：tool 工作路径在 cwd∪白名单外 → 问用户。
+  // 必须在 isReadOnly 早返(下一行)之前——否则 Read/Glob/Grep 被 :219 desc===false 短路放行，围栏失效。
+  // yolo 旁路；deny 已在最上方优先处理（围栏不凌驾 deny）。
+  if (pc.mode !== 'yolo' && tool.workspacePaths) {
+    const roots = [pc.cwd ?? process.cwd(), ...(pc.additionalDirs ?? [])]
+    const outside = tool.workspacePaths(input as any, pc.cwd ?? process.cwd()).find(p => !isInsideWorkspace(p, roots))
+    if (outside) {
+      const fenceDesc = tool.needsPermission(input) || `访问工作目录外的路径：${outside}`
+      const d = await pc.ask(tool.name, fenceDesc)
+      if (d === 'no') {
+        await hooks?.onDenied?.(tool.name, fenceDesc, '路径在工作目录外，用户拒绝')
+        return { ok: false, reason: '路径在工作目录外，用户拒绝', decisionReason: { type: 'other', reason: '工作目录围栏' } }
+      }
+      return { ok: true } // yes/always：放行本次（围栏是路径维度，不写规则）
     }
   }
   if (tool.isReadOnly && !forceAsk) return { ok: true }

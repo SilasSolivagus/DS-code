@@ -54,10 +54,11 @@ async function jsSearch(pattern: string, dir: string, glob?: string): Promise<st
 
 export const grepTool: Tool<typeof schema> = {
   name: 'Grep',
-  description: '在文件内容中按正则搜索，返回 文件:行号:行内容（最多 100 条）。找文件名用 Glob，找内容用本工具。',
+  description: '在文件内容中按正则搜索，返回 文件:行号:行内容（最多 100 条）。找文件名用 Glob，找内容用本工具。支持完整正则（默认 ripgrep 语法）；可用 multiline 模式跨行匹配；可按文件类型/glob 过滤路径。',
   inputSchema: schema,
   isReadOnly: true,
   needsPermission: () => false,
+  workspacePaths: (input, cwd) => [input.path ? path.resolve(cwd, input.path) : path.resolve(cwd)],
   async call(input, ctx) {
     const dir = input.path ? path.resolve(ctx.cwd(), input.path) : ctx.cwd()
     let result = await rgSearch(input.pattern, dir, input.glob)

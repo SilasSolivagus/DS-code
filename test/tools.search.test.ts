@@ -41,4 +41,17 @@ describe('Grep', () => {
     const out = await grepTool.call({ pattern: '(?invalid' }, makeCtx(dir))
     expect(out).toContain('Grep 错误')
   })
+  it('description 含 ripgrep/正则/multiline/glob 提示', () => {
+    expect(grepTool.description).toContain('ripgrep')
+    expect(grepTool.description).toContain('multiline')
+    expect(grepTool.description).toContain('正则')
+    expect(grepTool.description).toContain('glob')
+  })
+})
+
+describe('Glob description', () => {
+  it('description 含 glob 模式示例', () => {
+    expect(globTool.description).toContain('**/*.ts')
+    expect(globTool.description).toContain('src/**/test_*')
+  })
 })

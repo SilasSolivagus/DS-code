@@ -2,13 +2,14 @@
 // 斜杠命令 + @文件 浮动补全菜单：↑↓ 移动，Tab/Enter 确认补全。
 import React, { useState, useEffect } from 'react'
 import { Box, Text, useInput } from 'ink'
-import { T } from '../theme.js'
+import { useTheme } from '../theme.js'
 import type { Suggestion } from '../suggest.js'
 
 export function Suggestions(props: {
   items: Suggestion[]
   onPick: (value: string) => void
 }) {
+  const T = useTheme()
   const { items, onPick } = props
   const [idx, setIdx] = useState(0)
 

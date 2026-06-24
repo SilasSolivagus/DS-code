@@ -12,10 +12,11 @@ const schema = z.object({
 
 export const globTool: Tool<typeof schema> = {
   name: 'Glob',
-  description: '按 glob 模式查找文件，返回相对路径列表（最多 100 条，自动忽略 node_modules/.git）。',
+  description: '按 glob 模式查找文件，返回相对路径列表（最多 100 条，自动忽略 node_modules/.git）。支持 glob 模式（如 **/*.ts、src/**/test_*）；结果按修改时间排序返回。',
   inputSchema: schema,
   isReadOnly: true,
   needsPermission: () => false,
+  workspacePaths: (input, cwd) => [input.path ? path.resolve(cwd, input.path) : path.resolve(cwd)],
   async call(input, ctx) {
     const cwd = input.path ? path.resolve(ctx.cwd(), input.path) : ctx.cwd()
     const files = await fg(input.pattern, {

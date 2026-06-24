@@ -52,19 +52,18 @@ describe('buildSystemPrompt', () => {
     expect(p).toContain('测试标记XYZ')
   })
 
-  it('守则包含歧义先确认与 Bash 无 tty 两条规则', () => {
+  it('守则包含歧义先确认与谨慎执行破坏性动作两条规则', () => {
     const p = buildSystemPrompt(mkdtempSync(path.join(tmpdir(), 'dc-')), mkdtempSync(path.join(tmpdir(), 'dc-home-')))
     expect(p).toContain('歧义')
-    expect(p).toContain('tty')
-    expect(p).toContain('用户自己运行')
+    expect(p).toContain('# 谨慎执行破坏性动作')
+    expect(p).toContain('# 用好工具')
   })
 
-  it('守则包含 P5 终点线交付三条：先验证能用 / 选可打开的介质 / 如实汇报', () => {
+  it('守则包含 P5 终点线交付两条：先验证能用 / 如实汇报', () => {
     const p = buildSystemPrompt(mkdtempSync(path.join(tmpdir(), 'dc-')), mkdtempSync(path.join(tmpdir(), 'dc-home-')))
     expect(p).toContain('终点线')      // 报告完成前先实际验证
-    expect(p).toContain('HTML')        // 优先选可打开/可运行的介质
-    expect(p).toContain('xdg-open')
     expect(p).toContain('如实汇报')    // 诚实性条款
+    expect(p).toContain('OWASP')       // 安全规则仍在 # 干活
   })
 
   it('清单注入：只列 modelInvocable 的 skill；空/无 skills 不加节', () => {

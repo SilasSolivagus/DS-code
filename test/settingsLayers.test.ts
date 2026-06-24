@@ -134,6 +134,18 @@ describe('loadLayeredSettings', () => {
   })
 })
 
+describe('outputStyle round-trip (C2 guard)', () => {
+  it('user scope outputStyle 经 parsePresent+merge 保留', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dc-outstyle-'))
+    const flagFile = join(dir, 'flag.json')
+    try {
+      writeFileSync(flagFile, JSON.stringify({ outputStyle: 'Learning' }))
+      const res = loadLayeredSettings(dir, flagFile)
+      expect(res.settings.outputStyle).toBe('Learning')
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+})
+
 describe('mergeScopePartials permissionSources', () => {
   it('per-rule 归属到贡献 scope，重复取最高优先级', () => {
     const { permissionSources } = mergeScopePartials([

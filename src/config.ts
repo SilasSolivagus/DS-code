@@ -41,6 +41,8 @@ export interface Settings {
   maxToolResultChars: number
   /** 启动默认模型（undefined = 内置缺省 deepseek-v4-flash） */
   model?: string
+  /** 输出风格名（undefined = 不注入特殊风格；'default' 同) */
+  outputStyle?: string
   /** 自定义 API baseURL（undefined = https://api.deepseek.com） */
   baseURL?: string
   /** DeepSeek API key（首跑向导写入；env DEEPSEEK_API_KEY 优先级更高） */
@@ -69,6 +71,8 @@ export interface Settings {
   httpHookAllowedEnvVars?: string[]
   /** 记忆子系统配置（缺省全默认，见 memoryConfig.ts）。 */
   memory?: import('./memdir/memoryConfig.js').MemoryConfig
+  /** 主题名（undefined = 运行期 Provider 兜底 dark；见 src/tui/theme.ts THEMES）。 */
+  theme?: string
 }
 
 const DIR = path.join(os.homedir(), '.deepcode')
@@ -118,6 +122,8 @@ export function loadRawUserSettings(): Settings {
     memory: parseMemoryConfig(raw?.memory),
     provider: raw?.provider === 'glm' || raw?.provider === 'custom' || raw?.provider === 'deepseek' ? raw.provider : undefined,
     providers: parseProvidersConfig(raw?.providers),
+    outputStyle: raw?.outputStyle,
+    theme: raw?.theme,
   }
 }
 

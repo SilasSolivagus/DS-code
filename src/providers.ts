@@ -127,4 +127,28 @@ export function resolveSubModel(alias: string | undefined, parent: string): stri
   return alias
 }
 
+export interface ModelListItem { id: string; label: string }
+
+function formatWindow(n: number): string {
+  if (n >= 1_000_000) return `${Math.round(n / 1_000_000)}M`
+  if (n >= 1_000) return `${Math.round(n / 1_000)}k`
+  return String(n)
+}
+
+/** /model 选择器列表：fast/smart 别名行（解析到具体 id）+ 全部 meta 档。current 行带 ● 标记。 */
+export function modelList(preset: ProviderPreset, current: string): ModelListItem[] {
+  const mark = (id: string) => (id === current ? '● ' : '  ')
+  const metaLabel = (id: string) => {
+    const m = preset.meta[id] ?? preset.defaultMeta
+    return `${formatWindow(m.contextWindow)} · 命中¥${m.hit}/未命中¥${m.miss}/输出¥${m.out} 每百万`
+  }
+  const out: ModelListItem[] = []
+  out.push({ id: preset.models.fast, label: `${mark(preset.models.fast)}[fast] ${preset.models.fast}（${metaLabel(preset.models.fast)}）` })
+  out.push({ id: preset.models.smart, label: `${mark(preset.models.smart)}[smart] ${preset.models.smart}（${metaLabel(preset.models.smart)}）` })
+  for (const id of Object.keys(preset.meta)) {
+    out.push({ id, label: `${mark(id)}${id}（${metaLabel(id)}）` })
+  }
+  return out
+}
+
 export type { Settings }

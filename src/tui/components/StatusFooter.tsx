@@ -4,12 +4,12 @@
 // 已剔除 CC 的云端专属信息（5h 配额窗口、hooks、auto-mode 循环）——deepcode 是按 token 计费的 DeepSeek。
 import React from 'react'
 import { Box, Text } from 'ink'
-import { T } from '../theme.js'
+import { useTheme, DEFAULT_THEME } from '../theme.js'
 
-export function contextBarColor(pct: number): string {
-  if (pct >= 95) return T.err
-  if (pct >= 80) return T.warn
-  return T.accent
+export function contextBarColor(pct: number, theme: typeof DEFAULT_THEME = DEFAULT_THEME): string {
+  if (pct >= 95) return theme.err
+  if (pct >= 80) return theme.warn
+  return theme.accent
 }
 
 function fmtK(n: number): string {
@@ -40,6 +40,7 @@ export function StatusFooter(props: {
   effortLevel: 'low' | 'medium' | 'high'
   toolCounts: Array<{ name: string; n: number }>
 }) {
+  const T = useTheme()
   const usedPct = props.contextWindow > 0 ? (props.contextUsed / props.contextWindow) * 100 : 0
 
   // 对照 CC 真实样式（图6）：`[模型 | 模式] | cwd git:(分支)` / `Context used/window · $花费`
@@ -51,7 +52,10 @@ export function StatusFooter(props: {
       <Text>
         <Text dimColor>[</Text>
         <Text color={T.accent}>{props.model}</Text>
-        <Text dimColor>{` | ${props.mode}`}</Text>
+        <Text dimColor>{' | '}</Text>
+        {props.mode === 'default'
+          ? <Text dimColor>{props.mode}</Text>
+          : <Text bold color={props.mode === 'yolo' ? T.err : props.mode === 'plan' ? T.warn : T.ok}>{props.mode}</Text>}
         {props.thinking && <Text dimColor>{` | think:${props.effortLevel}`}</Text>}
         <Text dimColor>{`]`}</Text>
         <Text dimColor>{` | ${props.cwdBase}`}</Text>
@@ -61,9 +65,9 @@ export function StatusFooter(props: {
       {/* Row 2：上下文绝对值 used/window + 缓存命中（仅有命中时）+ 累计花费 */}
       <Text>
         <Text dimColor>Context </Text>
-        <Text color={contextBarColor(usedPct)}>{fmtK(props.contextUsed)} / {fmtK(props.contextWindow)}</Text>
+        <Text color={contextBarColor(usedPct, T)}>{fmtK(props.contextUsed)} / {fmtK(props.contextWindow)}</Text>
         <Text dimColor>{` [`}</Text>
-        <Text color={contextBarColor(usedPct)}>{contextBar(usedPct)}</Text>
+        <Text color={contextBarColor(usedPct, T)}>{contextBar(usedPct)}</Text>
         <Text dimColor>{`]`}</Text>
         {props.hitRate > 0 && (
           <Text dimColor>{` · cache ${Math.round(props.hitRate * 100)}% (−¥${props.cacheSavings.toFixed(4)})`}</Text>

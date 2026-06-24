@@ -2,13 +2,14 @@
 // 通用 ↑↓ Enter Esc 列表选择器（/resume 用）。选中行 accent 反色，其余 dim。
 import React, { useState } from 'react'
 import { Box, Text, useInput } from 'ink'
-import { T } from '../theme.js'
+import { useTheme } from '../theme.js'
 
 export function SelectList(p: {
   items: string[]
   onPick: (index: number) => void
   onCancel: () => void
 }) {
+  const T = useTheme()
   const [idx, setIdx] = useState(0)
 
   useInput((_input, key) => {

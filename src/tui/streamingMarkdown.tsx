@@ -3,6 +3,7 @@ import { marked } from 'marked'
 import React, { useRef, useMemo } from 'react'
 import { renderMarkdown } from './markdown.js'
 import { withBullet } from './withBullet.js'
+import { useTheme } from './theme.js'
 
 /** 用 marked 词法切分：除最后一个 token 外的都算已稳定（其 raw 累加为边界）。异常/单块 → 全 unstable。 */
 export function splitStablePrefix(text: string): { stable: string; unstable: string } {
@@ -16,6 +17,7 @@ export function splitStablePrefix(text: string): { stable: string; unstable: str
 
 /** 流式 markdown 增量渲染：稳定前缀缓存不重解析、不稳定末尾每次重算，带 ⏺ 项目符号。 */
 export function StreamingMarkdown({ text }: { text: string }): React.ReactNode {
+  const theme = useTheme()
   const boundaryRef = useRef(0)
   const { stable } = splitStablePrefix(text)
   // 边界单调前进：取已算 stable 与历史最大值的较大者，防 lexer 抖动回退
@@ -25,5 +27,5 @@ export function StreamingMarkdown({ text }: { text: string }): React.ReactNode {
   const stableAnsi = useMemo(() => renderMarkdown(stablePrefix), [stablePrefix])
   const unstableAnsi = unstableSuffix ? renderMarkdown(unstableSuffix) : ''
   const joined = stableAnsi && unstableAnsi ? `${stableAnsi}\n\n${unstableAnsi}` : stableAnsi + unstableAnsi
-  return withBullet(joined)
+  return withBullet(joined, theme)
 }

@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest'
 import React from 'react'
 import { render } from 'ink-testing-library'
 import { StatusFooter, contextBarColor, contextBar } from '../src/tui/components/StatusFooter.js'
-import { T } from '../src/tui/theme.js'
+import { DEFAULT_THEME } from '../src/tui/theme.js'
 
 const base = {
   model: 'deepseek-v4-flash',
@@ -93,15 +93,15 @@ describe('StatusFooter', () => {
   })
 
   it('used/window ≥95% 时红色（比值变色）', () => {
-    // used=960000 window=971000 → 98.9% → 红 → contextBarColor returns T.err
+    // used=960000 window=971000 → 98.9% → 红 → contextBarColor returns DEFAULT_THEME.err
     // 小值也走同一分支：验证 contextBarColor 函数本身
-    expect(contextBarColor(960_000 / 971_000 * 100)).toBe(T.err)
+    expect(contextBarColor(960_000 / 971_000 * 100)).toBe(DEFAULT_THEME.err)
   })
 
   it('contextBarColor 分档：<80 accent, 80-94 warn, >=95 err', () => {
-    expect(contextBarColor(50)).toBe(T.accent)
-    expect(contextBarColor(85)).toBe(T.warn)
-    expect(contextBarColor(96)).toBe(T.err)
+    expect(contextBarColor(50)).toBe(DEFAULT_THEME.accent)
+    expect(contextBarColor(85)).toBe(DEFAULT_THEME.warn)
+    expect(contextBarColor(96)).toBe(DEFAULT_THEME.err)
   })
 
   it('contextBar：满格/空格/非零至少一格/越界钳制', () => {

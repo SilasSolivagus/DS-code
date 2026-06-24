@@ -4,7 +4,7 @@
 // 符号每 120ms 轮换；动名词每次挂载固定；耗时由 turnStartAt 计算，每秒重渲染一次。
 import React, { useState, useEffect } from 'react'
 import { Text } from 'ink'
-import { T, SPINNER_SYMBOLS, THINKING_VERBS } from '../theme.js'
+import { useTheme, SPINNER_SYMBOLS, THINKING_VERBS } from '../theme.js'
 
 /** ≥1000 显示 1 位小数 + k（1234→1.2k），否则整数 */
 export function fmtTokens(n: number): string {
@@ -22,6 +22,7 @@ interface SpinnerProps {
 }
 
 export function Spinner({ turnStartAt, turnOutTokens }: SpinnerProps) {
+  const T = useTheme()
   const [symIdx, setSymIdx] = useState(0)
   const [, setTick] = useState(0) // 每秒重渲染以刷新耗时
   const [verb] = useState(() => THINKING_VERBS[Math.floor(Math.random() * THINKING_VERBS.length)])
