@@ -1,5 +1,15 @@
-import { describe, it, expect } from 'vitest'
-import { COMMIT_GUIDANCE, COMMIT_PUSH_PR_GUIDANCE, buildCommitContext, buildPrContext } from '../src/commitGuidance.js'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+vi.mock('node:child_process', async importOriginal => {
+  const cp = await importOriginal<typeof import('node:child_process')>()
+  return {
+    ...cp,
+    execSync: vi.fn(),
+  }
+})
+
+import { COMMIT_GUIDANCE, COMMIT_PUSH_PR_GUIDANCE, buildCommitContext, buildPrContext, isEmptyDiff, resolveBaseBranch } from '../src/commitGuidance.js'
+import { execSync } from 'node:child_process'
 
 describe('COMMIT_GUIDANCE', () => {
   it('含 6 条 Safety Protocol 关键词', () => {
@@ -69,5 +79,30 @@ describe('buildPrContext', () => {
     expect(c.startsWith('<git-context>')).toBe(true)
     expect(c).toContain('BD')
     expect(c).toContain('PR')
+  })
+})
+
+describe('isEmptyDiff', () => {
+  it('空串/纯空白→true', () => {
+    expect(isEmptyDiff('')).toBe(true)
+    expect(isEmptyDiff('   \n  ')).toBe(true)
+  })
+  it('有内容→false', () => {
+    expect(isEmptyDiff(' M src/x.ts')).toBe(false)
+  })
+})
+
+describe('resolveBaseBranch', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('解析 symbolic-ref 末段', () => {
+    vi.mocked(execSync).mockReturnValue(Buffer.from('refs/remotes/origin/develop\n'))
+    expect(resolveBaseBranch('/x')).toBe('develop')
+  })
+  it('execSync throw → 回退 main', () => {
+    vi.mocked(execSync).mockImplementation(() => { throw new Error('no origin/HEAD') })
+    expect(resolveBaseBranch('/x')).toBe('main')
   })
 })

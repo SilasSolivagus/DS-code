@@ -1,5 +1,7 @@
 // src/commitGuidance.ts —— /commit 与 /commit-push-pr 的预跑上下文与指令文本（镜像 CC v2.1.121）
 
+import { execSync } from 'node:child_process'
+
 export const COMMIT_GUIDANCE = `请根据上面的 <git-context> 创建一个 git commit。
 
 ## Git 安全准则
@@ -94,4 +96,21 @@ ${o.baseDiff}
 ## 是否已存在 PR（gh pr view --json number）
 ${o.existingPr}
 </git-context>`
+}
+
+export function isEmptyDiff(porcelain: string): boolean {
+  return porcelain.trim() === ''
+}
+
+/** 解析 base 分支：git symbolic-ref refs/remotes/origin/HEAD 取末段；失败回退 main。不硬编码 main。 */
+export function resolveBaseBranch(cwd: string): string {
+  try {
+    const out = execSync('git symbolic-ref refs/remotes/origin/HEAD', {
+      cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
+    }).toString().trim()
+    const seg = out.split('/').pop()
+    return seg || 'main'
+  } catch {
+    return 'main'
+  }
 }
