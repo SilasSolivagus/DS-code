@@ -164,3 +164,47 @@ describe('TaskListStore 落盘 + bind', () => {
     expect(files).toContain('1.json')
   })
 })
+
+describe('1.6 任务依赖图', () => {
+  it('addBlockedBy 加依赖，未完成依赖时拦截 in_progress', () => {
+    const s = new TaskListStore()
+    const a = s.create({ subject: 'A', description: 'dep' })
+    const b = s.create({ subject: 'B', description: 'main' })
+    s.update(b.id, { addBlockedBy: [a.id] })
+    const blocked = s.update(b.id, { status: 'in_progress' })
+    expect(blocked.ok).toBe(false)
+    expect(blocked.blockedByOpen).toEqual([a.id])
+    expect(s.get(b.id)!.status).toBe('pending') // 未变
+  })
+
+  it('依赖完成后可转 in_progress', () => {
+    const s = new TaskListStore()
+    const a = s.create({ subject: 'A', description: 'dep' })
+    const b = s.create({ subject: 'B', description: 'main' })
+    s.update(b.id, { addBlockedBy: [a.id] })
+    s.update(a.id, { status: 'completed' })
+    const ok = s.update(b.id, { status: 'in_progress' })
+    expect(ok.ok).toBe(true)
+    expect(s.get(b.id)!.status).toBe('in_progress')
+  })
+
+  it('软删的依赖视同已清，不永久卡死后继', () => {
+    const s = new TaskListStore()
+    const a = s.create({ subject: 'A', description: 'dep' })
+    const b = s.create({ subject: 'B', description: 'main' })
+    s.update(b.id, { addBlockedBy: [a.id] })
+    s.update(a.id, { status: 'deleted' }) // 软删依赖
+    expect(s.openBlockers(b.id)).toEqual([])
+    expect(s.update(b.id, { status: 'in_progress' }).ok).toBe(true)
+  })
+
+  it('addBlocks/addBlockedBy 去重累加', () => {
+    const s = new TaskListStore()
+    const t = s.create({ subject: 'T', description: 'x' })
+    s.update(t.id, { addBlockedBy: ['9', '9'] })
+    s.update(t.id, { addBlockedBy: ['9', '8'] })
+    expect(s.get(t.id)!.blockedBy).toEqual(['9', '8'])
+    s.update(t.id, { addBlocks: ['5'] })
+    expect(s.get(t.id)!.blocks).toEqual(['5'])
+  })
+})
