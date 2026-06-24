@@ -97,11 +97,23 @@ export function permissionSourceName(s: PermissionRuleSource): string {
   return SOURCE_NAMES[s] ?? String(s)
 }
 
+/** 生成「总是允许」将保存的规则（预览与保存共用，单一来源）。deepcode 既有粒度：Bash 普通=前 2 词+:*，高危/复合=精确，非 Bash=精确。 */
+export function suggestRule(toolName: string, desc: string): string {
+  const firstLine = desc.split('\n')[0]
+  const compound = toolName === 'Bash' && splitBashCommand(desc).commands.length > 1
+  const pat = toolName === 'Bash'
+    ? (isDangerous(desc) || compound)
+      ? desc.replace(/\n/g, ' ')
+      : firstLine.split(' ').slice(0, 2).join(' ') + ':*'
+    : desc.replace(/\n/g, ' ')
+  return `${toolName}(${pat})`
+}
+
 export interface PermissionContext {
   mode: PermissionMode
   rules: string[]
   saveRule: (rule: string) => void
-  ask: (toolName: string, desc: string, reason?: PermissionDecisionReason) => Promise<Decision>
+  ask: (toolName: string, desc: string, reason?: PermissionDecisionReason, previewRule?: string) => Promise<Decision>
   deny?: string[]
   cwd?: string
   ruleSources?: Record<string, PermissionRuleSource>
@@ -265,16 +277,10 @@ export async function checkPermission(
   const askReason: PermissionDecisionReason | undefined = denyHit
     ? { type: 'rule', rule: { source: pc.denySources?.[denyHit] ?? 'builtin', behavior: 'deny', value: denyHit } }
     : undefined
-  const decision = await pc.ask(tool.name, desc, askReason)
+  const previewRule = suggestRule(tool.name, desc)
+  const decision = await pc.ask(tool.name, desc, askReason, previewRule)
   if (decision === 'always') {
-    const firstLine = desc.split('\n')[0]
-    const compound = tool.name === 'Bash' && splitBashCommand(desc).commands.length > 1
-    const pat = tool.name === 'Bash'
-      ? (isDangerous(desc) || compound)
-        ? desc.replace(/\n/g, ' ')
-        : firstLine.split(' ').slice(0, 2).join(' ') + ':*'
-      : desc.replace(/\n/g, ' ')
-    pc.saveRule(`${tool.name}(${pat})`)
+    pc.saveRule(previewRule)
     return { ok: true }
   }
   if (decision === 'yes') return { ok: true }
