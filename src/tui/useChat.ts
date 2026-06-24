@@ -1061,7 +1061,7 @@ export function createChatCore(opts: {
         runSubagent: opts.runSubagent, onUsage: memoryOnUsage,
       })
       smState = { promptTokens: 0, tokensAtLastUpdate: 0, initialized: false, toolCallsSinceUpdate: 0, lastTurnHadToolCalls: false }
-      notice('info', `已分叉到新会话「${forkTitle}」（原会话保持不变，继续写入新文件）`)
+      notice('info', `已分叉到新会话「${forkTitle}」（原会话保持不变；对话与花费继续，任务清单与文件检查点不随分叉带过）`)
       fireSessionStart('startup')
       return
     }
