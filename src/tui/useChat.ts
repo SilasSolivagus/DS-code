@@ -180,6 +180,7 @@ export interface ChatState {
   lastTokPerSec: number | null
   turnStartAt: number | null // 当前轮开始时间戳（spinner 计算耗时秒数；空闲为 null）
   turnOutTokens: number      // 当前轮累计输出 token（spinner 实时显示；流式估算，turn 边界用真实值校准）
+  hookProgress: string | null // 1.7 当前运行中的慢阶段 hook 文案（null=无）
   sessionCost(): number
   cacheHitRate(): number // usageLog 累计 hit/prompt，DeepSeek 状态行核心指标
   cacheSavings(): number // usageLog 累计缓存省下金额（CNY），DeepSeek 状态行
@@ -291,12 +292,14 @@ export function createChatCore(opts: {
   const messages: any[] = [{ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars, memdir, resolveOutputStyle(outputStyleName, outputStyleCache)) }]
   const usageLog: UsageRecord[] = []
   let session!: SessionHandle
+  let hookProgress: string | null = null
   const hookDeps = {
     ...makeHookRuntime({
       client: opts.client,
       getModel: () => model,
       onUsage: (u, m) => { usageLog.push({ usage: u, model: m }); session.appendUsage(u, m) },
       cwd: () => cwd,
+      onProgress: (label?: string) => { hookProgress = label ?? null; setState() },
     }),
     allowedHttpHookUrls: settings.allowedHttpHookUrls,
     httpHookAllowedEnvVars: settings.httpHookAllowedEnvVars,
@@ -345,7 +348,7 @@ export function createChatCore(opts: {
   // 所有状态变更走 setState：换新快照对象 → onState 回调 + 订阅者通知
   const listeners = new Set<() => void>()
   const snap = (): ChatState => ({
-    transcript, busy, model, thinking, effortLevel, permMode, pendingAsk, pendingQuestion, pendingPlanApproval, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, sessionCost, cacheHitRate, cacheSavings, contextPct, contextUsed, contextWindow, tokenBudget: tokenBudgetGet, budgetUsed: budgetUsedGet,
+    transcript, busy, model, thinking, effortLevel, permMode, pendingAsk, pendingQuestion, pendingPlanApproval, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, hookProgress, sessionCost, cacheHitRate, cacheSavings, contextPct, contextUsed, contextWindow, tokenBudget: tokenBudgetGet, budgetUsed: budgetUsedGet,
   })
   let state = snap()
   const setState = (): void => {

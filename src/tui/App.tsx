@@ -281,7 +281,7 @@ export function App(props: {
               onCancel={() => { setRewindStep(null); setRewindTurn(null) }}
             />
           : <>
-              {state.busy && <Spinner turnStartAt={state.turnStartAt} turnOutTokens={state.turnOutTokens} />}
+              {state.busy && <Spinner turnStartAt={state.turnStartAt} turnOutTokens={state.turnOutTokens} hookLabel={state.hookProgress} />}
               {suggestionsActive && (
                 <Suggestions items={suggestions} onPick={handlePick} />
               )}
