@@ -79,6 +79,9 @@ describe('buildPrContext', () => {
     expect(c.startsWith('<git-context>')).toBe(true)
     expect(c).toContain('BD')
     expect(c).toContain('PR')
+    expect(c).toContain('ST')
+    expect(c).toContain('DF')
+    expect(c).toContain('BR')
   })
 })
 

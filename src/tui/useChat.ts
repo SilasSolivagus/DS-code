@@ -1071,11 +1071,15 @@ export function createChatCore(opts: {
     }
 
     if (line === '/commit') {
-      const status = runBang('git status', cwd).output
+      if (runBang('git rev-parse --is-inside-work-tree', cwd).code !== 0) {
+        notice('warn', '当前目录不是 git 仓库')
+        return
+      }
       if (isEmptyDiff(runBang('git status --porcelain', cwd).output)) {
         notice('info', '没有可提交的改动')
         return
       }
+      const status = runBang('git status', cwd).output
       const diff = runBang('git diff HEAD', cwd).output
       const branch = runBang('git branch --show-current', cwd).output
       const log = runBang('git log --oneline -10', cwd).output
@@ -1087,6 +1091,10 @@ export function createChatCore(opts: {
     }
 
     if (line === '/commit-push-pr') {
+      if (runBang('git rev-parse --is-inside-work-tree', cwd).code !== 0) {
+        notice('warn', '当前目录不是 git 仓库')
+        return
+      }
       if (isEmptyDiff(runBang('git status --porcelain', cwd).output)) {
         notice('info', '没有可提交的改动')
         return
