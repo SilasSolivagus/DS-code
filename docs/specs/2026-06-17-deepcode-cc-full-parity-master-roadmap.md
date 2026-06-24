@@ -17,7 +17,14 @@
 
 ---
 
-## 🔄 进度更新（2026-06-23 最新，下表状态列已同步本块）
+## 🔄 进度更新（2026-06-24 最新，下表状态列已同步本块）
+
+**2026-06-24**：✅✅✅**四批次大合并已合 main 并 push**（merge --no-ff `625feef`，main=origin=`625feef` 全同步，55 commit）。一次锁住 4 批全部验证通过的成果，**1217 测试全绿**。分支 `feat/tui-batch-1-permissions` 已删。四批：
+- **TUI 计划1**：1.4 Plan mode + 5.9 工作目录围栏 + /add-dir（真机冒烟 7 项过）。
+- **TUI 计划2 Picker 族**：2.7 /model 选择器（列 active provider 全档 + 当前●，切换实证 per-model window 171k→971k）+ 5.3 Output styles（内置 Explanatory/Learning + 热切重建 messages[0]）+ 5.4 /theme 六套主题热切（dark/light/各 daltonized/各 ansi，accent 实时变色）。10 任务 SDD + theme context 化 opus 终审 + 全分支 opus 终审（揪出 C1 跨任务 bug：loadRawUserSettings 白名单漏 outputStyle/theme→持久化互相清除，已修）+ 真机冒烟 3 picker 全过（全屏 FullscreenApp 默认路径，双组件接线确认无漏）。spec/plan `docs/{specs,plans}/2026-06-23-deepcode-tui-batch-2-pickers*`。
+- **P1 Prompt 全 gap 对齐**：系统提示重构成 CC 式 6 段（介绍 + # 系统/# 干活/# 谨慎执行破坏性动作[全文镜像 CC G5z]/# 用好工具/# 语气与风格）+ output-style 门控只作用 # 干活（修误删安全段 bug）+ 压缩提示 5 段→9 段（镜像 CC Yx9 + <analysis> 前导）+ Task/Grep/Glob 工具描述增强 + **删 HTML 偏见**（CC 零产物形态偏好，实读证）。9 任务 SDD + 全分支 opus 终审 + 构建产物真机验证。spec/plan `docs/{specs,plans}/2026-06-23-deepcode-prompt-parity-p1*`。**来源：派 opus 专家两次实读 CC v2.1.76/2.1.121 系统提示词，全集存档 `docs/cc-reference/`（95+ 提示词 verbatim + GAP-ANALYSIS.md）。**
+- **P2 /commit + /commit-push-pr**：硬编码内置命令（deepcode 无捆绑-skill 加载器），runBang 预跑 git→注入 <git-context>+guidance→触发模型写 message 并提交。镜像 CC dFY/X9q（6 条 Git Safety Protocol、HEREDOC、参照仓库风格、commit 后验证、空 diff 早退、非 git 仓库守卫）。commit trailer `Co-Authored-By: deepcode <noreply@dirctable.com>`（commit body 无 🤖、PR body 才有「🤖 由 deepcode 生成」）。/commit-push-pr 多预跑 base diff + gh pr view，base 从 git symbolic-ref 解析，PR create/edit 二分。5 任务 SDD + 全分支 opus 终审 + 真机冒烟 4 场景全过（含真建 PR https://github.com/SilasSolivagus/test-ds/pull/1）。spec/plan `docs/{specs,plans}/2026-06-24-deepcode-commit-commands-p2*`。
+**🎯 下一步=新会话起 TUI 计划3（会话+小件）：3.6 /fork+/rename + 1.6 Task 依赖图薄片 + 5.7 /statusline + 1.7 hooks 进度。** 教训沉淀：①TUI 双组件接线必双改 App+FullscreenApp（[[deepcode-tui-dual-component]]）②大改核心系统提示前务必派专家实读 CC 真实源码核对（第一版 gap 分析有 7 处结构错误，实读纠正）③CC commit/PR 是按需 slash-command 非系统提示，trailer 本地化别照抄 anthropic。
 
 **2026-06-23（晚）**：🚧**TUI 攒最后批启动**（用户钦定，9 件分 3 份计划「边做边写」）。调研 + spec 落盘 `docs/specs/2026-06-23-deepcode-tui-batch-{investigation,design}.md`（6 agent 实读 CC bundle，**多数标题被实读砍水分**：1.4 无 EnterPlanModeTool/plan 是 permission mode、2.7 仅剩 /model 选择器 UI、4.11 因 DeepSeek 无视觉 API SKIP、5.1 实为 L、5.5 STT 云专属 SKIP）。**✅✅计划1（权限集成架构：1.4 Plan mode + 5.9 工作目录围栏+/add-dir）完成**，分支 `feat/tui-batch-1-permissions`（HEAD `983e8ec`，22 commit，**未合 main/未 push**——待计划2/3 + 整批冒烟后一起合）。9 任务 SDD + opus 全分支终审 Ready-to-merge + **真机冒烟 7 项全过**（plan 只读门/ExitPlanMode 写盘+审批弹窗/allowedPrompts→规则/围栏 cwd 外 ask/`/add-dir` 放行/**deny 不可击穿红线**/Shift+Tab 三态循环）+ 冒烟修复补 review Approved。1149 测试全绿。plan `docs/plans/2026-06-23-deepcode-tui-batch-1-permissions.md`。**冒烟揪出 Task8 重大缺陷**：plan TUI 接线只放进 App.tsx 漏了**默认全屏渲染的 FullscreenApp.tsx**（Shift+Tab 无反应/审批弹窗不显会卡死）——subagent 双审+opus 终审都没抓到，靠真机冒烟发现（教训进 memory `deepcode-tui-dual-component`）+ 修一串 pre-existing IME 光标停泊 bug。**用户决策：5.9 本批引入工作目录围栏**（deepcode 原无围栏，新建 checkPermission 第二道门 cwd∪白名单外→ask，deny 正交不可击穿）。**下一步=新会话起计划2（Picker 族：2.7 /model 选择器 + 5.3 Output styles + 5.4 主题热切六套）。**
 
@@ -57,7 +64,7 @@
 | 1.1 | **MCP 客户端（stdio MVP 已完成）** ✅ | `tools/MCPTool` `services/mcp` | `src/mcp.ts`（stdio + 工具发现注入 + 容错，真机冒烟过；http-sse/认证/资源/agent级 留 spec §5 增量） | ✅ | 否 | L | — |
 | 1.2 | **Skills**（SkillTool + 模型自主触发 + frontmatter description/allowed-tools + fork） | `tools/SkillTool` `skills/loadSkillsDir.ts` | ✅ `skillsLoader.ts`+`skill.ts`(`0685ecb`)+预算/scope(`c882d14`) | ✅ | 否 | M | — |
 | 1.3 | **Steering/用户中途转向** ✅ | `tools/SendMessageTool` `messageQueueManager` | ✅ `src/steering.ts`(SteeringQueue)+CC 真实模型(Enter 入队 next + toolInFlight 软中断,无 now 键)+loop signal.reason 二分续跑/硬中断+resetSignal+三点 drain+ESC 双语义+列队展示(merge `32612a1`,opus 终审+真机冒烟 PASS) | ✅ | 部分 | M | L-041✅ |
-| 1.4 | **Plan mode**（plan permission mode + 只读门 + ExitPlanMode 工具 + 审批弹窗 + allowedPrompts→规则 + Shift+Tab 三态） | ~~`EnterPlanModeTool`~~不存在；`ExitPlanModeTool` | ✅ **完成**（TUI 批计划1，分支 `feat/tui-batch-1-permissions`；plan 是 permission mode 非进入工具；ExitPlanMode 写盘计划作团队/云前向底座；真机冒烟过；未合 main） | ✅ | 碰TUI | M | — |
+| 1.4 | **Plan mode**（plan permission mode + 只读门 + ExitPlanMode 工具 + 审批弹窗 + allowedPrompts→规则 + Shift+Tab 三态） | ~~`EnterPlanModeTool`~~不存在；`ExitPlanModeTool` | ✅ **完成**（TUI 批计划1，已合 main merge `625feef` 并 push；plan 是 permission mode 非进入工具；ExitPlanMode 写盘计划作团队/云前向底座；真机冒烟过） | ✅ | 碰TUI | M | — |
 | 1.5 | **可写 subagent + git worktree**（EnterWorktree/ExitWorktree + isolation 字段 + 类型级 deny） | `tools/EnterWorktreeTool` `utils/worktree.ts` | 强制全局只读 | ⬜ | 碰TUI | L | L-040✅ |
 | 1.6 | **多 agent 工作流**（TeamCreate/TeamDelete + TaskUpdate 依赖图 blocks/blockedBy + 成员寻址） | `tools/TeamCreateTool` `tools/TaskUpdateTool` | 仅 fan-out | ⬜ | 碰TUI | L | 1.3 |
 | 1.7 | **Hooks TUI 进度（①e）** | `hooks/` 渲染 | 引擎已全,无进度显示 | 🟡 | 碰TUI | M | L-042✅ |
@@ -73,7 +80,7 @@
 | 2.4 | **Prompt caching / cache_control 头** | `utils/cacheBreak.ts` | ✅ cacheSavings 纯函数+状态栏 cache 段(`841b264`) | ✅ | 否 | S |
 | 2.5 | **Token 计数/估算**（精确计数 + 多后端） | `services/tokenEstimation.ts` | ✅ CJK 感知估算+模型感知 window+发送前预估 compact(`7dc78ea`)。CC 的 countTokens API/多后端 N/A(DeepSeek 无此端点) | ✅ | 否 | M |
 | 2.6 | **Cost 告警 hook**（累计 + 阈值告警；settings 已有 costWarnUSD） | `costHook.ts` `cost-tracker.ts` | ✅ costWarnUSD 阈值告警(`fa2cade`) | ✅ | 部分 | S |
-| 2.7 | **/model /effort /fast 模型切换**（DeepSeek 内 flash↔pro 切换命令） | `commands/{model,effort,fast}` | 🟡 useChat.ts:812 仅 flash↔pro 翻转 | 🟡 | 碰TUI | S |
+| 2.7 | **/model /effort /fast 模型切换**（DeepSeek 内 flash↔pro 切换命令） | `commands/{model,effort,fast}` | ✅ **完成**（TUI 批计划2，merge `625feef`：无参 /model 弹 SelectList 列 active provider 全档+当前●，有参直赋；effort 已对齐；真机冒烟切 glm-5.2 window 171k→971k 实证 per-model contextWindow） | ✅ | 碰TUI | S |
 | 2.8 | **通用多 provider / 第三方模型切换（GLM 等任意 OpenAI 兼容后端）** ⭐用户钦定 — ✅**已完成（merge `2e54497`，已 push，main=origin）** | `src/providers.ts` 单一事实源（deepseek/glm/custom preset） | ✅ 方案 A 同 provider 内切档；方言 adapter 三处；信任边界双动作；前向兼容 v4.1/glm-5.3；GLM smart=glm-5.2/fast=glm-5-turbo；真机冒烟 PASS；1109 测试 | ✅ | 部分 | M |
 
 ### 2.8 通用多 provider 详述（2026-06-22 钦定新增；✅2026-06-23 已完成合 main 并 push，merge `2e54497`）
@@ -130,8 +137,8 @@
 |---|---|---|---|---|---|---|
 | 5.1 | **Keybindings 系统**（`~/.deepcode/keybindings.json` + chord + 冲突检测） | `keybindings/` | 无 | ⬜ | 碰TUI | M |
 | 5.2 | **Vim 模式**（motions/operators/textObjects 状态机） | `vim/` | 无 | ⬜ | 碰TUI | L |
-| 5.3 | **Output styles**（自定义输出样式 markdown + 注入 + 降级） | `outputStyles/` `constants/outputStyles.ts` | 无 | ⬜ | 碰TUI | M |
-| 5.4 | **/theme /color 主题切换** | `commands/{theme,color}` | 无 | ⬜ | 碰TUI | S |
+| 5.3 | **Output styles**（自定义输出样式 markdown + 注入 + 降级） | `outputStyles/` `constants/outputStyles.ts` | ✅ **完成**（TUI 批计划2，merge `625feef`：src/outputStyles.ts 内置 Explanatory/Learning + 用户 ~/.deepcode/output-styles/*.md；buildSystemPrompt 第6参 outputStyle 门控仅 # 干活 段；/output-style picker 热切重建 messages[0]+持久化；真机冒烟过） | ✅ | 碰TUI | M |
+| 5.4 | **/theme /color 主题切换** | `commands/{theme,color}` | ✅ **完成**（TUI 批计划2，merge `625feef`：theme.ts context 化[ThemeProvider/useTheme]+六套主题 dark/light/各daltonized/各ansi；13 消费点迁移[2 纯函数透传 theme 参]；/theme picker state 驱动实时热切+持久化；架构件 opus 终审；真机冒烟 accent 实时变色过） | ✅ | 碰TUI | S |
 | 5.5 | **语音模式**（音频录制 + STT 流 + keyterms） | `voice/` `services/voice*.ts` | 无 | ⬜ | 碰TUI | L |
 | 5.6 | **权限弹窗 UI**（always/yes/no 决策 + 规则记忆 + deny/来源展示） | `components/PermissionPrompt.tsx` | ✅ **完成**（PermissionDialog 三态+快捷键+always 写 user 规则+危险警告+diff；**+deny/来源层级展示 merge `31e5deb`**：PermissionDecisionReason 联合+settingsLayers per-rule provenance+buildDenySourceMap+checkPermission 携带/透传 decisionReason+硬拒绝文本带来源+弹窗渲染来源行；镜像 CC PermissionRuleExplanation，源 builtin/user/project/local/flag）。**余 3×S 文案(always 写哪层反馈/规则粒度预览/Tab-amend)留将来** | ✅ | 碰TUI | ✅ |
 | 5.7 | **Statusline**（成本/token/模型/模式/任务进度实时栏 + /statusline） | `commands/statusline.tsx` | 极简状态行 | 🟡 | 碰TUI | M |
