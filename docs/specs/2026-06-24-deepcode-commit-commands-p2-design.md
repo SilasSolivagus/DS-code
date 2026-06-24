@@ -95,7 +95,7 @@ git log --oneline -10
    git commit -m "$(cat <<'EOF'
    这里是 commit message。
 
-   Co-Authored-By: deepcode <noreply@deepcode.dev>
+   Co-Authored-By: deepcode <noreply@dirctable.com>
    EOF
    )"
 3. commit 完成后跑 git status 确认成功。若因 pre-commit hook 失败，先修问题再创建新 commit（不要 --amend）。
@@ -103,7 +103,7 @@ git log --oneline -10
 你可以在单次回复里并行调用多个工具。请用一条消息完成暂存与提交。不要使用其它工具或做其它事。除了这些工具调用，不要发送任何其它文字或消息。
 ```
 
-> trailer = commit body 只这一行 `Co-Authored-By: deepcode <noreply@deepcode.dev>`，**不加「Generated with」**（CC commit body 也只有 Co-Authored-By；🤖 footer 只进 PR）。
+> trailer = commit body 只这一行 `Co-Authored-By: deepcode <noreply@dirctable.com>`，**不加「Generated with」**（CC commit body 也只有 Co-Authored-By；🤖 footer 只进 PR）。
 
 ### `/commit-push-pr` — 预跑命令集（CC `X9q`，比 /commit 多 2 条 + base 解析）
 
@@ -135,7 +135,7 @@ gh pr view --json number 2>/dev/null || true   # 检测 PR 是否已存在
 ## 你的任务
 分析将进入这个 PR 的所有改动——务必看上面 git diff <base>...HEAD 输出里的全部 commit（不只是最新一个）。然后：
 1. 若当前在 base 分支上，先创建新分支（分支名形如 你的名字/feature-name；拿不准就问用户）。
-2. 用 HEREDOC 语法创建单个 commit（message 末尾带 Co-Authored-By: deepcode <noreply@deepcode.dev>）。
+2. 用 HEREDOC 语法创建单个 commit（message 末尾带 Co-Authored-By: deepcode <noreply@dirctable.com>）。
 3. 把分支 push 到 origin。
 4. 检查上面 gh pr view 输出：若该分支已有 PR，用 gh pr edit 更新标题和正文以反映当前改动；否则用 gh pr create 创建（正文用 HEREDOC）。
    - 重要：PR 标题保持简短（70 字符以内），细节放正文。
