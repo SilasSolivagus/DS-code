@@ -2,7 +2,9 @@
 
 调研依据见 `docs/specs/2026-06-23-deepcode-tui-batch-investigation.md`（6 agent 实读 CC bundle v2.1.76 + sdk-tools.d.ts + 摸 deepcode 现状）。本批是 CC 第 1-5 层「碰 TUI 件」的收官批，全部一次真机冒烟。
 
-**修订史**：opus 专家对抗终审挖出 3 🔴 + 5 🟡（实证 CC 符号 + deepcode 行号），已逐条落地：①1.4 **保留写盘**作为团队/云前向兼容底座（用户产品愿景=国内最强团队 vibe coding harness：团队 leader 审批/云 resume 回填等未来消费方将接入；专家「单机无消费方」推理基于当前单机，被产品路线图覆盖）；②5.9 改为「工作目录围栏 + /add-dir」（用户拍板本批引入围栏）+ deny 不可击穿红线；③1.4 plan 门修 forceAsk 交互；④5.7 补超时/截断+澄清执行加固非权限判定；⑤5.4 消费点更正 12；⑥5.3 钉注入点 + 静态 prompt 重建。
+**修订史（2026-06-24 计划3 起步实读 CC 校准两点）**：① 3.6 /fork memdir 推翻旧 🟢-3「forked 物理隔离」→ 改**共享项目 memdir**（实读 CC `commands/branch/branch.ts`：fork 不碰记忆目录、记忆按 git-root 收敛；旧判断把会话 fork 误同 C2 forked-agent 写隔离）+ 自动 (Branch) 标题；② 5.7 statusline 刷新模型由「turn 边界」精确化为 CC 真实的**事件驱动 + 300ms 去抖 + 在途 abort + 缓存**（实读 `components/StatusLine.tsx`），输出由「首行截断」改为 CC 的**多行 trim 解析 + 保留上次缓存绝不抛**。详见各节内联修订。
+
+**修订史（2026-06-23）**：opus 专家对抗终审挖出 3 🔴 + 5 🟡（实证 CC 符号 + deepcode 行号），已逐条落地：①1.4 **保留写盘**作为团队/云前向兼容底座（用户产品愿景=国内最强团队 vibe coding harness：团队 leader 审批/云 resume 回填等未来消费方将接入；专家「单机无消费方」推理基于当前单机，被产品路线图覆盖）；②5.9 改为「工作目录围栏 + /add-dir」（用户拍板本批引入围栏）+ deny 不可击穿红线；③1.4 plan 门修 forceAsk 交互；④5.7 补超时/截断+澄清执行加固非权限判定；⑤5.4 消费点更正 12；⑥5.3 钉注入点 + 静态 prompt 重建。
 
 ## 范围（9 件，用户 2026-06-23 拍板）
 忠实镜像 CC，按共享基建聚成 4 组。设计开放点已敲定：1.4=完整对齐 CC（Shift+Tab + allowedPrompts + **写盘留团队/云底座**）、5.3=内置 Explanatory+Learning、5.4=六套主题热切全做、5.9=**本批引入工作目录围栏 + /add-dir**。
@@ -75,9 +77,10 @@
 ## 组 B · 会话命令族
 
 ### 3.6 /fork（S）
-**现状**：记忆子系统已有 forked 路径物理隔离；`/rewind` 有 turnId 游标；无用户级 `/fork`。
-**改动**：`/fork` → 拷贝当前 messages 切片到 `newSession`（`session.ts:89` 系），沿用 meta，切新会话继续。**memdir 归属（🟢-3）**：新会话 memdir **走 forked 物理隔离路径**，不共享原会话 memdir（否则 fork 出的会话写记忆污染原会话）。
-**测试**：fork 产出独立 session 文件 + messages 切片正确 + meta 继承 + 原会话不受影响 + memdir forked 隔离不污染原会话。
+**现状**：`/rewind` 有 turnId 游标；无用户级 `/fork`。memdir（`memdir/paths.ts memdirFor`）按 git-root/cwd per-project，**所有会话本就共享**。
+**改动**：`/fork` → 拷贝当前 messages 切片到 `newSession`（`session.ts:75` 系），沿用 meta，切新会话继续，自动加 `" (Branch)"` 标题（复用 /rename 的 title 机制，碰撞升级 Branch 2/3…）。
+**🔧 memdir 归属（2026-06-24 实读 CC 修订，推翻旧 🟢-3）**：新会话 memdir **共享项目 memdir，不做特殊隔离**——对齐 CC `/branch`（`commands/branch/branch.ts createFork`）：fork 只换 sessionId+新 transcript 文件，记忆目录键=git root，fork 全程不碰记忆目录、无隔离参数（CC 刻意让记忆按仓库收敛，见 `memdir/paths.ts` 注释）。旧 spec 把会话级 fork 误同于 C2 autoDream 的 forked-agent 写隔离（那是后台子 agent 的 memdir 写隔离，两码事）。「fork 污染原会话」担忧不成立：任意两个同 repo 会话本就共享记忆。
+**测试**：fork 产出独立 session 文件 + messages 切片正确 + meta 继承 + 原会话 transcript 不受影响 + 自动 (Branch) 标题（碰撞升级）。**不测 memdir 隔离**（已确认共享）。
 
 ### 3.6 /rename（S）
 **现状**：`SessionMeta`（`session.ts:6-13`）无 title；`listSessions`（:147,160）预览硬编码首句 60 字。
@@ -125,11 +128,12 @@
 ### 5.7 /statusline 自定义（S）
 **现状**：StatusFooter 展示侧已覆盖 95%。CC statusLine 走 `vS1`（与 hook 命令执行同函数，带 `CLAUDE_PROJECT_DIR` env），**强制传 `AbortSignal.timeout`**（不吃 10min 默认）+ `stdout.trim().split('\n')` 取行；只从 policy/user 读、不从 project 读、`disableAllHooks` 同禁。
 **改动**：
-- settings 加 `statusLineCommand?:string`；列入 `DANGEROUS_TOP_KEYS`（settingsLayers.ts:14）→ project + git-tracked local scope 剥离（与 hooks 同级，机制自洽）；仅 user/非跟踪 local 可设（对齐 CC「user 可设」）。
-- **执行=加固通道非权限判定（🟡-2）**：statusLineCommand 是用户自设命令，CC 不弹窗/不过 deny（`vS1` 直接 spawn）。deepcode 复用 hook 执行通道的**执行加固**（env 隔离 + 安全加固 B 批 shell 加固），**不走 splitBashCommand 前缀放行/不弹权限窗**。
-- **强制超时 + 输出截断（🟡-1）**：spawn 带 `AbortSignal.timeout`（≤5s，对齐 CC 给 statusLine 单独超时）；stdout 取首行 + 长度上限截断（防巨量输出撑爆状态栏）。
-- 渲染：stdout 段附加进 StatusFooter（展示侧主体不动）。
-**测试**：有 statusLineCommand 渲染 stdout 段 / 无则不显 / 命令失败优雅降级 / 超时中止 / 输出超限截断 / project scope 剥离该字段。
+- settings 加 `statusLineCommand?:string`；列入 `DANGEROUS_TOP_KEYS`（settingsLayers.ts:14）→ project + git-tracked local scope 剥离（与 hooks 同级，机制自洽）；仅 user/非跟踪 local 可设。**注**：CC 未压缩源码靠 trust gate 而非 scope 剥离防恶意 project statusLine；deepcode 无 trust gate，DANGEROUS_TOP_KEYS scope 剥离即 deepcode 等价信任边界（与 hooks/mcpServers 同 idiom），保留此法。parsePresent（settingsLayers.ts:147）注册新标量字段。
+- **执行=加固通道非权限判定（🟡-2）**：statusLineCommand 是用户自设命令，CC 不弹窗/不过 deny（直接 spawn）。新建轻量 `execStatusLineCommand`（参考 execCommandHook 的 bash spawn + env 隔离，~30-40% 可复用，**不强行复用** execCommandHook 的 async/registerAsync 编排），**不走 splitBashCommand 前缀放行/不弹权限窗**。
+- **刷新模型（2026-06-24 实读 CC `components/StatusLine.tsx` 修订）**：对齐 CC = **事件驱动 + 300ms 去抖 + 在途 abort + 结果缓存**，**非 interval、非每帧**。触发信号：最后一条 assistant 消息变化（turn 推进）/ 权限模式 / 模型 / （deepcode 无 vim 模式可略）。把 messages 大对象藏 ref，避免每帧/流式 token 触发。每次重跑先 abort 上一个在途子进程（单飞）。
+- **超时 + 输出解析（🟡-1 修订）**：`AbortSignal.timeout(5000)`（CC 默认 5s）。stdout 解析对齐 CC：`trim() → split('\n') → 逐行 trim 丢空行 → join('\n')`（**保留多行**，非首行）；为 footer 紧凑再加总长度上限截断（deepcode 增量，防撑爆）。exit≠0 / 空输出 / abort / 抛异常 → 返回 undefined，**保留上次缓存值、绝不抛**（CC 静默吞）。
+- 渲染：缓存的 stdout 段附加进 StatusFooter（展示侧主体不动；命令不在渲染路径上跑，渲染只读缓存）。
+**测试**：有 statusLineCommand 渲染缓存 stdout 段 / 无则不显 / 命令失败保留上次缓存不抛 / 超时中止 / 多行 trim 解析 / 输出超限截断 / 300ms 去抖（连续触发只跑一次）/ 在途 abort / project scope 剥离该字段。
 
 ---
 
