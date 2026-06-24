@@ -29,7 +29,7 @@ import { makeHookRuntime } from '../hookRuntime.js'
 import { isDangerous, type Decision, type PermissionMode, type PermissionDecisionReason } from '../permissions.js'
 import { resolveDenyList, buildDenySourceMap } from '../deny.js'
 import type { ToolContext } from '../tools/types.js'
-import { newSession, openSession, listSessions, loadSession, sessionIdFromFile, type SessionHandle, type UsageRecord } from '../session.js'
+import { newSession, openSession, listSessions, loadSession, sessionIdFromFile, stripBranchSuffix, nextBranchTitle, type SessionHandle, type UsageRecord } from '../session.js'
 import { costCNY, cacheSavingsCNY } from '../pricing.js'
 import { summarize, rebuildMessages, shouldAutoCompact } from '../compact.js'
 import { estimateTextTokens, estimateMessagesTokens, effectiveThreshold } from '../tokenEstimate.js'
@@ -220,7 +220,7 @@ export interface ChatCore {
 }
 
 const HELP_TEXT =
-  '/model  无参打开模型选择器；/model <名> 直接切到指定模型\n/think  thinking 模式开关\n/effort 思考档位 low/medium/high/off\n/accept acceptEdits 模式开关（Edit/Write 免确认，Bash 仍确认）\n/plan   plan 模式开关（只读探索+写计划，ExitPlanMode 请用户审批）\n/add-dir <路径> 添加工作目录白名单（plan 模式围栏扩展）\n/cost   本会话花费明细\n/context 上下文占比与上次 usage\n/stats  本会话统计（轮数/工具/token/缓存/花费）\n/copy   复制上条回复到剪贴板\n/memory 查看当前生效的记忆文件\n/compact 手动压缩对话历史\n/clear  清空对话（开新会话文件，花费累计保留）\n/resume 列出并恢复本目录历史会话\n/rewind 回退到某轮之前（仅对话/仅代码/两者）\n/export 导出对话到 markdown 文件\n/permissions 查看/删除已保存权限规则（/permissions rm <编号>）\n/init   分析项目生成 DEEPCODE.md\n/keybindings 查看快捷键\n/output-style 选择输出风格（default/Explanatory/Learning/自定义）\n/commit 生成并创建 git commit（预跑 git 状态+遵循仓库风格，带 Co-Authored-By: deepcode）\n/commit-push-pr 提交+推送+创建或更新 PR（## Summary/## Test plan，需 gh CLI）\n/exit   退出\n自定义命令：~/.deepcode/commands/*.md 或 <项目>/.deepcode/commands/*.md（$ARGUMENTS 占位）'
+  '/model  无参打开模型选择器；/model <名> 直接切到指定模型\n/think  thinking 模式开关\n/effort 思考档位 low/medium/high/off\n/accept acceptEdits 模式开关（Edit/Write 免确认，Bash 仍确认）\n/plan   plan 模式开关（只读探索+写计划，ExitPlanMode 请用户审批）\n/add-dir <路径> 添加工作目录白名单（plan 模式围栏扩展）\n/cost   本会话花费明细\n/context 上下文占比与上次 usage\n/stats  本会话统计（轮数/工具/token/缓存/花费）\n/copy   复制上条回复到剪贴板\n/memory 查看当前生效的记忆文件\n/compact 手动压缩对话历史\n/clear  清空对话（开新会话文件，花费累计保留）\n/resume 列出并恢复本目录历史会话\n/rewind 回退到某轮之前（仅对话/仅代码/两者）\n/fork   分叉当前对话到新会话继续（原会话冻结，新会话标题加 (Branch)）\n/rename <名> 给当前会话命名（显示在 /resume 列表）\n/export 导出对话到 markdown 文件\n/permissions 查看/删除已保存权限规则（/permissions rm <编号>）\n/init   分析项目生成 DEEPCODE.md\n/keybindings 查看快捷键\n/output-style 选择输出风格（default/Explanatory/Learning/自定义）\n/commit 生成并创建 git commit（预跑 git 状态+遵循仓库风格，带 Co-Authored-By: deepcode）\n/commit-push-pr 提交+推送+创建或更新 PR（## Summary/## Test plan，需 gh CLI）\n/exit   退出\n自定义命令：~/.deepcode/commands/*.md 或 <项目>/.deepcode/commands/*.md（$ARGUMENTS 占位）'
 
 export function createChatCore(opts: {
   client: OpenAI
@@ -315,6 +315,7 @@ export function createChatCore(opts: {
   let consecutiveCompactFailures = 0
 
   // —— UI 状态 ——
+  let currentTitle: string | null = null
   let transcript: TranscriptItem[] = []
   let pendingPlanApproval: PendingPlanApproval | null = null
   let busy = false
@@ -407,6 +408,7 @@ export function createChatCore(opts: {
     nextTurnId = loaded.maxTurnId + 1
     loaded.messages.forEach((m, i) => { if (loaded.messageTurnIds[i] !== undefined) turnOf.set(m, loaded.messageTurnIds[i]!) })
     checkpointer = createCheckpointer(checkpointStoreFor(file))
+    currentTitle = loaded.meta.title ?? null
     return loaded.messages.filter(m => m.role === 'user').length
   }
 
@@ -455,6 +457,7 @@ export function createChatCore(opts: {
     session.appendMessage(messages[0]) // 持久化 system 消息
     checkpointer = createCheckpointer(checkpointStoreFor(session.file))
     taskList.bind(sessionIdFromFile(session.file))
+    currentTitle = null
     fireSessionStart('startup')
   }
 
@@ -1018,6 +1021,7 @@ export function createChatCore(opts: {
       session.appendMessage(messages[0])
       checkpointer = createCheckpointer(checkpointStoreFor(session.file))
       taskList.bind(sessionIdFromFile(session.file))
+      currentTitle = null
       nextTurnId = 1; currentTurnId = 0
       // 重建 extractor，重置游标（旧会话游标对新会话无效，防新会话首轮被静默跳过）
       extractor = createMemoryExtractor({
@@ -1028,6 +1032,37 @@ export function createChatCore(opts: {
       dispatch({ type: 'clear' })
       notice('info', '对话已清空，已开新会话文件（本会话花费累计保留）')
       fireSessionStart('clear')
+      return
+    }
+    if (line === '/rename' || line.startsWith('/rename ')) {
+      const name = line.slice('/rename'.length).trim()
+      if (!name) { notice('info', `当前标题：${currentTitle ?? '（未命名）'}\n用法：/rename <名称>`); return }
+      currentTitle = name
+      session.appendTitle(name)
+      notice('info', `会话已重命名为「${name}」`)
+      return
+    }
+    if (line === '/fork') {
+      const base = stripBranchSuffix(currentTitle ?? (() => {
+        const fu = messages.find(m => m.role === 'user' && typeof m.content === 'string')
+        return typeof fu?.content === 'string' ? fu.content.slice(0, 40) : '会话'
+      })())
+      const existingTitles = listSessions(cwd, sessionDir).map(s => s.preview)
+      const forkTitle = nextBranchTitle(base, existingTitles)
+      const forkMeta = { cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id, title: forkTitle }
+      const newS = newSession(forkMeta, sessionDir)
+      for (const m of messages) newS.appendMessage(m, turnOf.get(m))
+      session = newS
+      currentTitle = forkTitle
+      checkpointer = createCheckpointer(checkpointStoreFor(session.file))
+      taskList.bind(sessionIdFromFile(session.file))
+      extractor = createMemoryExtractor({
+        client: opts.client, model, memdir: memdirFor(cwd), config: mem, ctx,
+        runSubagent: opts.runSubagent, onUsage: memoryOnUsage,
+      })
+      smState = { promptTokens: 0, tokensAtLastUpdate: 0, initialized: false, toolCallsSinceUpdate: 0, lastTurnHadToolCalls: false }
+      notice('info', `已分叉到新会话「${forkTitle}」（原会话保持不变，继续写入新文件）`)
+      fireSessionStart('startup')
       return
     }
     if (line === '/context') {
