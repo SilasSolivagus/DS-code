@@ -3,7 +3,9 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import * as nodeFs from 'node:fs'
-import { newSession, openSession, listSessions, loadSession, sessionIdFromFile, type SessionMeta } from '../src/session.js'
+import os from 'node:os'
+import fs from 'node:fs'
+import { newSession, openSession, listSessions, loadSession, sessionIdFromFile, stripBranchSuffix, nextBranchTitle, type SessionMeta } from '../src/session.js'
 
 let dir: string
 beforeEach(() => {
@@ -173,5 +175,40 @@ describe('sessionIdFromFile', () => {
   })
   it('无目录无扩展名时原样返回 basename', () => {
     expect(sessionIdFromFile('plain')).toBe('plain')
+  })
+})
+
+describe('3.6 会话标题', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ds-sess-'))
+  it('appendTitle 写入，loadSession last-wins 读出', () => {
+    const s = newSession({ cwd: '/p', model: 'm', thinking: false, permMode: 'default' }, dir)
+    s.appendMessage({ role: 'user', content: '第一条消息内容' })
+    s.appendTitle('我的会话')
+    s.appendTitle('改名后')
+    const loaded = loadSession(s.file)
+    expect(loaded.meta.title).toBe('改名后')
+  })
+  it('listSessions 预览优先 title，无 title 回退首句', () => {
+    const a = newSession({ cwd: '/q', model: 'm', thinking: false, permMode: 'default' }, dir)
+    a.appendMessage({ role: 'user', content: '首句预览文本' })
+    a.appendTitle('标题甲')
+    const b = newSession({ cwd: '/q', model: 'm', thinking: false, permMode: 'default' }, dir)
+    b.appendMessage({ role: 'user', content: '只有首句没有标题' })
+    const list = listSessions('/q', dir)
+    expect(list.find(s => s.file === a.file)!.preview).toBe('标题甲')
+    expect(list.find(s => s.file === b.file)!.preview).toBe('只有首句没有标题')
+  })
+})
+
+describe('3.6 branch 标题助手', () => {
+  it('stripBranchSuffix 去尾缀', () => {
+    expect(stripBranchSuffix('Foo (Branch)')).toBe('Foo')
+    expect(stripBranchSuffix('Foo (Branch 3)')).toBe('Foo')
+    expect(stripBranchSuffix('Foo')).toBe('Foo')
+  })
+  it('nextBranchTitle 碰撞升级', () => {
+    expect(nextBranchTitle('Foo', [])).toBe('Foo (Branch)')
+    expect(nextBranchTitle('Foo', ['Foo (Branch)'])).toBe('Foo (Branch 2)')
+    expect(nextBranchTitle('Foo', ['Foo (Branch)', 'Foo (Branch 2)'])).toBe('Foo (Branch 3)')
   })
 })
