@@ -60,3 +60,38 @@ export const COMMIT_PUSH_PR_GUIDANCE = `请根据上面的 <git-context> 创建 
 5. 若 gh 不可用（命令报错），告知用户需要安装并登录 gh CLI，不要硬闯。
 
 你可以在单次回复里并行调用多个工具，请用一条消息完成以上全部。完成后返回 PR 的 URL。除了这些工具调用与最终 PR URL，不要发送其它文字。`
+
+export function buildCommitContext(o: { status: string; diff: string; branch: string; log: string }): string {
+  return `<git-context>
+## 当前 git 状态（git status）
+${o.status}
+
+## 当前改动（git diff HEAD，已暂存+未暂存）
+${o.diff}
+
+## 当前分支（git branch --show-current）
+${o.branch}
+
+## 近期提交（git log --oneline -10）
+${o.log}
+</git-context>`
+}
+
+export function buildPrContext(o: { status: string; diff: string; branch: string; baseDiff: string; existingPr: string }): string {
+  return `<git-context>
+## 当前 git 状态（git status）
+${o.status}
+
+## 当前改动（git diff HEAD）
+${o.diff}
+
+## 当前分支（git branch --show-current）
+${o.branch}
+
+## 分支自分叉点起的全部改动（git diff base...HEAD）
+${o.baseDiff}
+
+## 是否已存在 PR（gh pr view --json number）
+${o.existingPr}
+</git-context>`
+}

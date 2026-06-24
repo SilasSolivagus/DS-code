@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { COMMIT_GUIDANCE, COMMIT_PUSH_PR_GUIDANCE } from '../src/commitGuidance.js'
+import { COMMIT_GUIDANCE, COMMIT_PUSH_PR_GUIDANCE, buildCommitContext, buildPrContext } from '../src/commitGuidance.js'
 
 describe('COMMIT_GUIDANCE', () => {
   it('含 6 条 Safety Protocol 关键词', () => {
@@ -48,5 +48,26 @@ describe('COMMIT_PUSH_PR_GUIDANCE', () => {
   })
   it('含 commit trailer 同款邮箱', () => {
     expect(COMMIT_PUSH_PR_GUIDANCE).toContain('Co-Authored-By: deepcode <noreply@dirctable.com>')
+  })
+})
+
+describe('buildCommitContext', () => {
+  it('用 <git-context> 包裹且含四段输出', () => {
+    const c = buildCommitContext({ status: 'ST', diff: 'DF', branch: 'BR', log: 'LG' })
+    expect(c.startsWith('<git-context>')).toBe(true)
+    expect(c.trimEnd().endsWith('</git-context>')).toBe(true)
+    expect(c).toContain('ST')
+    expect(c).toContain('DF')
+    expect(c).toContain('BR')
+    expect(c).toContain('LG')
+  })
+})
+
+describe('buildPrContext', () => {
+  it('含 base diff 段与已存在 PR 段', () => {
+    const c = buildPrContext({ status: 'ST', diff: 'DF', branch: 'BR', baseDiff: 'BD', existingPr: 'PR' })
+    expect(c.startsWith('<git-context>')).toBe(true)
+    expect(c).toContain('BD')
+    expect(c).toContain('PR')
   })
 })
