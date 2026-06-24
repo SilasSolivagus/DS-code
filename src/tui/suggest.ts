@@ -16,6 +16,8 @@ export const BUILTIN_COMMANDS: Suggestion[] = [
   { value: '/compact', hint: '手动压缩历史' },
   { value: '/clear', hint: '清空对话' },
   { value: '/resume', hint: '恢复历史会话' },
+  { value: '/fork', hint: '分叉当前会话继续' },
+  { value: '/rename', hint: '给当前会话命名' },
   { value: '/export', hint: '导出对话到 markdown' },
   { value: '/config', hint: '查看合并配置与来源追溯' },
   { value: '/permissions', hint: '权限规则管理' },

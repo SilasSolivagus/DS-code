@@ -14,7 +14,7 @@ export type SettingScope = 'user' | 'project' | 'local' | 'flag'
 export const DANGEROUS_TOP_KEYS = [
   'apiKey', 'baseURL', 'hooks', 'mcpServers', 'webSearch',
   'allowedHttpHookUrls', 'httpHookAllowedEnvVars',
-  'provider', 'providers',
+  'provider', 'providers', 'statusLineCommand',
 ] as const
 
 /** 深拷 raw 后剥离危险字段；嵌套删 permissions.allow / skills.sources。返回剥掉的键名（含嵌套路径）。 */
@@ -149,6 +149,7 @@ function parsePresent(raw: any): Record<string, unknown> {
   }
   if (typeof raw.outputStyle === 'string') p.outputStyle = raw.outputStyle
   if (typeof raw.theme === 'string') p.theme = raw.theme
+  if (typeof raw.statusLineCommand === 'string') p.statusLineCommand = raw.statusLineCommand
   if ('hooks' in raw) { const h = parseHooksConfig(raw.hooks); if (h) p.hooks = h }
   if ('mcpServers' in raw) { const m = parseMcpServers(raw.mcpServers); if (m) p.mcpServers = m }
   if ('skills' in raw) { const s = parseSkillsConfig(raw.skills); if (s) p.skills = s }

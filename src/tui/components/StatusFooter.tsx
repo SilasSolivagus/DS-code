@@ -39,6 +39,7 @@ export function StatusFooter(props: {
   thinking: boolean
   effortLevel: 'low' | 'medium' | 'high'
   toolCounts: Array<{ name: string; n: number }>
+  statusLineOutput?: string | null // 5.7 自定义状态栏命令输出（null/undefined=不显示）
 }) {
   const T = useTheme()
   const usedPct = props.contextWindow > 0 ? (props.contextUsed / props.contextWindow) * 100 : 0
@@ -77,6 +78,9 @@ export function StatusFooter(props: {
         ) : null}
         <Text dimColor>{` · ¥${props.cost.toFixed(4)}`}</Text>
       </Text>
+
+      {/* Row 2.5（仅有 statusLineCommand 输出）：用户自定义状态行（单行，换行已在解析期 join） */}
+      {props.statusLineOutput && <Text dimColor>{props.statusLineOutput}</Text>}
 
       {/* Row 3（仅 memoryCount>0）：记忆文件数 */}
       {props.memoryCount > 0 && <Text dimColor>{`${props.memoryCount} DEEPCODE.md`}</Text>}

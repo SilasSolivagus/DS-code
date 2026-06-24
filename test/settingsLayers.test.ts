@@ -163,3 +163,17 @@ describe('mergeScopePartials permissionSources', () => {
     expect(permissionSources).toEqual({ allow: {}, deny: {} })
   })
 })
+
+import { DANGEROUS_TOP_KEYS } from '../src/settingsLayers.js'
+
+describe('5.7 statusLineCommand 信任边界', () => {
+  it('statusLineCommand 在 DANGEROUS_TOP_KEYS', () => {
+    expect((DANGEROUS_TOP_KEYS as readonly string[]).includes('statusLineCommand')).toBe(true)
+  })
+  it('project scope 剥离 statusLineCommand', () => {
+    const { raw, stripped } = stripUntrustedScope({ statusLineCommand: 'echo hi', model: 'x' })
+    expect(raw.statusLineCommand).toBeUndefined()
+    expect(raw.model).toBe('x') // 普通字段保留
+    expect(stripped).toContain('statusLineCommand')
+  })
+})

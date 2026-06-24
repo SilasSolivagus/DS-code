@@ -10,6 +10,7 @@ export interface SessionMeta {
   thinking: boolean
   effortLevel?: 'low' | 'medium' | 'high'
   permMode: string
+  title?: string
 }
 
 export interface UsageRecord {
@@ -26,6 +27,7 @@ export interface SessionHandle {
   appendMeta(meta: SessionMeta): void
   appendCompact(): void
   appendRewind(toTurnId: number): void
+  appendTitle(title: string): void
 }
 
 export interface LoadedSession {
@@ -63,6 +65,7 @@ function makeHandle(file: string): SessionHandle {
     appendMeta: meta => append({ t: 'meta', ...meta }),
     appendCompact: () => append({ t: 'compact' }),
     appendRewind: toTurnId => append({ t: 'rewind', toTurnId }),
+    appendTitle: title => append({ t: 'title', title }),
   }
 }
 
@@ -106,9 +109,11 @@ export function loadSession(file: string): LoadedSession {
         thinking: r.thinking ?? false,
         effortLevel: r.effortLevel,
         permMode: r.permMode ?? 'default',
+        title: r.title ?? meta.title, // 保留已有 title（meta 行通常不带 title）
       }
       sawMeta = true
     }
+    else if (r.t === 'title') { if (typeof r.title === 'string') meta.title = r.title }
     else if (r.t === 'msg') {
       messages.push(r.m)
       messageTurnIds.push(typeof r.turn === 'number' ? r.turn : undefined)
@@ -154,12 +159,27 @@ export function listSessions(cwd: string, dir: string = DEFAULT_DIR): SessionInf
       const loaded = loadSession(full)
       if (loaded.meta.cwd !== cwd) continue
       const firstUser = loaded.messages.find(m => m.role === 'user')
+      const fallback = typeof firstUser?.content === 'string' ? firstUser.content.slice(0, 60) : '(无预览)'
       out.push({
         file: full,
         mtimeMs: fs.statSync(full).mtimeMs,
-        preview: typeof firstUser?.content === 'string' ? firstUser.content.slice(0, 60) : '(无预览)',
+        preview: loaded.meta.title ?? fallback,
       })
     } catch { continue }
   }
   return out.sort((a, b) => b.mtimeMs - a.mtimeMs)
+}
+
+/** 去掉标题尾部的 ` (Branch)` / ` (Branch N)` 后缀，得到基名。 */
+export function stripBranchSuffix(title: string): string {
+  return title.replace(/\s*\(Branch(?:\s+\d+)?\)$/, '')
+}
+
+/** 返回 `${base} (Branch)`，与 existing 碰撞则升级 `(Branch 2/3…)`，取首个未占用名（对齐 CC getUniqueForkName）。 */
+export function nextBranchTitle(base: string, existing: Iterable<string>): string {
+  const taken = new Set(existing)
+  let candidate = `${base} (Branch)`
+  let n = 2
+  while (taken.has(candidate)) { candidate = `${base} (Branch ${n})`; n++ }
+  return candidate
 }

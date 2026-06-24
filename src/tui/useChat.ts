@@ -29,7 +29,7 @@ import { makeHookRuntime } from '../hookRuntime.js'
 import { isDangerous, type Decision, type PermissionMode, type PermissionDecisionReason } from '../permissions.js'
 import { resolveDenyList, buildDenySourceMap } from '../deny.js'
 import type { ToolContext } from '../tools/types.js'
-import { newSession, openSession, listSessions, loadSession, sessionIdFromFile, type SessionHandle, type UsageRecord } from '../session.js'
+import { newSession, openSession, listSessions, loadSession, sessionIdFromFile, stripBranchSuffix, nextBranchTitle, type SessionHandle, type UsageRecord } from '../session.js'
 import { costCNY, cacheSavingsCNY } from '../pricing.js'
 import { summarize, rebuildMessages, shouldAutoCompact } from '../compact.js'
 import { estimateTextTokens, estimateMessagesTokens, effectiveThreshold } from '../tokenEstimate.js'
@@ -57,6 +57,7 @@ import { type SessionMemoryState, shouldUpdateSessionMemory, runSessionMemoryUpd
 import { activeFastModel, activeProvider, belongsToProvider, modelList as providerModelList } from '../providers.js'
 import { resolveResumeModel, rotateModel } from './resumeModel.js'
 import { loadOutputStyles, resolveOutputStyle } from '../outputStyles.js'
+import { createStatusLineRunner, execStatusLineCommand } from '../statusLine.js'
 import { COMMIT_GUIDANCE, COMMIT_PUSH_PR_GUIDANCE, buildCommitContext, buildPrContext, isEmptyDiff, resolveBaseBranch } from '../commitGuidance.js'
 
 /** ! 直跑：同步执行，30s 超时，stdout+stderr 合并，超 20k 截断 */
@@ -180,6 +181,7 @@ export interface ChatState {
   lastTokPerSec: number | null
   turnStartAt: number | null // 当前轮开始时间戳（spinner 计算耗时秒数；空闲为 null）
   turnOutTokens: number      // 当前轮累计输出 token（spinner 实时显示；流式估算，turn 边界用真实值校准）
+  hookProgress: string | null // 1.7 当前运行中的慢阶段 hook 文案（null=无）
   sessionCost(): number
   cacheHitRate(): number // usageLog 累计 hit/prompt，DeepSeek 状态行核心指标
   cacheSavings(): number // usageLog 累计缓存省下金额（CNY），DeepSeek 状态行
@@ -188,6 +190,7 @@ export interface ChatState {
   contextWindow(): number // 当前模型生效阈值（状态栏上下文条分母）
   tokenBudget(): number | null // 2.1 sticky token 预算目标（null=未设）
   budgetUsed(): number // 2.1 本次/上次 send 累计输出 token（状态栏 budget 段分子）
+  statusLineOutput: string | null // 5.7 自定义状态栏命令输出缓存（null=无/未设）
 }
 
 export interface ChatCore {
@@ -217,7 +220,7 @@ export interface ChatCore {
 }
 
 const HELP_TEXT =
-  '/model  无参打开模型选择器；/model <名> 直接切到指定模型\n/think  thinking 模式开关\n/effort 思考档位 low/medium/high/off\n/accept acceptEdits 模式开关（Edit/Write 免确认，Bash 仍确认）\n/plan   plan 模式开关（只读探索+写计划，ExitPlanMode 请用户审批）\n/add-dir <路径> 添加工作目录白名单（plan 模式围栏扩展）\n/cost   本会话花费明细\n/context 上下文占比与上次 usage\n/stats  本会话统计（轮数/工具/token/缓存/花费）\n/copy   复制上条回复到剪贴板\n/memory 查看当前生效的记忆文件\n/compact 手动压缩对话历史\n/clear  清空对话（开新会话文件，花费累计保留）\n/resume 列出并恢复本目录历史会话\n/rewind 回退到某轮之前（仅对话/仅代码/两者）\n/export 导出对话到 markdown 文件\n/permissions 查看/删除已保存权限规则（/permissions rm <编号>）\n/init   分析项目生成 DEEPCODE.md\n/keybindings 查看快捷键\n/output-style 选择输出风格（default/Explanatory/Learning/自定义）\n/commit 生成并创建 git commit（预跑 git 状态+遵循仓库风格，带 Co-Authored-By: deepcode）\n/commit-push-pr 提交+推送+创建或更新 PR（## Summary/## Test plan，需 gh CLI）\n/exit   退出\n自定义命令：~/.deepcode/commands/*.md 或 <项目>/.deepcode/commands/*.md（$ARGUMENTS 占位）'
+  '/model  无参打开模型选择器；/model <名> 直接切到指定模型\n/think  thinking 模式开关\n/effort 思考档位 low/medium/high/off\n/accept acceptEdits 模式开关（Edit/Write 免确认，Bash 仍确认）\n/plan   plan 模式开关（只读探索+写计划，ExitPlanMode 请用户审批）\n/add-dir <路径> 添加工作目录白名单（plan 模式围栏扩展）\n/cost   本会话花费明细\n/context 上下文占比与上次 usage\n/stats  本会话统计（轮数/工具/token/缓存/花费）\n/copy   复制上条回复到剪贴板\n/memory 查看当前生效的记忆文件\n/compact 手动压缩对话历史\n/clear  清空对话（开新会话文件，花费累计保留）\n/resume 列出并恢复本目录历史会话\n/rewind 回退到某轮之前（仅对话/仅代码/两者）\n/fork   分叉当前对话到新会话继续（原会话冻结，新会话标题加 (Branch)）\n/rename <名> 给当前会话命名（显示在 /resume 列表）\n/export 导出对话到 markdown 文件\n/permissions 查看/删除已保存权限规则（/permissions rm <编号>）\n/init   分析项目生成 DEEPCODE.md\n/keybindings 查看快捷键\n/output-style 选择输出风格（default/Explanatory/Learning/自定义）\n/commit 生成并创建 git commit（预跑 git 状态+遵循仓库风格，带 Co-Authored-By: deepcode）\n/commit-push-pr 提交+推送+创建或更新 PR（## Summary/## Test plan，需 gh CLI）\n/exit   退出\n自定义命令：~/.deepcode/commands/*.md 或 <项目>/.deepcode/commands/*.md（$ARGUMENTS 占位）'
 
 export function createChatCore(opts: {
   client: OpenAI
@@ -291,12 +294,14 @@ export function createChatCore(opts: {
   const messages: any[] = [{ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars, memdir, resolveOutputStyle(outputStyleName, outputStyleCache)) }]
   const usageLog: UsageRecord[] = []
   let session!: SessionHandle
+  let hookProgress: string | null = null
   const hookDeps = {
     ...makeHookRuntime({
       client: opts.client,
       getModel: () => model,
       onUsage: (u, m) => { usageLog.push({ usage: u, model: m }); session.appendUsage(u, m) },
       cwd: () => cwd,
+      onProgress: (label?: string) => { hookProgress = label ?? null; setState() },
     }),
     allowedHttpHookUrls: settings.allowedHttpHookUrls,
     httpHookAllowedEnvVars: settings.httpHookAllowedEnvVars,
@@ -310,6 +315,7 @@ export function createChatCore(opts: {
   let consecutiveCompactFailures = 0
 
   // —— UI 状态 ——
+  let currentTitle: string | null = null
   let transcript: TranscriptItem[] = []
   let pendingPlanApproval: PendingPlanApproval | null = null
   let busy = false
@@ -344,8 +350,10 @@ export function createChatCore(opts: {
 
   // 所有状态变更走 setState：换新快照对象 → onState 回调 + 订阅者通知
   const listeners = new Set<() => void>()
+  // 5.7 statusLine 输出（onChange 闭包按引用捕获 setState，运行期才调用，无 TDZ）
+  let statusLineOutput: string | null = null
   const snap = (): ChatState => ({
-    transcript, busy, model, thinking, effortLevel, permMode, pendingAsk, pendingQuestion, pendingPlanApproval, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, sessionCost, cacheHitRate, cacheSavings, contextPct, contextUsed, contextWindow, tokenBudget: tokenBudgetGet, budgetUsed: budgetUsedGet,
+    transcript, busy, model, thinking, effortLevel, permMode, pendingAsk, pendingQuestion, pendingPlanApproval, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, hookProgress, sessionCost, cacheHitRate, cacheSavings, contextPct, contextUsed, contextWindow, tokenBudget: tokenBudgetGet, budgetUsed: budgetUsedGet, statusLineOutput,
   })
   let state = snap()
   const setState = (): void => {
@@ -353,6 +361,16 @@ export function createChatCore(opts: {
     opts.onState(state)
     for (const l of listeners) l()
   }
+  // 5.7 statusLine runner：仅当配置了命令才建
+  const statusLineRunner = settings.statusLineCommand
+    ? createStatusLineRunner({
+        exec: () => execStatusLineCommand(settings.statusLineCommand!, {
+          model, cwd, permission_mode: permMode, session_id: ctx.sessionId?.(),
+        }),
+        onChange: text => { statusLineOutput = text ?? null; setState() },
+      })
+    : undefined
+  const refreshStatusLine = (): void => { statusLineRunner?.schedule() }
   // steering 队列变化驱动 React 重渲染（steer/steerPop → subscribe → setState）
   const unsubSteer = steerQueue.subscribe(setState)
   const dispatch = (a: ReducerAction): void => {
@@ -390,6 +408,7 @@ export function createChatCore(opts: {
     nextTurnId = loaded.maxTurnId + 1
     loaded.messages.forEach((m, i) => { if (loaded.messageTurnIds[i] !== undefined) turnOf.set(m, loaded.messageTurnIds[i]!) })
     checkpointer = createCheckpointer(checkpointStoreFor(file))
+    currentTitle = loaded.meta.title ?? null
     return loaded.messages.filter(m => m.role === 'user').length
   }
 
@@ -438,6 +457,7 @@ export function createChatCore(opts: {
     session.appendMessage(messages[0]) // 持久化 system 消息
     checkpointer = createCheckpointer(checkpointStoreFor(session.file))
     taskList.bind(sessionIdFromFile(session.file))
+    currentTitle = null
     fireSessionStart('startup')
   }
 
@@ -816,6 +836,7 @@ export function createChatCore(opts: {
     busy = false
     turnStartAt = null
     setState()
+    refreshStatusLine() // 5.7 turn 结束触发 statusLine 刷新
     // 收尾自检：若某后台任务在本轮终止点 drain 之后、busy 复位之前完成入队，会滞留队列；
     // 此处 busy 已 false，重新唤醒一次把滞留通知补上（无则即返），避免拖到下次用户输入。
     wakeOnNotification()
@@ -879,6 +900,7 @@ export function createChatCore(opts: {
         session.appendMeta({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id })
         notice('info', `已切换到 ${model}`)
       }
+      refreshStatusLine() // 5.7 模型变化触发 statusLine 刷新
       return
     }
     if (line === '/think') {
@@ -909,6 +931,7 @@ export function createChatCore(opts: {
       permMode = permMode === 'acceptEdits' ? 'default' : 'acceptEdits'
       session.appendMeta({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id })
       notice('info', `acceptEdits 模式：${permMode === 'acceptEdits' ? '开（Edit/Write 免确认，Bash 仍需确认）' : '关'}`)
+      refreshStatusLine() // 5.7 权限模式变化触发 statusLine 刷新
       return
     }
     if (line === '/cycle-mode') {
@@ -921,6 +944,7 @@ export function createChatCore(opts: {
       notice('info', permMode === 'plan'
         ? 'plan 模式：只读探索 + 写计划，完成后调用 ExitPlanMode 请审批'
         : `已切换到 ${permMode} 模式`)
+      refreshStatusLine() // 5.7 权限模式变化触发 statusLine 刷新
       return
     }
     if (line === '/plan') {
@@ -938,6 +962,7 @@ export function createChatCore(opts: {
         notice('info', 'plan 模式已开启：只读探索 + 写计划，完成后调用 ExitPlanMode 请用户审批（/plan 可退出）')
       }
       setState()
+      refreshStatusLine() // 5.7 plan 模式变化触发 statusLine 刷新
       return
     }
     if (line.startsWith('/add-dir')) {
@@ -996,6 +1021,7 @@ export function createChatCore(opts: {
       session.appendMessage(messages[0])
       checkpointer = createCheckpointer(checkpointStoreFor(session.file))
       taskList.bind(sessionIdFromFile(session.file))
+      currentTitle = null
       nextTurnId = 1; currentTurnId = 0
       // 重建 extractor，重置游标（旧会话游标对新会话无效，防新会话首轮被静默跳过）
       extractor = createMemoryExtractor({
@@ -1006,6 +1032,37 @@ export function createChatCore(opts: {
       dispatch({ type: 'clear' })
       notice('info', '对话已清空，已开新会话文件（本会话花费累计保留）')
       fireSessionStart('clear')
+      return
+    }
+    if (line === '/rename' || line.startsWith('/rename ')) {
+      const name = line.slice('/rename'.length).trim()
+      if (!name) { notice('info', `当前标题：${currentTitle ?? '（未命名）'}\n用法：/rename <名称>`); return }
+      currentTitle = name
+      session.appendTitle(name)
+      notice('info', `会话已重命名为「${name}」`)
+      return
+    }
+    if (line === '/fork') {
+      const base = stripBranchSuffix(currentTitle ?? (() => {
+        const fu = messages.find(m => m.role === 'user' && typeof m.content === 'string')
+        return typeof fu?.content === 'string' ? fu.content.slice(0, 40) : '会话'
+      })())
+      const existingTitles = listSessions(cwd, sessionDir).map(s => s.preview)
+      const forkTitle = nextBranchTitle(base, existingTitles)
+      const forkMeta = { cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id, title: forkTitle }
+      const newS = newSession(forkMeta, sessionDir)
+      for (const m of messages) newS.appendMessage(m, turnOf.get(m))
+      session = newS
+      currentTitle = forkTitle
+      checkpointer = createCheckpointer(checkpointStoreFor(session.file))
+      taskList.bind(sessionIdFromFile(session.file))
+      extractor = createMemoryExtractor({
+        client: opts.client, model, memdir: memdirFor(cwd), config: mem, ctx,
+        runSubagent: opts.runSubagent, onUsage: memoryOnUsage,
+      })
+      smState = { promptTokens: 0, tokensAtLastUpdate: 0, initialized: false, toolCallsSinceUpdate: 0, lastTurnHadToolCalls: false }
+      notice('info', `已分叉到新会话「${forkTitle}」（原会话保持不变；对话与花费继续，任务清单与文件检查点不随分叉带过）`)
+      fireSessionStart('startup')
       return
     }
     if (line === '/context') {
@@ -1165,6 +1222,9 @@ export function createChatCore(opts: {
     ...outputStyleCache.map(s => ({ name: s.name, description: s.description })),
   ]
 
+  // 5.7 会话建立后跑一次 statusLine（recovered 与新建两条路径都到这里）
+  refreshStatusLine()
+
   return {
     get state() { return state },
     send,
@@ -1278,7 +1338,7 @@ export function createChatCore(opts: {
         notice('info', `[rewind] 代码：${parts.join('、')}`)
       }
     },
-    dispose: () => { fireSessionEnd('exit'); unsubNotification(); unsubSteer(); steerQueue.clear(); void mcpCleanup?.() },
+    dispose: () => { fireSessionEnd('exit'); unsubNotification(); unsubSteer(); steerQueue.clear(); statusLineRunner?.dispose(); void mcpCleanup?.() },
     modelList: () => providerModelList(activeProvider(), model),
     applyModel,
     outputStyleList,

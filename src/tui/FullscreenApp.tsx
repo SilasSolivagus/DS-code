@@ -310,7 +310,7 @@ export function FullscreenApp(props: {
                 onCancel={() => setThemeMode(false)}
               />
             : <>
-                {state.busy && <Spinner turnStartAt={state.turnStartAt} turnOutTokens={state.turnOutTokens} />}
+                {state.busy && <Spinner turnStartAt={state.turnStartAt} turnOutTokens={state.turnOutTokens} hookLabel={state.hookProgress} />}
                 {suggestionsActive && <Suggestions items={suggestions} onPick={handlePick} />}
                 <InputBox
                   onSubmit={submit}
@@ -343,6 +343,7 @@ export function FullscreenApp(props: {
           thinking={state.thinking}
           effortLevel={state.effortLevel}
           toolCounts={toolCounts}
+          statusLineOutput={state.statusLineOutput}
         />
       </Box>
     </Box>

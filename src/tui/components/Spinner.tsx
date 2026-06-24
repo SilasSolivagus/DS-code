@@ -19,9 +19,10 @@ export function fmtElapsed(s: number): string {
 interface SpinnerProps {
   turnStartAt: number | null
   turnOutTokens: number
+  hookLabel?: string | null
 }
 
-export function Spinner({ turnStartAt, turnOutTokens }: SpinnerProps) {
+export function Spinner({ turnStartAt, turnOutTokens, hookLabel }: SpinnerProps) {
   const T = useTheme()
   const [symIdx, setSymIdx] = useState(0)
   const [, setTick] = useState(0) // 每秒重渲染以刷新耗时
@@ -36,6 +37,9 @@ export function Spinner({ turnStartAt, turnOutTokens }: SpinnerProps) {
   const symbol = SPINNER_SYMBOLS[symIdx]
   const elapsed = turnStartAt ? Math.floor((Date.now() - turnStartAt) / 1000) : 0
 
+  if (hookLabel) {
+    return <Text color={T.accent}>{symbol} {hookLabel}</Text>
+  }
   return (
     <Text color={T.accent}>
       {symbol} {verb}… ({fmtElapsed(elapsed)} · ↓ {fmtTokens(turnOutTokens)} tokens · esc 中断)

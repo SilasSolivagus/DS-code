@@ -10,6 +10,8 @@ export interface Task {
   status: 'pending' | 'in_progress' | 'completed'
   activeForm?: string
   metadata?: Record<string, unknown>
+  blocks?: string[]
+  blockedBy?: string[]
 }
 
 /** 内部存储形态：Task + 软删标记（不对外暴露 _deleted）。 */
@@ -25,6 +27,18 @@ export class TaskListStore {
   private toPublic(t: StoredTask): Task {
     const { _deleted, ...pub } = t
     return pub
+  }
+
+  /** blockedBy 中既未 completed 也未软删的依赖 id（软删依赖视同已清，避免删依赖永久卡死后继）。 */
+  openBlockers(id: string): string[] {
+    const t = this.tasks.get(id)
+    if (!t?.blockedBy?.length) return []
+    return t.blockedBy.filter(dep => {
+      const d = this.tasks.get(dep)
+      if (!d) return false           // 依赖不存在 → 视同已清
+      if (d._deleted) return false   // 软删 → 视同已清
+      return d.status !== 'completed'
+    })
   }
 
   create(input: { subject: string; description: string; activeForm?: string; metadata?: Record<string, unknown> }): Task {
@@ -45,13 +59,20 @@ export class TaskListStore {
     return t ? this.toPublic(t) : undefined
   }
 
-  update(id: string, patch: { subject?: string; description?: string; activeForm?: string; status?: 'pending' | 'in_progress' | 'completed' | 'deleted'; metadata?: Record<string, unknown> }): { ok: boolean; updatedFields: string[] } {
+  update(id: string, patch: { subject?: string; description?: string; activeForm?: string; status?: 'pending' | 'in_progress' | 'completed' | 'deleted'; metadata?: Record<string, unknown>; addBlocks?: string[]; addBlockedBy?: string[] }): { ok: boolean; updatedFields: string[]; blockedByOpen?: string[] } {
     const t = this.tasks.get(id)
     if (!t) return { ok: false, updatedFields: [] }
+    // 依赖门控：转 in_progress 前校验 blockedBy 全清（completed/软删/不存在）
+    if (patch.status === 'in_progress') {
+      const open = this.openBlockers(id)
+      if (open.length) return { ok: false, updatedFields: [], blockedByOpen: open }
+    }
     const updated: string[] = []
     if (patch.subject !== undefined) { t.subject = patch.subject; updated.push('subject') }
     if (patch.description !== undefined) { t.description = patch.description; updated.push('description') }
     if (patch.activeForm !== undefined) { t.activeForm = patch.activeForm; updated.push('activeForm') }
+    if (patch.addBlocks?.length) { t.blocks = [...new Set([...(t.blocks ?? []), ...patch.addBlocks])]; updated.push('blocks') }
+    if (patch.addBlockedBy?.length) { t.blockedBy = [...new Set([...(t.blockedBy ?? []), ...patch.addBlockedBy])]; updated.push('blockedBy') }
     if (patch.metadata !== undefined) {
       const m = { ...(t.metadata ?? {}) }
       for (const [k, v] of Object.entries(patch.metadata)) {
