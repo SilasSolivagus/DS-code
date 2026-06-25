@@ -17,9 +17,11 @@
 
 ---
 
-## 🔄 进度更新（2026-06-24 最新，下表状态列已同步本块）
+## 🔄 进度更新（2026-06-25 最新，下表状态列已同步本块）
 
-**2026-06-24**：✅✅✅**四批次大合并已合 main 并 push**（merge --no-ff `625feef`，main=origin=`625feef` 全同步，55 commit）。一次锁住 4 批全部验证通过的成果，**1217 测试全绿**。分支 `feat/tui-batch-1-permissions` 已删。四批：
+**2026-06-25**：✅✅**TUI 权限可见性收口小批已完成合 main**（3.7 /permissions UI + 5.6 文案(b)）。**2 件纯可见性**（实证后从 4 件砍到 2 件）：① `/permissions` 合并多层视图（allow/deny 两段+来源层级标签+rm/deny-rm 按值删仅用户层，新模块 `permissionsView.ts` 纯函数 formatPermissionRules/resolveRuleRemoval）② 权限弹窗 always label 内嵌将保存规则「总是允许 — Tool(...)」（suggestRule 抽纯函数+ask 第4参 previewRule，对齐 CC「Yes, don't ask again for <rule>」）。6 任务 SDD（每任务 sonnet 双审 + 2 次返工[Task3 来源名单一真相源 permissionSourceName / Task4 孤儿 import 清理]）+ opus 全分支终审 **Ready to merge YES**（核心正确性「预览规则==保存规则==matchRule 可匹配」对照 matchRule 实测）+ 真机冒烟过（合并视图来源标签/删用户层成功+非用户层带来源警告/弹窗内嵌规则/端到端批准写用户规则；意外验证 3.9 项目层 allow 剥离/deny 保留无回归）。1270 测试全绿。**关键过程教训**：①**先派 opus 实读 CC bundle 砍臆造**——原 (c) Tab-amend 是臆造（CC「Tab to amend」=向模型补充指令非编辑规则）、(a) always 写哪层是对 CC 误读（CC 弹窗选规则粒度非存储层），两件经实读撤掉 ②**写 plan 时核对真实代码砍死代码**——原 item 3（forceAsk allow 来源行）因 `forceAsk ⟹ denyHit` 耦合而不可达，写 plan 阶段发现并剔除。spec/plan `docs/{specs,plans}/2026-06-24-deepcode-tui-permissions-visibility*`。follow-up（非阻塞）：重复内置 deny 显示 cosmetic、listUserDenyRules+已孤儿 listUserAllowRules 待 tidy-up。
+
+**2026-06-24**：✅✅✅**四批次大合并已合 main 并 push**（merge --no-ff `625feef`，main=origin=`625feef` 全同步，55 commit）。一次锁住 4 批全部验证通过的成果，**1217 测试全绿**。分支 `feat/tui-batch-1-permissions` 已删。四批：（merge --no-ff `625feef`，main=origin=`625feef` 全同步，55 commit）。一次锁住 4 批全部验证通过的成果，**1217 测试全绿**。分支 `feat/tui-batch-1-permissions` 已删。四批：
 - **TUI 计划1**：1.4 Plan mode + 5.9 工作目录围栏 + /add-dir（真机冒烟 7 项过）。
 - **TUI 计划2 Picker 族**：2.7 /model 选择器（列 active provider 全档 + 当前●，切换实证 per-model window 171k→971k）+ 5.3 Output styles（内置 Explanatory/Learning + 热切重建 messages[0]）+ 5.4 /theme 六套主题热切（dark/light/各 daltonized/各 ansi，accent 实时变色）。10 任务 SDD + theme context 化 opus 终审 + 全分支 opus 终审（揪出 C1 跨任务 bug：loadRawUserSettings 白名单漏 outputStyle/theme→持久化互相清除，已修）+ 真机冒烟 3 picker 全过（全屏 FullscreenApp 默认路径，双组件接线确认无漏）。spec/plan `docs/{specs,plans}/2026-06-23-deepcode-tui-batch-2-pickers*`。
 - **P1 Prompt 全 gap 对齐**：系统提示重构成 CC 式 6 段（介绍 + # 系统/# 干活/# 谨慎执行破坏性动作[全文镜像 CC G5z]/# 用好工具/# 语气与风格）+ output-style 门控只作用 # 干活（修误删安全段 bug）+ 压缩提示 5 段→9 段（镜像 CC Yx9 + <analysis> 前导）+ Task/Grep/Glob 工具描述增强 + **删 HTML 偏见**（CC 零产物形态偏好，实读证）。9 任务 SDD + 全分支 opus 终审 + 构建产物真机验证。spec/plan `docs/{specs,plans}/2026-06-23-deepcode-prompt-parity-p1*`。**来源：派 opus 专家两次实读 CC v2.1.76/2.1.121 系统提示词，全集存档 `docs/cc-reference/`（95+ 提示词 verbatim + GAP-ANALYSIS.md）。**
@@ -52,7 +54,7 @@
 自本表 2026-06-17 快照以来合并的件（按层）：
 - **第 1 层**：✅1.1 MCP(`e93cf54`)、✅1.2 Skills(`0685ecb`+预算/scope`c882d14`)、✅1.8 Task todo-V2(`2558c61`)。
 - **第 2 层**：✅2.4 Prompt 缓存(`841b264`)、✅2.5 Token 计数(`7dc78ea`,CJK 感知估算+模型感知 window+发送前预估,CC countTokens API/多后端 N/A)、✅2.6 Cost 告警(`fa2cade`)；🟡2.1 思考预算(只做 effort 档位/ultrathink 关键词,adaptive budget/跨compact结转余)；🟡2.3 自动compact(做了熔断器+预警色,自动触发余)；⏭️2.2 Microcompact 判**不适用 DeepSeek 跳过**。
-- **第 3 层**：🟡3.7 权限 deny 规则层 —— **安全加固 B 批(`e5f403d`)做了 deny 规则(BUILTIN_DENY+permissions.deny+isDeniedPath+硬拒/降级ask+Glob/Grep输出过滤)+denial tracking(onDenied)**；还缺**来源层级**(归 3.9)+`/permissions` UI(碰TUI)。
+- **第 3 层**：✅3.7 权限 deny 规则层 —— deny 规则+denial tracking(`e5f403d`)+来源层级(`31e5deb`)+`/permissions` UI 合并多层视图(TUI 权限可见性批)全完成。
 - **第 4 层**：✅4.1 WebSearch(`c58ff77`,双源 Bocha+Tavily)；⏭️4.2 ToolSearch **暂缓存档**(价值正比 MCP 工具数,触发=挂 30+工具 MCP)、4.3 Sleep **跳过**(`Bash(sleep)`已等价)、4.4 Brief **跳过**(CC 双输出面契约,deepcode 单面不映射)。
 - **另**：安全加固 B 批还含 #1 复合命令前缀绕过修复(shell-quote 逐段授权,关联权限层)、#2 工具结果注入守则、#4 sanitize C1 缺口+威胁模型文档——非 roadmap 单项,记入 [[deepcode-next-session]]。
 
@@ -110,7 +112,7 @@
 | 3.4 | **autoDream**（后台记忆合并，时间/会话门槛） | `services/autoDream` | ✅ C2(2026-06-19) | ✅ | 否 | L |
 | 3.5 | **Checkpoint/rewind**（回合级文件备份 + content-addressable blob + /rewind 还原） | `utils/fileHistory.ts` `commands/rewind` | ✅ **主干已完成**（checkpoint.ts sha1 blob 备份+GC、restoreFiles 还原、/rewind 命令、两级 TUI 选择器、conversation/code/both 三模式全有）。调研(2026-06-22)。**真实剩余=1×M(Summarize-from-here)+4×S，其中 #4 还原前防覆盖用户手改=数据安全建议补(S,不碰TUI)** | 🟢 主干 | 部分 | S(余) |
 | 3.6 | **会话管理**（/resume /branch /rename /tag /share + history） | `commands/{resume,branch,rename,tag,share}` `history.ts` | ✅ **主体完成**（TUI 计划3 merge：/fork[=CC /branch，共享 memdir 对齐 CC + (Branch) 标题]+/rename[SessionMeta.title+appendTitle，listSessions 预览优先 title]；resume/export 早完成）；/tag 推迟、/share→第6层云 | ✅ | 碰TUI | M |
-| 3.7 | **权限 deny 规则层 + 来源层级 + denial tracking + /permissions** | `utils/permissions/*` | 🟡 deny 规则+denial tracking(安全批`e5f403d`);缺来源层级(归 3.9)+/permissions UI | 🟡 | 部分 | M |
+| 3.7 | **权限 deny 规则层 + 来源层级 + denial tracking + /permissions** | `utils/permissions/*` | ✅ **完成**（deny 规则+denial tracking 安全批`e5f403d`；来源层级 5.6`31e5deb`；**/permissions UI 合并多层视图 TUI 权限可见性批 merge**：formatPermissionRules 两段 allow/deny+来源标签+rm/deny-rm 按值删仅用户层、permissionsView.ts 纯函数。CC 无 /permissions picker 证据→deepcode 命令式适配，非四 Tab 面板） | ✅ | 碰TUI | ✅ |
 | 3.8 | **Sandbox 网络隔离 + /sandbox-toggle** | `commands/sandbox-toggle` | 无 | ⬜ | 否 | M |
 | 3.9 | **Settings 分层**（user/project/local/enterprise 合并 + 校验）+ /config /env | `utils/settings/*` | ✅ 4 层合并+SSRF（`c24ed0e`） | ✅ | 部分 | M |
 | 3.9b | **Settings/模型版本迁移**（schema 升级脚本，如 migrateSonnet45ToSonnet46 / migrateOpusToOpus1m / 旧 settings 字段迁移） | `migrations/`（11 脚本） | 无 | ⬜ | 否 | S | ⭐重审补遗(2026-06-22)：deepcode 单 provider 暂无版本漂移压力，但做 2.8 多 provider/将来加模型档时需要轻量迁移机制。低优先。 |
@@ -141,7 +143,7 @@
 | 5.3 | **Output styles**（自定义输出样式 markdown + 注入 + 降级） | `outputStyles/` `constants/outputStyles.ts` | ✅ **完成**（TUI 批计划2，merge `625feef`：src/outputStyles.ts 内置 Explanatory/Learning + 用户 ~/.deepcode/output-styles/*.md；buildSystemPrompt 第6参 outputStyle 门控仅 # 干活 段；/output-style picker 热切重建 messages[0]+持久化；真机冒烟过） | ✅ | 碰TUI | M |
 | 5.4 | **/theme /color 主题切换** | `commands/{theme,color}` | ✅ **完成**（TUI 批计划2，merge `625feef`：theme.ts context 化[ThemeProvider/useTheme]+六套主题 dark/light/各daltonized/各ansi；13 消费点迁移[2 纯函数透传 theme 参]；/theme picker state 驱动实时热切+持久化；架构件 opus 终审；真机冒烟 accent 实时变色过） | ✅ | 碰TUI | S |
 | 5.5 | **语音模式**（音频录制 + STT 流 + keyterms） | `voice/` `services/voice*.ts` | 无 | ⬜ | 碰TUI | L |
-| 5.6 | **权限弹窗 UI**（always/yes/no 决策 + 规则记忆 + deny/来源展示） | `components/PermissionPrompt.tsx` | ✅ **完成**（PermissionDialog 三态+快捷键+always 写 user 规则+危险警告+diff；**+deny/来源层级展示 merge `31e5deb`**：PermissionDecisionReason 联合+settingsLayers per-rule provenance+buildDenySourceMap+checkPermission 携带/透传 decisionReason+硬拒绝文本带来源+弹窗渲染来源行；镜像 CC PermissionRuleExplanation，源 builtin/user/project/local/flag）。**余 3×S 文案(always 写哪层反馈/规则粒度预览/Tab-amend)留将来** | ✅ | 碰TUI | ✅ |
+| 5.6 | **权限弹窗 UI**（always/yes/no 决策 + 规则记忆 + deny/来源展示） | `components/PermissionPrompt.tsx` | ✅ **完成**（PermissionDialog 三态+快捷键+always 写 user 规则+危险警告+diff；**+deny/来源层级展示 merge `31e5deb`**；**+规则粒度预览[(b) always label 内嵌将保存规则「总是允许 — Tool(...)」TUI 权限可见性批]**：suggestRule 抽纯函数+ask 第4参 previewRule。镜像 CC「Yes, don't ask again for <rule>」内联）。**(a)写哪层=对 CC 误读已撤（CC 弹窗选粒度非存储层）、(c)Tab-amend=臆造已撤（CC Tab=向模型补充指令非编辑规则），均经 opus 实读 CC bundle 核实** | ✅ | 碰TUI | ✅ |
 | 5.7 | **Statusline**（成本/token/模型/模式/任务进度实时栏 + /statusline） | `commands/statusline.tsx` | ✅ **完成**（TUI 计划3 merge：statusLineCommand[DANGEROUS_TOP_KEYS 剥离 project scope=信任边界]+src/statusLine.ts 事件驱动去抖 runner[300ms+在途abort+5s超时+失败保留缓存绝不抛，对齐 CC StatusLine.tsx]+StatusFooter 段；真机冒烟过 flag 加载+渲染） | ✅ | 碰TUI | M |
 | 5.8 | **AI 辅助摘要**（AgentSummary 子代理进度 / toolUseSummary / awaySummary / PromptSuggestion 下一步建议） | `services/{AgentSummary,toolUseSummary,awaySummary,PromptSuggestion}` | 无 | ⬜ | 碰TUI | M |
 | 5.9 | **交互小命令**（/copy /good-claude /context viz /files /add-dir /status /help /btw[旁问不打断] /clear /summary /ctx_viz 增强） | `commands/*` | 部分；✅`/add-dir` 已做（TUI 批计划1，**顺带本批引入工作目录围栏**：deepcode 原无 cwd 围栏，新建 checkPermission 第二道门 cwd∪白名单外→ask，deny 正交不可击穿）；余小命令多为伪命令/已有等价物（实读砍水分） | 🟡 | 碰TUI | S |

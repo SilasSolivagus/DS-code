@@ -22,7 +22,8 @@ import { onNotification, drainNotifications, formatNotification, registerTask, u
 import { runAutoDream } from '../services/memory/autoDream.js'
 import { buildSystemPrompt, findMemoryFiles, PLAN_MODE_GUIDANCE } from '../prompt.js'
 import { formatMemory } from '../memory.js'
-import { loadSettings, loadRawUserSettings, saveRawUserSettings, addUserAllowRule, removeUserAllowRule, listUserAllowRules, SETTINGS_FILE } from '../config.js'
+import { loadSettings, loadRawUserSettings, saveRawUserSettings, addUserAllowRule, removeUserAllowRuleByValue, removeUserDenyRuleByValue, SETTINGS_FILE } from '../config.js'
+import { formatPermissionRules, resolveRuleRemoval } from '../permissionsView.js'
 import { loadLayeredSettings } from '../settingsLayers.js'
 import { runHooks } from '../hooks.js'
 import { makeHookRuntime } from '../hookRuntime.js'
@@ -163,7 +164,7 @@ export function transcriptReducer(state: TranscriptItem[], a: ReducerAction): Tr
   return [] // clear
 }
 
-export interface PendingAsk { toolName: string; desc: string; dangerous: boolean; reason?: PermissionDecisionReason; resolve: (d: Decision) => void }
+export interface PendingAsk { toolName: string; desc: string; dangerous: boolean; reason?: PermissionDecisionReason; previewRule?: string; resolve: (d: Decision) => void }
 export interface PendingQuestion { questions: Question[]; resolve: (a: Answer[] | null) => void }
 export interface PendingPlanApproval { plan: string; allowedPrompts?: AllowedPrompt[]; resolve: (approved: boolean) => void }
 
@@ -598,7 +599,7 @@ export function createChatCore(opts: {
   }
 
   // 权限确认桥：挂起 Promise + pendingAsk 状态，UI 用 resolveAsk 回答
-  const ask = (toolName: string, desc: string, reason?: PermissionDecisionReason): Promise<Decision> =>
+  const ask = (toolName: string, desc: string, reason?: PermissionDecisionReason, previewRule?: string): Promise<Decision> =>
     new Promise<Decision>(res => {
       // Notification hook：权限弹窗浮现给用户时通知（桌面通知转发等）。fire-and-forget。
       if (settings.hooks) {
@@ -607,7 +608,7 @@ export function createChatCore(opts: {
           notification_type: 'permission', title: 'deepcode 需要确认', message: `${toolName}: ${desc}`,
         }, settings.hooks, hookDeps).catch(() => {})
       }
-      pendingAsk = { toolName, desc, dangerous: isDangerous(desc), reason, resolve: res }
+      pendingAsk = { toolName, desc, dangerous: isDangerous(desc), reason, previewRule, resolve: res }
       setState()
     })
 
@@ -1122,20 +1123,33 @@ export function createChatCore(opts: {
     }
     if (line === '/permissions' || line.startsWith('/permissions ')) {
       const arg = line.slice('/permissions'.length).trim()
-      const m = arg.match(/^rm\s+(\d+)$/)
-      const userRules = listUserAllowRules()
-      if (m) {
-        const i = Number(m[1]) - 1
-        const removed = removeUserAllowRule(i)
-        if (removed !== undefined) {
-          const mem = settings.permissions.allow.indexOf(removed)
-          if (mem >= 0) settings.permissions.allow.splice(mem, 1) // 内存合并同步
-          notice('info', `已删除：${removed}`)
+      const allowList = settings.permissions.allow
+      const denyList = resolveDenyList(settings.permissions.deny)
+      const rmMatch = arg.match(/^rm\s+(\d+)$/)
+      const denyRmMatch = arg.match(/^deny-rm\s+(\d+)$/)
+      if (rmMatch) {
+        const r = resolveRuleRemoval(allowList, Number(rmMatch[1]), ruleSources, 'user')
+        if (r.ok) {
+          removeUserAllowRuleByValue(r.value)
+          const mem = settings.permissions.allow.indexOf(r.value)
+          if (mem >= 0) settings.permissions.allow.splice(mem, 1)
+          notice('info', `已删除：${r.value}`)
           fireConfigChange()
-        } else notice('warn', '编号无效')
-      } else if (userRules.length) {
-        notice('info', userRules.map((r, i) => `  ${i + 1}. ${r}`).join('\n') + '\n（/permissions rm <编号> 删除对应规则）')
-      } else notice('info', '没有已保存的权限规则')
+        } else notice('warn', r.reason)
+      } else if (denyRmMatch) {
+        const r = resolveRuleRemoval(denyList, Number(denyRmMatch[1]), denySources, 'builtin')
+        if (r.ok) {
+          removeUserDenyRuleByValue(r.value)
+          if (settings.permissions.deny) {
+            const mem = settings.permissions.deny.indexOf(r.value)
+            if (mem >= 0) settings.permissions.deny.splice(mem, 1)
+          }
+          notice('info', `已删除 Deny：${r.value}`)
+          fireConfigChange()
+        } else notice('warn', r.reason)
+      } else {
+        notice('info', formatPermissionRules(allowList, ruleSources, denyList, denySources))
+      }
       return
     }
 

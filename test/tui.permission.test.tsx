@@ -174,6 +174,22 @@ describe('PermissionDialog', () => {
   })
 })
 
+describe('PermissionDialog always label 内嵌规则', () => {
+  const base = { toolName: 'Bash', desc: 'npm test', dangerous: false, resolve: () => {} }
+  it('有 previewRule → always 行显示 "总是允许 — <rule>"', () => {
+    const { lastFrame } = render(
+      <PermissionDialog ask={{ ...base, previewRule: 'Bash(npm test:*)' } as any} onDecide={() => {}} />,
+    )
+    expect(lastFrame()).toContain('总是允许 — Bash(npm test:*)')
+  })
+  it('无 previewRule → 回退原文案', () => {
+    const { lastFrame } = render(
+      <PermissionDialog ask={base as any} onDecide={() => {}} />,
+    )
+    expect(lastFrame()).toContain('总是允许（本会话不再询问）')
+  })
+})
+
 describe('PermissionDialog 来源行', () => {
   it('deny rule 显示规则与来源', () => {
     const ask: any = { toolName: 'Bash', desc: 'cat ~/.ssh/id_rsa', dangerous: false,
