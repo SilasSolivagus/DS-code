@@ -18,7 +18,7 @@ const fake = (name: string): Tool<any> => ({
   needsPermission: () => false,
   call: async () => '',
 })
-const POOL = ['Read', 'Glob', 'Grep', 'Bash', 'Edit', 'Write', 'Agent', 'WebFetch', 'NotebookEdit', 'ExitPlanMode'].map(fake)
+const POOL = ['Read', 'Glob', 'Grep', 'Bash', 'Edit', 'Write', 'Agent', 'WebFetch', 'NotebookEdit', 'ExitPlanMode', 'EnterWorktree', 'ExitWorktree'].map(fake)
 const names = (ts: Tool<any>[]) => ts.map(t => t.name).sort()
 
 const def = (over: Partial<AgentDefinition>): AgentDefinition => ({
@@ -35,18 +35,24 @@ describe('GLOBAL_SUBAGENT_DENY', () => {
 })
 
 describe('resolveAgentTools', () => {
-  it('通配（tools undefined）= 全池减全局 deny（仅 ExitPlanMode）', () => {
+  it('通配（tools undefined）= 全池减全局 deny（ExitPlanMode + EnterWorktree + ExitWorktree）', () => {
     const r = resolveAgentTools(def({ tools: undefined }), POOL, GLOBAL_SUBAGENT_DENY)
-    // 新：全局 deny 仅 ExitPlanMode，Edit/Write/Agent/NotebookEdit 均放开
+    // 全局 deny = ExitPlanMode + EnterWorktree + ExitWorktree；Edit/Write/Agent/NotebookEdit 均放开
     expect(names(r)).toEqual(['Agent', 'Bash', 'Edit', 'Glob', 'Grep', 'NotebookEdit', 'Read', 'WebFetch', 'Write'])
+    // 会话级 worktree 工具对子代理不可见
+    expect(r.find(t => t.name === 'EnterWorktree')).toBeUndefined()
+    expect(r.find(t => t.name === 'ExitWorktree')).toBeUndefined()
   })
 
-  it("通配（tools ['*']）= 全池减全局 deny（仅 ExitPlanMode）", () => {
+  it("通配（tools ['*']）= 全池减全局 deny（ExitPlanMode + EnterWorktree + ExitWorktree）", () => {
     const r = resolveAgentTools(def({ tools: ['*'] }), POOL, GLOBAL_SUBAGENT_DENY)
     expect(names(r)).toEqual(['Agent', 'Bash', 'Edit', 'Glob', 'Grep', 'NotebookEdit', 'Read', 'WebFetch', 'Write'])
+    // 会话级 worktree 工具对子代理不可见
+    expect(r.find(t => t.name === 'EnterWorktree')).toBeUndefined()
+    expect(r.find(t => t.name === 'ExitWorktree')).toBeUndefined()
   })
 
-  it('全局 deny 仅移除 ExitPlanMode（可写+可递归）', () => {
+  it('全局 deny 移除 ExitPlanMode + EnterWorktree + ExitWorktree（可写+可递归）', () => {
     const r = resolveAgentTools(def({ tools: ['*'] }), POOL, GLOBAL_SUBAGENT_DENY)
     // Edit/Write/Agent/NotebookEdit 现在不再被全局 deny
     expect(r.find(t => t.name === 'Edit')).toBeDefined()
@@ -54,11 +60,13 @@ describe('resolveAgentTools', () => {
     expect(r.find(t => t.name === 'Agent')).toBeDefined()
     expect(r.find(t => t.name === 'NotebookEdit')).toBeDefined()
     expect(r.find(t => t.name === 'ExitPlanMode')).toBeUndefined()
+    expect(r.find(t => t.name === 'EnterWorktree')).toBeUndefined()
+    expect(r.find(t => t.name === 'ExitWorktree')).toBeUndefined()
   })
 
   it('类型 deny 叠加在全局 deny 之上', () => {
     const r = resolveAgentTools(def({ disallowedTools: ['Bash'] }), POOL, GLOBAL_SUBAGENT_DENY)
-    // 新：全局 deny 仅 ExitPlanMode；Bash 被类型 deny；故结果含 Edit/Write/Agent/NotebookEdit
+    // 全局 deny = ExitPlanMode + EnterWorktree + ExitWorktree；Bash 被类型 deny；故结果含 Edit/Write/Agent/NotebookEdit
     expect(names(r)).toEqual(['Agent', 'Edit', 'Glob', 'Grep', 'NotebookEdit', 'Read', 'WebFetch', 'Write'])
   })
 
