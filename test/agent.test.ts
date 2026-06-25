@@ -81,7 +81,7 @@ describe('Agent 子代理', () => {
     expect(reported[0][1]).toBe('deepseek-v4-flash')
   })
 
-  it('子代理只有只读工具，使用独立 fileState', async () => {
+  it('子代理使用全工具集（可写可递归），使用独立 fileState', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'dc-agent-'))
     const tmpFile = path.join(dir, 'probe.txt')
     writeFileSync(tmpFile, 'probe content')
@@ -103,9 +103,9 @@ describe('Agent 子代理', () => {
     await tool.call({ description: 'x', prompt: 'y' }, c)
     const { chatStream } = await import('../src/api.js')
     // call[0] = 第一幕（子代理发起），call[1] = 第二幕（带 tool 结果）
-    // general-purpose 通配 = 全池减全局 deny(Edit/Write/Agent)，含 Bash/WebFetch 等只读检索工具
+    // general-purpose 通配 = 全池减全局 deny(仅 ExitPlanMode)，含 Edit/Write/NotebookEdit/Agent 等（可写可递归）
     const sentTools = (chatStream as any).mock.calls[0][1].tools.map((t: any) => t.function.name)
-    expect(sentTools.sort()).toEqual(['Bash', 'Config', 'Glob', 'Grep', 'Read', 'WebFetch'])
+    expect(sentTools.sort()).toEqual(['Bash', 'Config', 'Edit', 'Glob', 'Grep', 'NotebookEdit', 'Read', 'WebFetch', 'Write'])
     // 第二幕的 messages 应包含 Read 的 tool 结果（含文件内容），确保 Read 真正执行了
     const secondCallMessages: any[] = (chatStream as any).mock.calls[1][1].messages
     const toolResultMsg = secondCallMessages.find((m: any) => m.role === 'tool')

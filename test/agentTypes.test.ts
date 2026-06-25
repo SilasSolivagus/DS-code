@@ -28,29 +28,38 @@ const def = (over: Partial<AgentDefinition>): AgentDefinition => ({
   ...over,
 })
 
+describe('GLOBAL_SUBAGENT_DENY', () => {
+  it('仅剩 ExitPlanMode（可写+可递归）', () => {
+    expect(GLOBAL_SUBAGENT_DENY).toEqual(['ExitPlanMode'])
+  })
+})
+
 describe('resolveAgentTools', () => {
-  it('通配（tools undefined）= 全池减全局 deny', () => {
+  it('通配（tools undefined）= 全池减全局 deny（仅 ExitPlanMode）', () => {
     const r = resolveAgentTools(def({ tools: undefined }), POOL, GLOBAL_SUBAGENT_DENY)
-    expect(names(r)).toEqual(['Bash', 'Glob', 'Grep', 'Read', 'WebFetch'])
+    // 新：全局 deny 仅 ExitPlanMode，Edit/Write/Agent/NotebookEdit 均放开
+    expect(names(r)).toEqual(['Agent', 'Bash', 'Edit', 'Glob', 'Grep', 'NotebookEdit', 'Read', 'WebFetch', 'Write'])
   })
 
-  it("通配（tools ['*']）= 全池减全局 deny", () => {
+  it("通配（tools ['*']）= 全池减全局 deny（仅 ExitPlanMode）", () => {
     const r = resolveAgentTools(def({ tools: ['*'] }), POOL, GLOBAL_SUBAGENT_DENY)
-    expect(names(r)).toEqual(['Bash', 'Glob', 'Grep', 'Read', 'WebFetch'])
+    expect(names(r)).toEqual(['Agent', 'Bash', 'Edit', 'Glob', 'Grep', 'NotebookEdit', 'Read', 'WebFetch', 'Write'])
   })
 
-  it('全局 deny 移除 Edit/Write/Agent/NotebookEdit/ExitPlanMode', () => {
+  it('全局 deny 仅移除 ExitPlanMode（可写+可递归）', () => {
     const r = resolveAgentTools(def({ tools: ['*'] }), POOL, GLOBAL_SUBAGENT_DENY)
-    expect(r.find(t => t.name === 'Edit')).toBeUndefined()
-    expect(r.find(t => t.name === 'Write')).toBeUndefined()
-    expect(r.find(t => t.name === 'Agent')).toBeUndefined()
-    expect(r.find(t => t.name === 'NotebookEdit')).toBeUndefined()
+    // Edit/Write/Agent/NotebookEdit 现在不再被全局 deny
+    expect(r.find(t => t.name === 'Edit')).toBeDefined()
+    expect(r.find(t => t.name === 'Write')).toBeDefined()
+    expect(r.find(t => t.name === 'Agent')).toBeDefined()
+    expect(r.find(t => t.name === 'NotebookEdit')).toBeDefined()
     expect(r.find(t => t.name === 'ExitPlanMode')).toBeUndefined()
   })
 
   it('类型 deny 叠加在全局 deny 之上', () => {
     const r = resolveAgentTools(def({ disallowedTools: ['Bash'] }), POOL, GLOBAL_SUBAGENT_DENY)
-    expect(names(r)).toEqual(['Glob', 'Grep', 'Read', 'WebFetch'])
+    // 新：全局 deny 仅 ExitPlanMode；Bash 被类型 deny；故结果含 Edit/Write/Agent/NotebookEdit
+    expect(names(r)).toEqual(['Agent', 'Edit', 'Glob', 'Grep', 'NotebookEdit', 'Read', 'WebFetch', 'Write'])
   })
 
   it('allow 列表按名查命中保留、未命中忽略', () => {
@@ -58,8 +67,8 @@ describe('resolveAgentTools', () => {
     expect(names(r)).toEqual(['Grep', 'Read'])
   })
 
-  it('deny 永远赢 allow：allow 含 Edit 也被全局 deny 排除', () => {
-    const r = resolveAgentTools(def({ tools: ['Read', 'Edit'] }), POOL, GLOBAL_SUBAGENT_DENY)
+  it('deny 永远赢 allow：allow 含 ExitPlanMode 也被全局 deny 排除', () => {
+    const r = resolveAgentTools(def({ tools: ['Read', 'ExitPlanMode'] }), POOL, GLOBAL_SUBAGENT_DENY)
     expect(names(r)).toEqual(['Read'])
   })
 
@@ -87,25 +96,26 @@ describe('BUILTIN_AGENTS', () => {
     for (const a of BUILTIN_AGENTS) expect(a.getSystemPrompt().length).toBeGreaterThan(0)
   })
 
-  it('general-purpose 解析含 Bash，不含 Edit/Write/Agent/NotebookEdit/ExitPlanMode', () => {
+  it('general-purpose 解析含 Edit/Write/Agent/NotebookEdit/Bash，不含 ExitPlanMode（可写可递归）', () => {
     const a = BUILTIN_AGENTS.find(x => x.agentType === 'general-purpose')!
     const r = names(resolveAgentTools(a, POOL, GLOBAL_SUBAGENT_DENY))
     expect(r).toContain('Bash')
-    expect(r).not.toContain('Edit')
-    expect(r).not.toContain('Write')
-    expect(r).not.toContain('Agent')
-    expect(r).not.toContain('NotebookEdit')
+    expect(r).toContain('Edit')
+    expect(r).toContain('Write')
+    expect(r).toContain('Agent')
+    expect(r).toContain('NotebookEdit')
     expect(r).not.toContain('ExitPlanMode')
   })
 
-  it('Explore/Plan 解析不含 Edit/Write/Agent/NotebookEdit/ExitPlanMode', () => {
+  it('Explore/Plan 解析不含 Edit/Write/Agent（disallowedTools 拦），不含 ExitPlanMode（全局 deny）', () => {
     for (const type of ['Explore', 'Plan']) {
       const a = BUILTIN_AGENTS.find(x => x.agentType === type)!
       const r = names(resolveAgentTools(a, POOL, GLOBAL_SUBAGENT_DENY))
       expect(r).not.toContain('Edit')
       expect(r).not.toContain('Write')
       expect(r).not.toContain('Agent')
-      expect(r).not.toContain('NotebookEdit')
+      // NotebookEdit 不在 Explore/Plan 的 disallowedTools，现在全局 deny 也不含，故可见
+      expect(r).toContain('NotebookEdit')
       expect(r).not.toContain('ExitPlanMode')
     }
   })
