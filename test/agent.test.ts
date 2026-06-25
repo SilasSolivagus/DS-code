@@ -470,20 +470,24 @@ describe('Agent isolation:worktree', () => {
     const pathMatch = out.match(/改动保留在 (.+?)（/)
     expect(pathMatch).toBeTruthy()
     const wtPath = pathMatch![1]
+    expect(existsSync(wtPath)).toBe(true) // worktree 目录仍在（有改动未删）
     expect(existsSync(path.join(wtPath, 'new-file.ts'))).toBe(true)
   })
 
   it('子代理无改动→worktree 自动删', async () => {
-    subagentRunnerOverride = async (_opts) => 'noop'
+    // 捕获 createWorktree 真正建在哪（resolveGitRoot realpath 后的根，macOS 上是 /private/var/...）。
+    // 不能用未 realpath 的 repo 去 join，否则得到永不存在的路径→existsSync 恒 false→空过。
+    let capturedWtPath: string | undefined
+    subagentRunnerOverride = async (opts) => { capturedWtPath = opts.worktreePath; return 'noop' }
     const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
     const c: any = { cwd: () => repo, setCwd: () => {}, signal: new AbortController().signal, fileState: new Map() }
     const out = await tool.call({ description: 't', prompt: 'p', isolation: 'worktree' }, c)
     expect(out).not.toContain('[worktree]')
     expect(out).toBe('noop')
-    // worktree 目录被删（.deepcode/worktrees/ 无残留）
-    const worktreesDir = path.join(repo, '.deepcode', 'worktrees')
-    const remaining = existsSync(worktreesDir) ? require('node:fs').readdirSync(worktreesDir) : []
-    expect(remaining.length).toBe(0)
+    // 实际 worktree 目录真的不存在了（无改动→removeWorktree 执行）。
+    // 此断言会在 removeWorktree 被改成 no-op 时失败（worktree 跑期间确实存在过）。
+    expect(capturedWtPath).toBeTruthy()
+    expect(existsSync(capturedWtPath!)).toBe(false)
   })
 
   it('非 git 仓库→抛含提示的错误', async () => {

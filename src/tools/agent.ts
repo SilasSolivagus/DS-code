@@ -60,7 +60,7 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
         if (!wantWorktree) return null
         const root = await resolveGitRoot(ctx.cwd())
         if (!root) throw new Error('isolation:"worktree" 需要 git 仓库（或配置 WorktreeCreate hook）。当前目录不是 git 仓库。')
-        return createWorktree(root, `agent-${agentId.replace(/^.*_/, '').slice(0, 8)}`, deps.worktree)
+        return createWorktree(root, `agent-${agentId.slice(1, 9)}`, deps.worktree)
       }
 
       // 收尾：无改动删、有改动留并回传
