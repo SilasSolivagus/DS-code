@@ -196,7 +196,7 @@ describe('Agent 子代理类型路由', () => {
     )
   })
 
-  it('Explore 钉 flash（不受 getModel 影响），且工具集不含 Edit/Write/Agent', async () => {
+  it('Explore 钉 flash（不受 getModel 影响），且真只读不含 Edit/Write/NotebookEdit/Agent', async () => {
     script.push({ result: { content: '结论', toolCalls: [], usage, finishReason: 'stop' } })
     const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-pro' })
     await tool.call({ description: 'x', prompt: 'y', subagent_type: 'Explore' }, ctx())
@@ -205,10 +205,11 @@ describe('Agent 子代理类型路由', () => {
     const sentTools = (chatStream as any).mock.calls[0][1].tools.map((t: any) => t.function.name)
     expect(sentTools).not.toContain('Edit')
     expect(sentTools).not.toContain('Write')
+    expect(sentTools).not.toContain('NotebookEdit') // disallowedTools 含 'NotebookEdit'：Explore 真只读
     expect(sentTools).not.toContain('Agent') // disallowedTools 含 'Agent'：Explore 递归门关闭
   })
 
-  it('Plan 工具集不含 Agent（disallowedTools 拦，递归门关闭）', async () => {
+  it('Plan 真只读不含 Edit/Write/NotebookEdit/Agent（disallowedTools 拦）', async () => {
     script.push({ result: { content: '结论', toolCalls: [], usage, finishReason: 'stop' } })
     const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-pro' })
     await tool.call({ description: 'x', prompt: 'y', subagent_type: 'Plan' }, ctx())
@@ -217,6 +218,7 @@ describe('Agent 子代理类型路由', () => {
     expect(sentTools).not.toContain('Agent')
     expect(sentTools).not.toContain('Edit')
     expect(sentTools).not.toContain('Write')
+    expect(sentTools).not.toContain('NotebookEdit')
   })
 
   it('子代理 Bash 钳制：安全命令放行、危险命令拒绝', () => {

@@ -107,15 +107,15 @@ describe('BUILTIN_AGENTS', () => {
     expect(r).not.toContain('ExitPlanMode')
   })
 
-  it('Explore/Plan 解析不含 Edit/Write/Agent（disallowedTools 拦），不含 ExitPlanMode（全局 deny）', () => {
+  it('Explore/Plan 解析真只读：不含 Edit/Write/Agent/NotebookEdit（disallowedTools 拦），不含 ExitPlanMode（全局 deny）', () => {
     for (const type of ['Explore', 'Plan']) {
       const a = BUILTIN_AGENTS.find(x => x.agentType === type)!
       const r = names(resolveAgentTools(a, POOL, GLOBAL_SUBAGENT_DENY))
       expect(r).not.toContain('Edit')
       expect(r).not.toContain('Write')
       expect(r).not.toContain('Agent')
-      // NotebookEdit 不在 Explore/Plan 的 disallowedTools，现在全局 deny 也不含，故可见
-      expect(r).toContain('NotebookEdit')
+      // NotebookEdit 现已纳入 Explore/Plan 的 disallowedTools，保证真只读
+      expect(r).not.toContain('NotebookEdit')
       expect(r).not.toContain('ExitPlanMode')
     }
   })

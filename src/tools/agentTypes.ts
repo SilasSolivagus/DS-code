@@ -61,14 +61,14 @@ export const BUILTIN_AGENTS: AgentDefinition[] = [
   {
     agentType: 'Explore',
     whenToUse: '快速只读搜代码/定位实现，可指定 quick/medium/very thorough 力度',
-    disallowedTools: ['Edit', 'Write', 'Agent'],
+    disallowedTools: ['Edit', 'Write', 'Agent', 'NotebookEdit'],
     model: 'flash',
     getSystemPrompt: () => EXPLORE_SYSTEM,
   },
   {
     agentType: 'Plan',
     whenToUse: '软件架构师，设计实施计划',
-    disallowedTools: ['Edit', 'Write', 'Agent'],
+    disallowedTools: ['Edit', 'Write', 'Agent', 'NotebookEdit'],
     model: 'inherit',
     getSystemPrompt: () => PLAN_SYSTEM,
   },
