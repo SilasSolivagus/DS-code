@@ -149,13 +149,14 @@ export function App(props: {
 
   const suggestionsActive = suggestions.length > 0
 
-  // —— 状态页脚数据 —— 启动时算一次的静态项（git 分支、记忆文件数、目录名）
-  const cwdBase = useMemo(() => path.basename(props.cwd), [])  // eslint-disable-line react-hooks/exhaustive-deps
+  // —— 状态页脚数据 —— 跟随 cwd 动态更新（EnterWorktree 切换 cwd 后自动反映）
+  const liveCwd = core.getCwd()
+  const cwdBase = path.basename(liveCwd)
   const branch = useMemo(() => {
     try {
-      return execSync('git branch --show-current', { cwd: props.cwd, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() || null
+      return execSync('git branch --show-current', { cwd: liveCwd, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() || null
     } catch { return null }
-  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [liveCwd])
   const memoryCount = useMemo(() => findMemoryFiles(props.cwd).length, [])  // eslint-disable-line react-hooks/exhaustive-deps
   // 模式标签：权限模式 + thinking 后缀
   const modeLabel = (state.permMode === 'acceptEdits' ? 'accept' : state.permMode === 'yolo' ? 'yolo' : state.permMode === 'plan' ? 'plan' : 'default')

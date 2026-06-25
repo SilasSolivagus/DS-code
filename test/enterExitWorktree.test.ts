@@ -172,6 +172,23 @@ describe('EnterWorktree / ExitWorktree', () => {
     }
   })
 
+  it('EnterWorktree worktreeConfig symlinkDirectories → worktree 内建符号链接', async () => {
+    // node_modules 在 .gitignore 中，主库内存在文件；worktreeConfig 指定 symlinkDirectories
+    fs.writeFileSync(path.join(repo, '.gitignore'), 'node_modules\n')
+    fs.mkdirSync(path.join(repo, 'node_modules'), { recursive: true })
+    fs.writeFileSync(path.join(repo, 'node_modules', 'dummy.js'), '{}')
+    const g = (...a: string[]) => execFileSync('git', a, { cwd: repo })
+    g('add', '.gitignore')
+    g('commit', '-qm', 'add gitignore')
+
+    const { ctx, session } = makeCtx(repo)
+    ctx.worktreeConfig = () => ({ symlinkDirectories: ['node_modules'] })
+    await enterWorktreeTool.call({ name: 'sym1' }, ctx)
+    const state = session.get()!
+    expect(fs.existsSync(state.worktreePath)).toBe(true)
+    expect(fs.lstatSync(path.join(state.worktreePath, 'node_modules')).isSymbolicLink()).toBe(true)
+  })
+
   it('ExitWorktree hookBased remove → 恢复 cwd + 发 WorktreeRemove hook，无 git 操作', async () => {
     const nonGit = fs.mkdtempSync(path.join(os.tmpdir(), 'dc-hb-rm-'))
     const hookPath = fs.mkdtempSync(path.join(os.tmpdir(), 'dc-hb-rm-path-'))
