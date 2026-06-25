@@ -103,9 +103,11 @@ describe('Agent 子代理', () => {
     await tool.call({ description: 'x', prompt: 'y' }, c)
     const { chatStream } = await import('../src/api.js')
     // call[0] = 第一幕（子代理发起），call[1] = 第二幕（带 tool 结果）
-    // general-purpose 通配 = 全池减全局 deny(仅 ExitPlanMode)，含 Edit/Write/NotebookEdit/Agent 等（可写可递归）
+    // general-purpose 通配 = 全池减全局 deny(仅 ExitPlanMode)，含 Edit/Write/NotebookEdit 可写、含 Agent 可递归
     const sentTools = (chatStream as any).mock.calls[0][1].tools.map((t: any) => t.function.name)
-    expect(sentTools.sort()).toEqual(['Bash', 'Config', 'Edit', 'Glob', 'Grep', 'NotebookEdit', 'Read', 'WebFetch', 'Write'])
+    expect(sentTools.sort()).toEqual(['Agent', 'Bash', 'Config', 'Edit', 'Glob', 'Grep', 'NotebookEdit', 'Read', 'WebFetch', 'Write'])
+    // 递归门已开：general-purpose 池含 Agent 自身
+    expect(sentTools).toContain('Agent')
     // 第二幕的 messages 应包含 Read 的 tool 结果（含文件内容），确保 Read 真正执行了
     const secondCallMessages: any[] = (chatStream as any).mock.calls[1][1].messages
     const toolResultMsg = secondCallMessages.find((m: any) => m.role === 'tool')
@@ -203,7 +205,18 @@ describe('Agent 子代理类型路由', () => {
     const sentTools = (chatStream as any).mock.calls[0][1].tools.map((t: any) => t.function.name)
     expect(sentTools).not.toContain('Edit')
     expect(sentTools).not.toContain('Write')
+    expect(sentTools).not.toContain('Agent') // disallowedTools 含 'Agent'：Explore 递归门关闭
+  })
+
+  it('Plan 工具集不含 Agent（disallowedTools 拦，递归门关闭）', async () => {
+    script.push({ result: { content: '结论', toolCalls: [], usage, finishReason: 'stop' } })
+    const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-pro' })
+    await tool.call({ description: 'x', prompt: 'y', subagent_type: 'Plan' }, ctx())
+    const { chatStream } = await import('../src/api.js')
+    const sentTools = (chatStream as any).mock.calls[0][1].tools.map((t: any) => t.function.name)
     expect(sentTools).not.toContain('Agent')
+    expect(sentTools).not.toContain('Edit')
+    expect(sentTools).not.toContain('Write')
   })
 
   it('子代理 Bash 钳制：安全命令放行、危险命令拒绝', () => {

@@ -28,16 +28,19 @@ const schema = z.object({
 
 
 export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model: string) => void; getModel: () => string; agents?: AgentDefinition[] }): Tool<typeof schema> {
-  // 子代理工具池 = 主工具集 + WebFetch（resolveAgentTools 会按 deny/allow 裁剪）。
-  const pool: Tool<any>[] = [...allTools, makeWebFetchTool({ client: deps.client, onUsage: deps.onUsage })]
+  // WebFetch 只建一次（别每次 call 重建）。
+  const webFetch = makeWebFetchTool({ client: deps.client, onUsage: deps.onUsage })
   const agents = deps.agents ?? BUILTIN_AGENTS
-  return {
+  const tool: Tool<typeof schema> = {
     name: 'Agent',
     description: buildAgentDescription(agents),
     inputSchema: schema,
     isReadOnly: true,
     needsPermission: () => false,
     async call(input, ctx) {
+      // 子代理工具池 = 主工具集 + WebFetch + Agent 自身（照搬 CC：子代理可递归派子代理）。
+      // 自引用闭包：call 运行时 tool 已赋值。Explore/Plan 靠 disallowedTools 含 'Agent' 仍不递归。
+      const pool: Tool<any>[] = [...allTools, webFetch, tool]
       const type = input.subagent_type ?? 'general-purpose'
       const def = agents.find(a => a.agentType === type)
       if (!def) {
@@ -97,4 +100,5 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
       return final ?? '（子代理无输出）'
     },
   }
+  return tool
 }
