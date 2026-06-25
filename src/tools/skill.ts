@@ -5,7 +5,7 @@ import type { Tool, ToolContext } from './types.js'
 import type { Usage } from '../api.js'
 import type { SkillDefinition } from '../skillsLoader.js'
 import { substituteSkillArgs, formatSkillListing } from '../skillsLoader.js'
-import { acquire, release, runSubagent } from '../subagentRunner.js'
+import { runSubagent } from '../subagentRunner.js'
 import { resolveAgentTools, GLOBAL_SUBAGENT_DENY, type AgentDefinition } from './agentTypes.js'
 import { resolveSubModel } from '../providers.js'
 import { generateTaskId } from '../tasks.js'
@@ -45,16 +45,13 @@ export function makeSkillTool(
         const effectiveDef: AgentDefinition = skill.allowedTools ? { ...def, tools: skill.allowedTools } : def
         const tools = resolveAgentTools(effectiveDef, deps.skillPool, GLOBAL_SUBAGENT_DENY)
         const model = resolveSubModel(skill.model, deps.getModel())
-        await acquire()
-        try {
-          const result = await runSubagent({
-            client: deps.client, onUsage: deps.onUsage,
-            systemPrompt: filled, userPrompt: input.args ?? '（无参数）',
-            tools, model, ctx, signal: ctx.signal,
-            agentId: generateTaskId('local_agent'), agentType: type,
-          })
-          return result ?? '（技能子代理无输出）'
-        } finally { release() }
+        const result = await runSubagent({
+          client: deps.client, onUsage: deps.onUsage,
+          systemPrompt: filled, userPrompt: input.args ?? '（无参数）',
+          tools, model, ctx, signal: ctx.signal,
+          agentId: generateTaskId('local_agent'), agentType: type,
+        })
+        return result ?? '（技能子代理无输出）'
       }
       // inline：正文走 user 通道注入（无信任例外）；返回简短激活回执。
       if (!ctx.injectUserMessage) {

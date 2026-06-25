@@ -24,7 +24,7 @@ import { TaskListStore } from './taskList.js'
 import { costCNY } from './pricing.js'
 import { resolveDenyList, buildDenySourceMap } from './deny.js'
 import { activeFastModel } from './providers.js'
-import type { ToolContext } from './tools/types.js'
+import type { ToolContext, WorktreeSessionState } from './tools/types.js'
 import type { Usage } from './api.js'
 
 export interface HeadlessResult {
@@ -49,6 +49,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
   const taskList = new TaskListStore()
   const sessionId = 'headless-' + crypto.randomBytes(4).toString('hex')
   taskList.bind(sessionId)
+  let worktreeState: WorktreeSessionState | null = null
   const ctx: ToolContext = {
     cwd: () => cwd,
     setCwd: d => { cwd = d },
@@ -59,6 +60,8 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     hookDispatch: (event, payload) => runHooks(event, payload, settings.hooks), // overwritten below after hookDeps is built
     sessionId: () => sessionId,
     injectUserMessage: (c: string) => injectionBuffer.push(c),
+    worktreeSession: { get: () => worktreeState, set: s => { worktreeState = s } },
+    worktreeConfig: () => settings.worktree,
   }
   const total: Usage = { prompt_tokens: 0, completion_tokens: 0, prompt_cache_hit_tokens: 0 }
   let turns = 0
@@ -109,7 +112,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
   })
   const gen = runLoop(messages, {
     client: opts.client,
-    tools: [...allTools, taskCreateTool, taskGetTool, taskUpdateTool, taskListTool, makeAgentTool({ client: opts.client, onUsage: (u, _model) => addUsage(u), getModel: () => model, agents }), makeWebFetchTool({ client: opts.client, onUsage: (u, _model) => addUsage(u) }), makeWebSearchTool({ config: resolveWebSearchConfig(settings) }), bgTaskListTool, taskOutputTool, taskStopTool, ...mcpTools, makeSkillTool(skills, { client: opts.client, onUsage: (u, _m) => addUsage(u), getModel: () => model, agents, skillPool: [...allTools, makeWebFetchTool({ client: opts.client, onUsage: (u, _m) => addUsage(u) })], listingBudgetChars: settings.skills?.listingBudgetChars })],
+    tools: [...allTools, taskCreateTool, taskGetTool, taskUpdateTool, taskListTool, makeAgentTool({ client: opts.client, onUsage: (u, _model) => addUsage(u), getModel: () => model, agents, worktree: settings.worktree }), makeWebFetchTool({ client: opts.client, onUsage: (u, _model) => addUsage(u) }), makeWebSearchTool({ config: resolveWebSearchConfig(settings) }), bgTaskListTool, taskOutputTool, taskStopTool, ...mcpTools, makeSkillTool(skills, { client: opts.client, onUsage: (u, _m) => addUsage(u), getModel: () => model, agents, skillPool: [...allTools, makeWebFetchTool({ client: opts.client, onUsage: (u, _m) => addUsage(u) })], listingBudgetChars: settings.skills?.listingBudgetChars })],
     model,
     thinking: false,
     maxToolResultChars: settings.maxToolResultChars,

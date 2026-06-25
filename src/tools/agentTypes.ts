@@ -14,9 +14,9 @@ export interface AgentDefinition {
   getSystemPrompt(): string // 每类一段独立 prompt
 }
 
-// 全局子代理 deny（本期关键安全边界）：连通配也解析不到。
-// Edit/Write/NotebookEdit = 可写留给 L-020；Agent = 禁止子代理再派子代理（防无限递归）。
-export const GLOBAL_SUBAGENT_DENY = ['Edit', 'Write', 'Agent', 'NotebookEdit', 'ExitPlanMode']
+// 全局子代理 deny：ExitPlanMode（无 plan 模式 UI）+ EnterWorktree/ExitWorktree（worktreeSession 仅主会话注入）。
+// Edit/Write/NotebookEdit 移除→可写；Agent 移除→可递归派子代理（照搬 CC，删信号量后无死锁）。
+export const GLOBAL_SUBAGENT_DENY = ['ExitPlanMode', 'EnterWorktree', 'ExitWorktree']
 
 /**
  * 照搬 CC resolveAgentTools 三步：deny 永远赢 allow；无 allow = 通配 = 全池减 deny。
@@ -33,9 +33,8 @@ export function resolveAgentTools(def: AgentDefinition, pool: Tool<any>[], globa
   return base.filter(t => allowSet.has(t.name))
 }
 
-const GENERAL_SYSTEM = `你是一个研究型子代理，在终端代码库中工作。可用只读检索工具（Read/Glob/Grep/Bash/WebFetch 等）。
-适合开放式搜索、跨多文件理解架构、执行多步调查任务；可并行发起只读检索。
-你不做任何修改类工作（不写、不改文件）。
+const GENERAL_SYSTEM = `你是一个通用子代理，在终端代码库中工作。可用完整工具集（Read/Edit/Write/Bash/Agent/WebFetch 等）。
+适合开放式搜索、跨多文件理解架构、执行多步任务（含代码修改）；可并行委派子代理。
 你的最终回复会作为工具结果原文返回给主代理：只输出结论与证据（带文件路径与行号），不要寒暄、不要提问。
 查不到就明确说查不到，不要编造。`
 
@@ -62,14 +61,14 @@ export const BUILTIN_AGENTS: AgentDefinition[] = [
   {
     agentType: 'Explore',
     whenToUse: '快速只读搜代码/定位实现，可指定 quick/medium/very thorough 力度',
-    disallowedTools: ['Edit', 'Write', 'Agent'],
+    disallowedTools: ['Edit', 'Write', 'Agent', 'NotebookEdit'],
     model: 'flash',
     getSystemPrompt: () => EXPLORE_SYSTEM,
   },
   {
     agentType: 'Plan',
     whenToUse: '软件架构师，设计实施计划',
-    disallowedTools: ['Edit', 'Write', 'Agent'],
+    disallowedTools: ['Edit', 'Write', 'Agent', 'NotebookEdit'],
     model: 'inherit',
     getSystemPrompt: () => PLAN_SYSTEM,
   },

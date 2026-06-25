@@ -4,7 +4,7 @@ import path from 'node:path'
 import os from 'node:os'
 import {
   parsePermissions, parseHooksConfig, parseMcpServers, parseSkillsConfig,
-  parseWebSearchConfig, parseStringArray, parseProvidersConfig, type Settings,
+  parseWebSearchConfig, parseStringArray, parseProvidersConfig, parseWorktreeConfig, type Settings,
 } from './config.js'
 import { parseMemoryConfig } from './memdir/memoryConfig.js'
 
@@ -158,6 +158,7 @@ function parsePresent(raw: any): Record<string, unknown> {
   if ('httpHookAllowedEnvVars' in raw) { const a = parseStringArray(raw.httpHookAllowedEnvVars); if (a) p.httpHookAllowedEnvVars = a }
   if ('memory' in raw) p.memory = parseMemoryConfig(raw.memory)
   if ('providers' in raw) { const pv = parseProvidersConfig(raw.providers); if (pv) p.providers = pv }
+  if ('worktree' in raw) { const w = parseWorktreeConfig(raw.worktree); if (w) p.worktree = w }
   return p
 }
 

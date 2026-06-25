@@ -12,7 +12,8 @@ import { isDangerous, type Decision } from '../permissions.js'
 import { BUILTIN_AGENTS, GLOBAL_SUBAGENT_DENY, resolveAgentTools, buildAgentDescription, type AgentDefinition } from './agentTypes.js'
 import { generateTaskId, registerTask, updateTask, getTask, enqueueNotification } from '../tasks.js'
 import { taskOutputPath } from '../config.js'
-import { acquire, release, runSubagent } from '../subagentRunner.js'
+import { runSubagent } from '../subagentRunner.js'
+import { resolveGitRoot, createWorktree, worktreeChanges, removeWorktree, type WorktreeConfig, type WorktreeHandle } from '../worktree.js'
 
 /** 子代理无审批 UI：安全命令自动放行、危险命令拒绝（yolo + isDangerous 钳制）。desc = 工具 needsPermission 文本（Bash 即命令原文）。 */
 export function subagentPermissionDecision(desc: string): Decision {
@@ -24,20 +25,24 @@ const schema = z.object({
   prompt: z.string().describe('给子代理的完整任务指令。子代理看不到当前对话，指令必须自包含（含路径、要找什么、期望输出）'),
   subagent_type: z.string().optional().describe('专才子代理类型；省略=general-purpose'),
   run_in_background: z.boolean().optional().describe('设为 true 在后台运行子代理；完成时通知你'),
+  isolation: z.enum(['worktree']).optional().describe('隔离模式。"worktree" 在临时 git worktree 里跑子代理，给它仓库的隔离副本。无改动自动清理；有改动则返回 worktree 路径与分支。'),
 })
 
 
-export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model: string) => void; getModel: () => string; agents?: AgentDefinition[] }): Tool<typeof schema> {
-  // 子代理工具池 = 主工具集 + WebFetch（resolveAgentTools 会按 deny/allow 裁剪）。
-  const pool: Tool<any>[] = [...allTools, makeWebFetchTool({ client: deps.client, onUsage: deps.onUsage })]
+export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model: string) => void; getModel: () => string; agents?: AgentDefinition[]; worktree?: WorktreeConfig }): Tool<typeof schema> {
+  // WebFetch 只建一次（别每次 call 重建）。
+  const webFetch = makeWebFetchTool({ client: deps.client, onUsage: deps.onUsage })
   const agents = deps.agents ?? BUILTIN_AGENTS
-  return {
+  const tool: Tool<typeof schema> = {
     name: 'Agent',
     description: buildAgentDescription(agents),
     inputSchema: schema,
     isReadOnly: true,
     needsPermission: () => false,
     async call(input, ctx) {
+      // 子代理工具池 = 主工具集 + WebFetch + Agent 自身（照搬 CC：子代理可递归派子代理）。
+      // 自引用闭包：call 运行时 tool 已赋值。Explore/Plan 靠 disallowedTools 含 'Agent' 仍不递归。
+      const pool: Tool<any>[] = [...allTools, webFetch, tool]
       const type = input.subagent_type ?? 'general-purpose'
       const def = agents.find(a => a.agentType === type)
       if (!def) {
@@ -48,7 +53,32 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
       const subModel =
         resolveSubModel(def.model, deps.getModel())
 
-      // 后台路径：脱钩跑、立即返句柄；信号量在脱钩 async 的 finally 释放（不能在 call 返回前 release）。
+      const wantWorktree = input.isolation === 'worktree'
+
+      // 建 worktree（git 路径正常建；非 git 时尝试 WorktreeCreate hook 兜底；hook 也没有 → 抛错）
+      async function setupWorktree(agentId: string): Promise<WorktreeHandle | null> {
+        if (!wantWorktree) return null
+        const root = await resolveGitRoot(ctx.cwd())
+        if (!root) {
+          const name = `agent-${agentId.slice(1, 9)}`
+          const out = await ctx.hookDispatch?.('WorktreeCreate', { hook_event_name: 'WorktreeCreate', name })
+          const hookPath = out?.additionalContext?.trim()
+          if (hookPath) return { worktreePath: hookPath, worktreeBranch: '', headCommit: '', gitRoot: '', hookBased: true }
+          throw new Error('isolation:"worktree" 需要 git 仓库（或配置 WorktreeCreate hook）。当前目录不是 git 仓库。')
+        }
+        return createWorktree(root, `agent-${agentId.slice(1, 9)}`, deps.worktree)
+      }
+
+      // 收尾：hookBased → 一律保留（镜像 CC hook-based 行为）；git 路径：无改动删、有改动留并回传
+      async function teardownWorktree(wt: WorktreeHandle | null, final: string | undefined): Promise<string> {
+        if (!wt) return final ?? '（子代理无输出）'
+        if (wt.hookBased) return `${final ?? '（子代理无输出）'}\n\n[worktree] 改动保留在 ${wt.worktreePath}（hook-based）。`
+        const ch = await worktreeChanges(wt.worktreePath, wt.headCommit)
+        if (ch.changedFiles === 0 && ch.commits === 0) { await removeWorktree(wt); return final ?? '（子代理无输出）' }
+        return `${final ?? '（子代理无输出）'}\n\n[worktree] 改动保留在 ${wt.worktreePath}（分支 ${wt.worktreeBranch}）。`
+      }
+
+      // 后台路径：脱钩跑、立即返句柄。
       if (input.run_in_background === true) {
         const id = generateTaskId('local_agent')
         const ac = new AbortController()
@@ -62,47 +92,52 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
         })
         ctx.hookDispatch?.('TaskCreated', { hook_event_name: 'TaskCreated', task_kind: 'background', task_id: id, task_description: input.description }).catch(() => {})
         void (async () => {
-          await acquire() // 在脱钩 async 内等许可：句柄立即返回、不阻塞主 loop 只读批
+          let wt: WorktreeHandle | null = null
           try {
+            wt = await setupWorktree(id)
             const final = await runSubagent({
               client: deps.client, onUsage: deps.onUsage,
               systemPrompt: def.getSystemPrompt(), userPrompt: input.prompt,
               tools, model: subModel, outputSchema: def.outputSchema,
               ctx, signal: ac.signal, agentId: id, agentType: type,
+              worktreePath: wt?.worktreePath,
             })
             // runLoop 在 abort 时是 return 'aborted'（不抛错），runSubagent 仍正常返回——
             // 必须显式查 ac.signal.aborted，否则被 TaskStop 中断的子代理会被误标 completed。
             if (ac.signal.aborted) {
+              if (wt && !wt.hookBased) await removeWorktree(wt).catch(() => {})
               updateTask(id, { status: 'killed', endTime: Date.now() })
             } else {
-              fs.writeFileSync(outputFile, final ?? '')
-              updateTask(id, { status: 'completed', endTime: Date.now(), result: final ?? '（无输出）' })
+              const result = await teardownWorktree(wt, final)
+              fs.writeFileSync(outputFile, result)
+              updateTask(id, { status: 'completed', endTime: Date.now(), result })
             }
           } catch {
+            if (wt && !wt.hookBased) await removeWorktree(wt).catch(() => {})
             updateTask(id, { status: ac.signal.aborted ? 'killed' : 'failed', endTime: Date.now() })
           } finally {
             enqueueNotification(getTask(id)!)
             ctx.hookDispatch?.('TaskCompleted', { hook_event_name: 'TaskCompleted', task_kind: 'background', task_id: id, status: getTask(id)!.status }).catch(() => {})
-            release()
           }
         })()
         return `后台子代理已启动 id=${id}（类型 ${type}）。完成时会通知你。`
       }
 
-      // 前台路径（默认）：维持现有 acquire/try-finally-release。
-      await acquire()
+      // 前台路径（默认）：删信号量后直接跑（并发由 loop CONCURRENCY 只读批约束）。
+      const fgId = generateTaskId('local_agent')
+      const wt = await setupWorktree(fgId)
+      let final: string | undefined
       try {
-        // 前台无 task 注册：生成一个 a-前缀 id 纯作 SubagentStart/Stop hook 的 agent_id 标签（不入 TaskRegistry）。
-        const final = await runSubagent({
+        final = await runSubagent({
           client: deps.client, onUsage: deps.onUsage,
           systemPrompt: def.getSystemPrompt(), userPrompt: input.prompt,
           tools, model: subModel, outputSchema: def.outputSchema,
-          ctx, signal: ctx.signal, agentId: generateTaskId('local_agent'), agentType: type,
+          ctx, signal: ctx.signal, agentId: fgId, agentType: type,
+          worktreePath: wt?.worktreePath,
         })
-        return final ?? '（子代理无输出）'
-      } finally {
-        release()
-      }
+      } catch (e) { if (wt && !wt.hookBased) await removeWorktree(wt).catch(() => {}); throw e }
+      return teardownWorktree(wt, final)
     },
   }
+  return tool
 }

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { z } from 'zod'
-import { mkdtempSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync, rmSync } from 'node:fs'
+import { execSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { clearAllTasks, drainNotifications, listTasks, getTask } from '../src/tasks.js'
@@ -35,6 +36,20 @@ vi.mock('../src/api.js', () => ({
     })(),
   ),
 }))
+
+// subagentRunner mock：worktree 测试控制子代理行为（写文件/不写/抛错）。
+// 默认 null = 走真实实现（其余测试照用 chatStream script）。
+let subagentRunnerOverride: ((opts: any) => Promise<string>) | null = null
+vi.mock('../src/subagentRunner.js', async orig => {
+  const actual = await orig() as any
+  return {
+    ...actual,
+    runSubagent: vi.fn(async (opts: any) => {
+      if (subagentRunnerOverride) return subagentRunnerOverride(opts)
+      return actual.runSubagent(opts)
+    }),
+  }
+})
 
 import { makeAgentTool, subagentPermissionDecision } from '../src/tools/agent.js'
 import { BUILTIN_AGENTS } from '../src/tools/agentTypes.js'
@@ -81,7 +96,7 @@ describe('Agent 子代理', () => {
     expect(reported[0][1]).toBe('deepseek-v4-flash')
   })
 
-  it('子代理只有只读工具，使用独立 fileState', async () => {
+  it('子代理使用全工具集（可写可递归），使用独立 fileState', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'dc-agent-'))
     const tmpFile = path.join(dir, 'probe.txt')
     writeFileSync(tmpFile, 'probe content')
@@ -103,9 +118,11 @@ describe('Agent 子代理', () => {
     await tool.call({ description: 'x', prompt: 'y' }, c)
     const { chatStream } = await import('../src/api.js')
     // call[0] = 第一幕（子代理发起），call[1] = 第二幕（带 tool 结果）
-    // general-purpose 通配 = 全池减全局 deny(Edit/Write/Agent)，含 Bash/WebFetch 等只读检索工具
+    // general-purpose 通配 = 全池减全局 deny(仅 ExitPlanMode)，含 Edit/Write/NotebookEdit 可写、含 Agent 可递归
     const sentTools = (chatStream as any).mock.calls[0][1].tools.map((t: any) => t.function.name)
-    expect(sentTools.sort()).toEqual(['Bash', 'Config', 'Glob', 'Grep', 'Read', 'WebFetch'])
+    expect(sentTools.sort()).toEqual(['Agent', 'Bash', 'Config', 'Edit', 'Glob', 'Grep', 'NotebookEdit', 'Read', 'WebFetch', 'Write'])
+    // 递归门已开：general-purpose 池含 Agent 自身
+    expect(sentTools).toContain('Agent')
     // 第二幕的 messages 应包含 Read 的 tool 结果（含文件内容），确保 Read 真正执行了
     const secondCallMessages: any[] = (chatStream as any).mock.calls[1][1].messages
     const toolResultMsg = secondCallMessages.find((m: any) => m.role === 'tool')
@@ -122,12 +139,12 @@ describe('Agent 子代理', () => {
     expect(out).toContain('无输出')
   })
 
-  it('子代理抛错时 call 拒绝，且信号量槽位已释放（第二次调用仍成功）', async () => {
+  it('子代理抛错时 call 拒绝，第二次调用仍成功', async () => {
     // 脚本为空 → chatStream 抛 'script exhausted' → sub-loop 异常
     const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
     await expect(tool.call({ description: 'err', prompt: 'boom' }, ctx())).rejects.toThrow('script exhausted')
 
-    // 第二次调用要能拿到信号量并正常返回，证明 finally 的 release 执行了
+    // 第二次调用应正常返回（无信号量阻塞）
     script.push({ result: { content: '正常结果', toolCalls: [], usage, finishReason: 'stop' } })
     const out = await tool.call({ description: 'ok', prompt: 'ok' }, ctx())
     expect(out).toContain('正常结果')
@@ -194,7 +211,7 @@ describe('Agent 子代理类型路由', () => {
     )
   })
 
-  it('Explore 钉 flash（不受 getModel 影响），且工具集不含 Edit/Write/Agent', async () => {
+  it('Explore 钉 flash（不受 getModel 影响），且真只读不含 Edit/Write/NotebookEdit/Agent', async () => {
     script.push({ result: { content: '结论', toolCalls: [], usage, finishReason: 'stop' } })
     const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-pro' })
     await tool.call({ description: 'x', prompt: 'y', subagent_type: 'Explore' }, ctx())
@@ -203,7 +220,20 @@ describe('Agent 子代理类型路由', () => {
     const sentTools = (chatStream as any).mock.calls[0][1].tools.map((t: any) => t.function.name)
     expect(sentTools).not.toContain('Edit')
     expect(sentTools).not.toContain('Write')
+    expect(sentTools).not.toContain('NotebookEdit') // disallowedTools 含 'NotebookEdit'：Explore 真只读
+    expect(sentTools).not.toContain('Agent') // disallowedTools 含 'Agent'：Explore 递归门关闭
+  })
+
+  it('Plan 真只读不含 Edit/Write/NotebookEdit/Agent（disallowedTools 拦）', async () => {
+    script.push({ result: { content: '结论', toolCalls: [], usage, finishReason: 'stop' } })
+    const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-pro' })
+    await tool.call({ description: 'x', prompt: 'y', subagent_type: 'Plan' }, ctx())
+    const { chatStream } = await import('../src/api.js')
+    const sentTools = (chatStream as any).mock.calls[0][1].tools.map((t: any) => t.function.name)
     expect(sentTools).not.toContain('Agent')
+    expect(sentTools).not.toContain('Edit')
+    expect(sentTools).not.toContain('Write')
+    expect(sentTools).not.toContain('NotebookEdit')
   })
 
   it('子代理 Bash 钳制：安全命令放行、危险命令拒绝', () => {
@@ -321,7 +351,7 @@ describe('Agent 后台化（run_in_background）', () => {
     expect(getTask(id)!.status).toBe('completed')
   })
 
-  it('信号量不泄漏：多个后台任务串行跑完不卡', async () => {
+  it('多个后台任务串行跑完不卡', async () => {
     script.push(
       { result: { content: 'r1', toolCalls: [], usage, finishReason: 'stop' } },
       { result: { content: 'r2', toolCalls: [], usage, finishReason: 'stop' } },
@@ -401,5 +431,133 @@ describe('Agent 结构化输出强约束 (L-044)', () => {
     const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
     const out = await tool.call({ description: 't', prompt: 'x', subagent_type: 'general-purpose' }, ctx())
     expect(out).toBe('普通文本结果')
+  })
+})
+
+// ── worktree 辅助 ──────────────────────────────────────────────────────────────
+function initGitRepo(): string {
+  const dir = mkdtempSync(path.join(tmpdir(), 'dc-wt-'))
+  execSync('git init', { cwd: dir, stdio: 'pipe' })
+  execSync('git config user.email "test@test.com"', { cwd: dir, stdio: 'pipe' })
+  execSync('git config user.name "Test"', { cwd: dir, stdio: 'pipe' })
+  writeFileSync(path.join(dir, 'README.md'), 'init')
+  execSync('git add README.md', { cwd: dir, stdio: 'pipe' })
+  execSync('git commit -m "init"', { cwd: dir, stdio: 'pipe' })
+  return dir
+}
+
+describe('Agent isolation:worktree', () => {
+  let repo: string
+  beforeEach(() => { repo = initGitRepo(); subagentRunnerOverride = null })
+  afterEach(() => { subagentRunnerOverride = null; try { rmSync(repo, { recursive: true, force: true }) } catch {} })
+
+  it('子代理写文件→主树不变、worktree 有改动、回传 path+branch', async () => {
+    subagentRunnerOverride = async (opts) => {
+      // 在 worktreePath 写一个新文件模拟子代理改动
+      if (opts.worktreePath) writeFileSync(path.join(opts.worktreePath, 'new-file.ts'), '// new')
+      return 'done'
+    }
+    const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
+    const c: any = { cwd: () => repo, setCwd: () => {}, signal: new AbortController().signal, fileState: new Map() }
+    const out = await tool.call({ description: 't', prompt: 'p', isolation: 'worktree' }, c)
+    // 返回文本含 worktree 路径 + 分支名
+    expect(out).toContain('[worktree]')
+    expect(out).toContain('worktree-agent-')
+    expect(out).toContain('done')
+    // 主树无新文件
+    expect(existsSync(path.join(repo, 'new-file.ts'))).toBe(false)
+    // worktree 路径保留（有改动，未删）
+    const pathMatch = out.match(/改动保留在 (.+?)（/)
+    expect(pathMatch).toBeTruthy()
+    const wtPath = pathMatch![1]
+    expect(existsSync(wtPath)).toBe(true) // worktree 目录仍在（有改动未删）
+    expect(existsSync(path.join(wtPath, 'new-file.ts'))).toBe(true)
+  })
+
+  it('子代理无改动→worktree 自动删', async () => {
+    // 捕获 createWorktree 真正建在哪（resolveGitRoot realpath 后的根，macOS 上是 /private/var/...）。
+    // 不能用未 realpath 的 repo 去 join，否则得到永不存在的路径→existsSync 恒 false→空过。
+    let capturedWtPath: string | undefined
+    subagentRunnerOverride = async (opts) => { capturedWtPath = opts.worktreePath; return 'noop' }
+    const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
+    const c: any = { cwd: () => repo, setCwd: () => {}, signal: new AbortController().signal, fileState: new Map() }
+    const out = await tool.call({ description: 't', prompt: 'p', isolation: 'worktree' }, c)
+    expect(out).not.toContain('[worktree]')
+    expect(out).toBe('noop')
+    // 实际 worktree 目录真的不存在了（无改动→removeWorktree 执行）。
+    // 此断言会在 removeWorktree 被改成 no-op 时失败（worktree 跑期间确实存在过）。
+    expect(capturedWtPath).toBeTruthy()
+    expect(existsSync(capturedWtPath!)).toBe(false)
+  })
+
+  it('非 git 仓库→抛含提示的错误', async () => {
+    const tmpDir = mkdtempSync(path.join(tmpdir(), 'dc-nongit-'))
+    subagentRunnerOverride = async () => 'noop'
+    const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
+    const c: any = { cwd: () => tmpDir, setCwd: () => {}, signal: new AbortController().signal, fileState: new Map() }
+    await expect(tool.call({ description: 't', prompt: 'p', isolation: 'worktree' }, c)).rejects.toThrow(/git 仓库/)
+    rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('非 git + WorktreeCreate hook 返回路径 → hookBased worktree 启动，回传 hook-based 文案', async () => {
+    const tmpDir = mkdtempSync(path.join(tmpdir(), 'dc-hookwt-'))
+    const hookWtPath = mkdtempSync(path.join(tmpdir(), 'dc-hookwt-path-'))
+    subagentRunnerOverride = async () => 'hook-result'
+    const dispatch = vi.fn(async (event: string) => {
+      if (event === 'WorktreeCreate') return { ...emptyOutcome, additionalContext: hookWtPath }
+      return emptyOutcome
+    })
+    const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
+    const c: any = { cwd: () => tmpDir, setCwd: () => {}, signal: new AbortController().signal, fileState: new Map(), hookDispatch: dispatch }
+    const out = await tool.call({ description: 't', prompt: 'p', isolation: 'worktree' }, c)
+    expect(out).toContain('hook-based')
+    expect(out).toContain(hookWtPath)
+    expect(out).toContain('hook-result')
+    rmSync(tmpDir, { recursive: true, force: true })
+    rmSync(hookWtPath, { recursive: true, force: true })
+  })
+
+  it('非 git + hook 无 additionalContext → 仍抛 git 仓库错误', async () => {
+    const tmpDir = mkdtempSync(path.join(tmpdir(), 'dc-hookwt-noctx-'))
+    subagentRunnerOverride = async () => 'noop'
+    const dispatch = vi.fn(async () => emptyOutcome)
+    const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
+    const c: any = { cwd: () => tmpDir, setCwd: () => {}, signal: new AbortController().signal, fileState: new Map(), hookDispatch: dispatch }
+    await expect(tool.call({ description: 't', prompt: 'p', isolation: 'worktree' }, c)).rejects.toThrow(/git 仓库/)
+    rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('isolation:worktree 后台子代理写文件→结果含 path+branch', async () => {
+    subagentRunnerOverride = async (opts) => {
+      if (opts.worktreePath) writeFileSync(path.join(opts.worktreePath, 'bg-file.ts'), '// bg')
+      return 'bg-done'
+    }
+    const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
+    const c: any = { cwd: () => repo, setCwd: () => {}, signal: new AbortController().signal, fileState: new Map() }
+    const out = await tool.call({ description: 'bg', prompt: 'p', run_in_background: true, isolation: 'worktree' }, c)
+    const id = out.match(/id=(a[0-9a-z]{8})/)![1]
+    await waitForDone(id)
+    const t = getTask(id)!
+    expect(t.status).toBe('completed')
+    expect(t.result).toContain('[worktree]')
+    expect(t.result).toContain('bg-done')
+  })
+})
+
+describe('Agent 无死锁并发（删 MAX_ACTIVE 信号量后）', () => {
+  it('10 个前台子代理并发启动，全部 resolve，无挂起（无共享阻塞池）', async () => {
+    // 每个子代理对应一幕脚本：直接返回文本，单轮结束。
+    for (let i = 0; i < 10; i++) {
+      script.push({ result: { content: `结果${i}`, toolCalls: [], usage, finishReason: 'stop' } })
+    }
+    const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
+    // 并发起 10 个前台 call（若信号量仍存在且上限<10，Promise.all 将死锁；删除后应全部 settle）。
+    const results = await Promise.all(
+      Array.from({ length: 10 }, (_, i) =>
+        tool.call({ description: `并发${i}`, prompt: `任务${i}` }, ctx()),
+      ),
+    )
+    expect(results).toHaveLength(10)
+    expect(results.every((r, i) => r === `结果${i}`)).toBe(true)
   })
 })

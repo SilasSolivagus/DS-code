@@ -3,6 +3,20 @@ import type { z } from 'zod'
 import type { TaskListStore } from '../taskList.js'
 import type { HookEvent, HookOutcome } from '../hooks.js'
 
+export interface WorktreeSessionState {
+  originalCwd: string
+  worktreePath: string
+  worktreeBranch: string
+  headCommit: string
+  gitRoot: string
+  hookBased?: boolean
+}
+
+export interface WorktreeSession {
+  get(): WorktreeSessionState | null
+  set(s: WorktreeSessionState | null): void
+}
+
 export interface ToolContext {
   cwd: () => string
   setCwd: (dir: string) => void
@@ -29,6 +43,10 @@ export interface ToolContext {
   /** turn 内信号重建：steering 'now' 软中断后，旧 signal 已永久 aborted，
    *  调此重建 AbortController 使后续轮拿到未中断的新 signal。主会话/TUI 注入；headless/子代理不注入。 */
   resetSignal?: () => void
+  /** 会话级活跃 worktree 状态（EnterWorktree/ExitWorktree 用）。主会话/headless 注入；子代理不注入。 */
+  worktreeSession?: WorktreeSession
+  /** 会话级 EnterWorktree 用；主会话/headless 注入 */
+  worktreeConfig?: () => import('../worktree.js').WorktreeConfig | undefined
 }
 
 export interface Tool<S extends z.ZodTypeAny = z.ZodTypeAny> {

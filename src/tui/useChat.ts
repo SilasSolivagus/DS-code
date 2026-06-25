@@ -29,7 +29,7 @@ import { runHooks } from '../hooks.js'
 import { makeHookRuntime } from '../hookRuntime.js'
 import { isDangerous, type Decision, type PermissionMode, type PermissionDecisionReason } from '../permissions.js'
 import { resolveDenyList, buildDenySourceMap } from '../deny.js'
-import type { ToolContext } from '../tools/types.js'
+import type { ToolContext, WorktreeSessionState } from '../tools/types.js'
 import { newSession, openSession, listSessions, loadSession, sessionIdFromFile, stripBranchSuffix, nextBranchTitle, type SessionHandle, type UsageRecord } from '../session.js'
 import { costCNY, cacheSavingsCNY } from '../pricing.js'
 import { summarize, rebuildMessages, shouldAutoCompact } from '../compact.js'
@@ -212,6 +212,8 @@ export interface ChatCore {
   subscribe(listener: () => void): () => void
   rewindList(): { turnId: number; preview: string; fileCount: number }[]
   rewind(toTurnId: number, mode: 'conversation' | 'code' | 'both'): void
+  /** 当前会话 cwd（EnterWorktree 切换后实时反映） */
+  getCwd(): string
   /** 退订后台任务通知订阅，避免泄漏（core 生命周期 = 进程，App 无需调用；测试与正确性需要） */
   dispose(): void
   modelList(): import('../providers.js').ModelListItem[]
@@ -261,6 +263,7 @@ export function createChatCore(opts: {
   const checkpointStoreFor = (sessionFile: string) =>
     path.join(os.homedir(), '.deepcode', 'checkpoints', sessionIdFromFile(sessionFile))
 
+  let worktreeState: WorktreeSessionState | null = null
   const ctx: ToolContext = {
     cwd: () => cwd,
     setCwd: d => { cwd = d },
@@ -271,6 +274,8 @@ export function createChatCore(opts: {
     recordBeforeImage: (absPath: string) => { if (currentTurnId > 0) checkpointer.capture(absPath, currentTurnId) },
     hookDispatch: (event, payload) => runHooks(event, payload, settings.hooks, hookDeps),
     sessionId: () => (session ? sessionIdFromFile(session.file) : undefined),
+    worktreeSession: { get: () => worktreeState, set: s => { worktreeState = s } },
+    worktreeConfig: () => settings.worktree,
   }
   const customCommands = loadCustomCommands(cwd)
   const agents = resolveAgents(cwd) // 内建 + 自定义合并后的注册表
@@ -517,6 +522,7 @@ export function createChatCore(opts: {
       onUsage: (u, m) => { usageLog.push({ usage: u, model: m }); session.appendUsage(u, m) },
       getModel: () => model,
       agents,
+      worktree: settings.worktree,
     }),
     makeWebFetchTool({
       client: opts.client,
@@ -1365,6 +1371,7 @@ export function createChatCore(opts: {
         notice('info', `[rewind] 代码：${parts.join('、')}`)
       }
     },
+    getCwd: () => cwd,
     dispose: () => { fireSessionEnd('exit'); unsubNotification(); unsubSteer(); steerQueue.clear(); statusLineRunner?.dispose(); void mcpCleanup?.() },
     modelList: () => providerModelList(activeProvider(), model),
     applyModel,
