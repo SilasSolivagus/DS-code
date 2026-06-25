@@ -122,12 +122,12 @@ describe('Agent 子代理', () => {
     expect(out).toContain('无输出')
   })
 
-  it('子代理抛错时 call 拒绝，且信号量槽位已释放（第二次调用仍成功）', async () => {
+  it('子代理抛错时 call 拒绝，第二次调用仍成功', async () => {
     // 脚本为空 → chatStream 抛 'script exhausted' → sub-loop 异常
     const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
     await expect(tool.call({ description: 'err', prompt: 'boom' }, ctx())).rejects.toThrow('script exhausted')
 
-    // 第二次调用要能拿到信号量并正常返回，证明 finally 的 release 执行了
+    // 第二次调用应正常返回（无信号量阻塞）
     script.push({ result: { content: '正常结果', toolCalls: [], usage, finishReason: 'stop' } })
     const out = await tool.call({ description: 'ok', prompt: 'ok' }, ctx())
     expect(out).toContain('正常结果')
@@ -321,7 +321,7 @@ describe('Agent 后台化（run_in_background）', () => {
     expect(getTask(id)!.status).toBe('completed')
   })
 
-  it('信号量不泄漏：多个后台任务串行跑完不卡', async () => {
+  it('多个后台任务串行跑完不卡', async () => {
     script.push(
       { result: { content: 'r1', toolCalls: [], usage, finishReason: 'stop' } },
       { result: { content: 'r2', toolCalls: [], usage, finishReason: 'stop' } },
@@ -401,5 +401,23 @@ describe('Agent 结构化输出强约束 (L-044)', () => {
     const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
     const out = await tool.call({ description: 't', prompt: 'x', subagent_type: 'general-purpose' }, ctx())
     expect(out).toBe('普通文本结果')
+  })
+})
+
+describe('Agent 无死锁并发（删 MAX_ACTIVE 信号量后）', () => {
+  it('10 个前台子代理并发启动，全部 resolve，无挂起（无共享阻塞池）', async () => {
+    // 每个子代理对应一幕脚本：直接返回文本，单轮结束。
+    for (let i = 0; i < 10; i++) {
+      script.push({ result: { content: `结果${i}`, toolCalls: [], usage, finishReason: 'stop' } })
+    }
+    const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
+    // 并发起 10 个前台 call（若信号量仍存在且上限<10，Promise.all 将死锁；删除后应全部 settle）。
+    const results = await Promise.all(
+      Array.from({ length: 10 }, (_, i) =>
+        tool.call({ description: `并发${i}`, prompt: `任务${i}` }, ctx()),
+      ),
+    )
+    expect(results).toHaveLength(10)
+    expect(results.every((r, i) => r === `结果${i}`)).toBe(true)
   })
 })

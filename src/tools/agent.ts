@@ -12,7 +12,7 @@ import { isDangerous, type Decision } from '../permissions.js'
 import { BUILTIN_AGENTS, GLOBAL_SUBAGENT_DENY, resolveAgentTools, buildAgentDescription, type AgentDefinition } from './agentTypes.js'
 import { generateTaskId, registerTask, updateTask, getTask, enqueueNotification } from '../tasks.js'
 import { taskOutputPath } from '../config.js'
-import { acquire, release, runSubagent } from '../subagentRunner.js'
+import { runSubagent } from '../subagentRunner.js'
 
 /** 子代理无审批 UI：安全命令自动放行、危险命令拒绝（yolo + isDangerous 钳制）。desc = 工具 needsPermission 文本（Bash 即命令原文）。 */
 export function subagentPermissionDecision(desc: string): Decision {
@@ -48,7 +48,7 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
       const subModel =
         resolveSubModel(def.model, deps.getModel())
 
-      // 后台路径：脱钩跑、立即返句柄；信号量在脱钩 async 的 finally 释放（不能在 call 返回前 release）。
+      // 后台路径：脱钩跑、立即返句柄。
       if (input.run_in_background === true) {
         const id = generateTaskId('local_agent')
         const ac = new AbortController()
@@ -62,7 +62,6 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
         })
         ctx.hookDispatch?.('TaskCreated', { hook_event_name: 'TaskCreated', task_kind: 'background', task_id: id, task_description: input.description }).catch(() => {})
         void (async () => {
-          await acquire() // 在脱钩 async 内等许可：句柄立即返回、不阻塞主 loop 只读批
           try {
             const final = await runSubagent({
               client: deps.client, onUsage: deps.onUsage,
@@ -83,26 +82,19 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
           } finally {
             enqueueNotification(getTask(id)!)
             ctx.hookDispatch?.('TaskCompleted', { hook_event_name: 'TaskCompleted', task_kind: 'background', task_id: id, status: getTask(id)!.status }).catch(() => {})
-            release()
           }
         })()
         return `后台子代理已启动 id=${id}（类型 ${type}）。完成时会通知你。`
       }
 
-      // 前台路径（默认）：维持现有 acquire/try-finally-release。
-      await acquire()
-      try {
-        // 前台无 task 注册：生成一个 a-前缀 id 纯作 SubagentStart/Stop hook 的 agent_id 标签（不入 TaskRegistry）。
-        const final = await runSubagent({
-          client: deps.client, onUsage: deps.onUsage,
-          systemPrompt: def.getSystemPrompt(), userPrompt: input.prompt,
-          tools, model: subModel, outputSchema: def.outputSchema,
-          ctx, signal: ctx.signal, agentId: generateTaskId('local_agent'), agentType: type,
-        })
-        return final ?? '（子代理无输出）'
-      } finally {
-        release()
-      }
+      // 前台路径（默认）：删信号量后直接跑（并发由 loop CONCURRENCY 只读批约束）。
+      const final = await runSubagent({
+        client: deps.client, onUsage: deps.onUsage,
+        systemPrompt: def.getSystemPrompt(), userPrompt: input.prompt,
+        tools, model: subModel, outputSchema: def.outputSchema,
+        ctx, signal: ctx.signal, agentId: generateTaskId('local_agent'), agentType: type,
+      })
+      return final ?? '（子代理无输出）'
     },
   }
 }

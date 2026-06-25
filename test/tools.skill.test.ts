@@ -38,7 +38,6 @@ describe('makeSkillTool', () => {
   it('forked：走 runSubagent（mock）返回其结果', async () => {
     vi.resetModules()
     vi.doMock('../src/subagentRunner.js', () => ({
-      acquire: async () => {}, release: () => {},
       runSubagent: async () => '子代理结果',
     }))
     const { makeSkillTool: mk } = await import('../src/tools/skill.js')
@@ -71,8 +70,6 @@ describe('makeSkillTool — 未知 agent 类型回落 general-purpose', () => {
     vi.resetModules()
     let capturedTools: string[] | undefined
     vi.doMock('../src/subagentRunner.js', () => ({
-      acquire: async () => {},
-      release: () => {},
       runSubagent: async (opts: any) => { capturedTools = opts.tools?.map((t: any) => t.name); return '结果' },
     }))
     const { makeSkillTool: mk } = await import('../src/tools/skill.js')

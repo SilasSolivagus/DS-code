@@ -1,5 +1,5 @@
-// src/subagentRunner.ts —— Agent 工具与 forked skill 共用的子代理运行器 + 单例并发信号量。
-// 铁律：信号量只此一份，外部都 import 这里（复制 = 4 并发上限静默翻倍）。
+// src/subagentRunner.ts —— Agent 工具与 forked skill 共用的子代理运行器。
+// 并发由 loop CONCURRENCY=5 只读批每级独立约束（镜像 CC 零上限并发，无共享阻塞池）。
 import type OpenAI from 'openai'
 import type { z } from 'zod'
 import type { Tool, ToolContext } from './tools/types.js'
@@ -7,26 +7,6 @@ import type { Usage } from './api.js'
 import { runLoop } from './loop.js'
 import { makeStructuredOutputTool, structuredOutputReminder, MAX_STRUCTURED_OUTPUT_RETRIES } from './tools/structuredOutput.js'
 import { subagentPermissionDecision } from './tools/agent.js'
-
-// 子代理并发上限 4（spec §4）。Agent 是只读工具会进 loop 的并发批（上限 5），用信号量再压一层。
-const MAX_ACTIVE = 4
-let active = 0
-const waiters: Array<() => void> = []
-export async function acquire(): Promise<void> {
-  if (active < MAX_ACTIVE) { active++; return }
-  await new Promise<void>(r => waiters.push(r)) // 许可由 release 移交，不再自增
-}
-export function release(): void {
-  const next = waiters.shift()
-  if (next) next() // 移交许可：active 不变
-  else active--
-}
-
-/** 仅测试用：重置子代理信号量状态（active/waiters）。 */
-export function __resetSubagentSemaphoreForTest(): void {
-  active = 0
-  waiters.length = 0
-}
 
 // 记忆 fork 专用信号量（独立于用户 subagent 池，防三连点火打爆限流）。
 // MAX_MEMORY_ACTIVE=2：extract+sessionMemory+dream 最多 2 个并发，不饿死用户主动起的 Task。
@@ -63,8 +43,7 @@ export interface RunSubagentOpts {
   agentType: string
 }
 
-/** 跑子代理子循环，返回最后一条 assistant 文本或结构化 JSON。SubagentStart/Stop hook + L-044 结构化输出。
- *  acquire/release 由调用方在外层管（agent.ts 前后台、skill.ts forked），本函数不碰信号量。 */
+/** 跑子代理子循环，返回最后一条 assistant 文本或结构化 JSON。SubagentStart/Stop hook + L-044 结构化输出。 */
 export async function runSubagent(opts: RunSubagentOpts): Promise<string | undefined> {
   const { ctx, signal, agentId, agentType: type } = opts
   const messages: any[] = [
