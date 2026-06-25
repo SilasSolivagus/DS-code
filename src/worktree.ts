@@ -6,7 +6,7 @@ import path from 'node:path'
 const exec = promisify(execFile)
 
 export interface WorktreeConfig { symlinkDirectories?: string[]; sparsePaths?: string[] }
-export interface WorktreeHandle { worktreePath: string; worktreeBranch: string; headCommit: string; gitRoot: string }
+export interface WorktreeHandle { worktreePath: string; worktreeBranch: string; headCommit: string; gitRoot: string; hookBased?: boolean }
 
 async function git(args: string[], cwd: string): Promise<{ stdout: string; stderr: string; code: number }> {
   try {

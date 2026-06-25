@@ -17,6 +17,16 @@ export const exitWorktreeTool: Tool<typeof schema> = {
   async call(input, ctx) {
     const ws = ctx.worktreeSession?.get()
     if (!ctx.worktreeSession || !ws) return '当前不在 worktree 会话中，无需退出。'
+    // hookBased 路径：跳过 git 改动检测；remove 时发 WorktreeRemove hook；keep 时只恢复 cwd
+    if (ws.hookBased) {
+      ctx.setCwd(ws.originalCwd)
+      ctx.worktreeSession.set(null)
+      if (input.action === 'remove') {
+        await ctx.hookDispatch?.('WorktreeRemove', { hook_event_name: 'WorktreeRemove', worktree_path: ws.worktreePath }).catch(() => {})
+        return `已退出并移除 worktree（${ws.worktreePath}）。会话已回到 ${ws.originalCwd}。`
+      }
+      return `已退出 worktree，工作保留在 ${ws.worktreePath}（hook-based）。会话已回到 ${ws.originalCwd}。`
+    }
     if (input.action === 'remove' && !input.discard_changes) {
       const ch = await worktreeChanges(ws.worktreePath, ws.headCommit)
       if (ch.changedFiles > 0 || ch.commits > 0) {

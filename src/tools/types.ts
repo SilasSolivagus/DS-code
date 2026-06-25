@@ -9,6 +9,7 @@ export interface WorktreeSessionState {
   worktreeBranch: string
   headCommit: string
   gitRoot: string
+  hookBased?: boolean
 }
 
 export interface WorktreeSession {

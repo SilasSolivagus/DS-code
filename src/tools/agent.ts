@@ -55,17 +55,24 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
 
       const wantWorktree = input.isolation === 'worktree'
 
-      // 建 worktree（非 git 且无 hook → 抛错；hook 兜底见 Task 7，本任务先做 git 路径 + 非 git 抛错）
+      // 建 worktree（git 路径正常建；非 git 时尝试 WorktreeCreate hook 兜底；hook 也没有 → 抛错）
       async function setupWorktree(agentId: string): Promise<WorktreeHandle | null> {
         if (!wantWorktree) return null
         const root = await resolveGitRoot(ctx.cwd())
-        if (!root) throw new Error('isolation:"worktree" 需要 git 仓库（或配置 WorktreeCreate hook）。当前目录不是 git 仓库。')
+        if (!root) {
+          const name = `agent-${agentId.slice(1, 9)}`
+          const out = await ctx.hookDispatch?.('WorktreeCreate', { hook_event_name: 'WorktreeCreate', name })
+          const hookPath = out?.additionalContext?.trim()
+          if (hookPath) return { worktreePath: hookPath, worktreeBranch: '', headCommit: '', gitRoot: '', hookBased: true }
+          throw new Error('isolation:"worktree" 需要 git 仓库（或配置 WorktreeCreate hook）。当前目录不是 git 仓库。')
+        }
         return createWorktree(root, `agent-${agentId.slice(1, 9)}`, deps.worktree)
       }
 
-      // 收尾：无改动删、有改动留并回传
+      // 收尾：hookBased → 一律保留（镜像 CC hook-based 行为）；git 路径：无改动删、有改动留并回传
       async function teardownWorktree(wt: WorktreeHandle | null, final: string | undefined): Promise<string> {
         if (!wt) return final ?? '（子代理无输出）'
+        if (wt.hookBased) return `${final ?? '（子代理无输出）'}\n\n[worktree] 改动保留在 ${wt.worktreePath}（hook-based）。`
         const ch = await worktreeChanges(wt.worktreePath, wt.headCommit)
         if (ch.changedFiles === 0 && ch.commits === 0) { await removeWorktree(wt); return final ?? '（子代理无输出）' }
         return `${final ?? '（子代理无输出）'}\n\n[worktree] 改动保留在 ${wt.worktreePath}（分支 ${wt.worktreeBranch}）。`
@@ -98,7 +105,7 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
             // runLoop 在 abort 时是 return 'aborted'（不抛错），runSubagent 仍正常返回——
             // 必须显式查 ac.signal.aborted，否则被 TaskStop 中断的子代理会被误标 completed。
             if (ac.signal.aborted) {
-              if (wt) await removeWorktree(wt).catch(() => {})
+              if (wt && !wt.hookBased) await removeWorktree(wt).catch(() => {})
               updateTask(id, { status: 'killed', endTime: Date.now() })
             } else {
               const result = await teardownWorktree(wt, final)
@@ -106,7 +113,7 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
               updateTask(id, { status: 'completed', endTime: Date.now(), result })
             }
           } catch {
-            if (wt) await removeWorktree(wt).catch(() => {})
+            if (wt && !wt.hookBased) await removeWorktree(wt).catch(() => {})
             updateTask(id, { status: ac.signal.aborted ? 'killed' : 'failed', endTime: Date.now() })
           } finally {
             enqueueNotification(getTask(id)!)
@@ -128,7 +135,7 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
           ctx, signal: ctx.signal, agentId: fgId, agentType: type,
           worktreePath: wt?.worktreePath,
         })
-      } catch (e) { if (wt) await removeWorktree(wt).catch(() => {}); throw e }
+      } catch (e) { if (wt && !wt.hookBased) await removeWorktree(wt).catch(() => {}); throw e }
       return teardownWorktree(wt, final)
     },
   }

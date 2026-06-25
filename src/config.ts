@@ -75,7 +75,7 @@ export interface Settings {
   theme?: string
   /** 用户自设状态栏命令：执行取 stdout 附加进状态栏。仅信任 user scope（DANGEROUS_TOP_KEYS 剥离 project）。 */
   statusLineCommand?: string
-  /** worktree 隔离配置（isolation:"worktree" 子代理用）。仅信任 user scope（Task 7 layering 处理）。 */
+  /** git worktree 配置（isolation:"worktree" / EnterWorktree 用；全层生效不剥离）。 */
   worktree?: { symlinkDirectories?: string[]; sparsePaths?: string[] }
 }
 

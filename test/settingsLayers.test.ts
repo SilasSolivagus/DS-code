@@ -166,6 +166,32 @@ describe('mergeScopePartials permissionSources', () => {
 
 import { DANGEROUS_TOP_KEYS } from '../src/settingsLayers.js'
 
+describe('1.5 worktree 配置全层生效', () => {
+  it('flag scope worktree 配置经 parsePresent 保留', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dc-wt-layer-'))
+    const flagFile = join(dir, 'flag.json')
+    try {
+      writeFileSync(flagFile, JSON.stringify({ worktree: { symlinkDirectories: ['node_modules'], sparsePaths: ['pkg'] } }))
+      const res = loadLayeredSettings(dir, flagFile)
+      expect(res.settings.worktree).toEqual({ symlinkDirectories: ['node_modules'], sparsePaths: ['pkg'] })
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+  it('project scope worktree 配置不被剥离（全层生效）', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dc-wt-proj-'))
+    try {
+      mkdirSync(join(dir, '.deepcode'), { recursive: true })
+      writeFileSync(join(dir, '.deepcode', 'settings.json'), JSON.stringify({
+        worktree: { symlinkDirectories: ['node_modules'] },
+      }))
+      const res = loadLayeredSettings(dir, undefined)
+      expect(res.settings.worktree).toEqual({ symlinkDirectories: ['node_modules'] })
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+  it('worktree 不在 DANGEROUS_TOP_KEYS', () => {
+    expect((DANGEROUS_TOP_KEYS as readonly string[]).includes('worktree')).toBe(false)
+  })
+})
+
 describe('5.7 statusLineCommand 信任边界', () => {
   it('statusLineCommand 在 DANGEROUS_TOP_KEYS', () => {
     expect((DANGEROUS_TOP_KEYS as readonly string[]).includes('statusLineCommand')).toBe(true)

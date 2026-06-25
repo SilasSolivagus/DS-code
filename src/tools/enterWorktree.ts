@@ -18,13 +18,20 @@ export const enterWorktreeTool: Tool<typeof schema> = {
     if (!ctx.worktreeSession) return 'EnterWorktree 在当前上下文不可用。'
     if (ctx.worktreeSession.get()) throw new Error('已在 worktree 会话中（先 ExitWorktree 退出）。')
     const root = await resolveGitRoot(ctx.cwd())
-    if (!root) throw new Error('当前目录不是 git 仓库，无法创建 worktree。')
     const name = input.name ?? `wt-${randomBytes(4).toString('hex')}`
     const originalCwd = ctx.cwd()
+    if (!root) {
+      // 非 git 仓库：尝试 WorktreeCreate hook 兜底
+      const out = await ctx.hookDispatch?.('WorktreeCreate', { hook_event_name: 'WorktreeCreate', name })
+      const hookPath = out?.additionalContext?.trim()
+      if (!hookPath) throw new Error('当前目录不是 git 仓库，无法创建 worktree。')
+      ctx.setCwd(hookPath)
+      ctx.worktreeSession.set({ originalCwd, worktreePath: hookPath, worktreeBranch: '', headCommit: '', gitRoot: '', hookBased: true })
+      return `已在 ${hookPath} 创建 worktree（hook-based）。会话已切入该 worktree。用 ExitWorktree 退出。`
+    }
     const h = await createWorktree(root, name)
     ctx.setCwd(h.worktreePath)
     ctx.worktreeSession.set({ originalCwd, ...h })
-    // Task 7 adds WorktreeCreate to HOOK_EVENTS dispatch; already present in HOOK_EVENTS
     await ctx.hookDispatch?.('WorktreeCreate', { hook_event_name: 'WorktreeCreate', name, cwd: h.worktreePath }).catch(() => {})
     return `已在 ${h.worktreePath} 创建 worktree（分支 ${h.worktreeBranch}）。会话已切入该 worktree。用 ExitWorktree 退出。`
   },

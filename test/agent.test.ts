@@ -499,6 +499,34 @@ describe('Agent isolation:worktree', () => {
     rmSync(tmpDir, { recursive: true, force: true })
   })
 
+  it('非 git + WorktreeCreate hook 返回路径 → hookBased worktree 启动，回传 hook-based 文案', async () => {
+    const tmpDir = mkdtempSync(path.join(tmpdir(), 'dc-hookwt-'))
+    const hookWtPath = mkdtempSync(path.join(tmpdir(), 'dc-hookwt-path-'))
+    subagentRunnerOverride = async () => 'hook-result'
+    const dispatch = vi.fn(async (event: string) => {
+      if (event === 'WorktreeCreate') return { ...emptyOutcome, additionalContext: hookWtPath }
+      return emptyOutcome
+    })
+    const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
+    const c: any = { cwd: () => tmpDir, setCwd: () => {}, signal: new AbortController().signal, fileState: new Map(), hookDispatch: dispatch }
+    const out = await tool.call({ description: 't', prompt: 'p', isolation: 'worktree' }, c)
+    expect(out).toContain('hook-based')
+    expect(out).toContain(hookWtPath)
+    expect(out).toContain('hook-result')
+    rmSync(tmpDir, { recursive: true, force: true })
+    rmSync(hookWtPath, { recursive: true, force: true })
+  })
+
+  it('非 git + hook 无 additionalContext → 仍抛 git 仓库错误', async () => {
+    const tmpDir = mkdtempSync(path.join(tmpdir(), 'dc-hookwt-noctx-'))
+    subagentRunnerOverride = async () => 'noop'
+    const dispatch = vi.fn(async () => emptyOutcome)
+    const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
+    const c: any = { cwd: () => tmpDir, setCwd: () => {}, signal: new AbortController().signal, fileState: new Map(), hookDispatch: dispatch }
+    await expect(tool.call({ description: 't', prompt: 'p', isolation: 'worktree' }, c)).rejects.toThrow(/git 仓库/)
+    rmSync(tmpDir, { recursive: true, force: true })
+  })
+
   it('isolation:worktree 后台子代理写文件→结果含 path+branch', async () => {
     subagentRunnerOverride = async (opts) => {
       if (opts.worktreePath) writeFileSync(path.join(opts.worktreePath, 'bg-file.ts'), '// bg')

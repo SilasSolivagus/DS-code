@@ -118,4 +118,82 @@ describe('EnterWorktree / ExitWorktree', () => {
       fs.rmSync(nonGit, { recursive: true, force: true })
     }
   })
+
+  it('EnterWorktree 非 git + WorktreeCreate hook → hookBased cwd 切换', async () => {
+    const nonGit = fs.mkdtempSync(path.join(os.tmpdir(), 'dc-nogit-hb-'))
+    const hookPath = fs.mkdtempSync(path.join(os.tmpdir(), 'dc-hookpath-'))
+    try {
+      const { ctx, session } = makeCtx(nonGit)
+      ;(ctx as any).hookDispatch = async (event: string) => {
+        if (event === 'WorktreeCreate') return { block: false, preventContinuation: false, stop: false, results: [], additionalContext: hookPath }
+        return { block: false, preventContinuation: false, stop: false, results: [] }
+      }
+      const result = await enterWorktreeTool.call({ name: 'hb1' }, ctx)
+      expect(result).toContain('hook-based')
+      expect(result).toContain(hookPath)
+      expect(ctx.cwd()).toBe(hookPath)
+      expect(session.get()?.hookBased).toBe(true)
+      expect(session.get()?.worktreePath).toBe(hookPath)
+    } finally {
+      fs.rmSync(nonGit, { recursive: true, force: true })
+      fs.rmSync(hookPath, { recursive: true, force: true })
+    }
+  })
+
+  it('EnterWorktree 非 git + hook 无 additionalContext → 抛错', async () => {
+    const nonGit = fs.mkdtempSync(path.join(os.tmpdir(), 'dc-nogit-nohook-'))
+    try {
+      const { ctx } = makeCtx(nonGit)
+      ;(ctx as any).hookDispatch = async () => ({ block: false, preventContinuation: false, stop: false, results: [] })
+      await expect(enterWorktreeTool.call({}, ctx)).rejects.toThrow('git 仓库')
+    } finally {
+      fs.rmSync(nonGit, { recursive: true, force: true })
+    }
+  })
+
+  it('ExitWorktree hookBased keep → 恢复 cwd，无 git 操作', async () => {
+    const nonGit = fs.mkdtempSync(path.join(os.tmpdir(), 'dc-hb-keep-'))
+    const hookPath = fs.mkdtempSync(path.join(os.tmpdir(), 'dc-hb-keep-path-'))
+    try {
+      const { ctx, session } = makeCtx(nonGit)
+      ;(ctx as any).hookDispatch = async (event: string) => {
+        if (event === 'WorktreeCreate') return { block: false, preventContinuation: false, stop: false, results: [], additionalContext: hookPath }
+        return { block: false, preventContinuation: false, stop: false, results: [] }
+      }
+      await enterWorktreeTool.call({ name: 'hb2' }, ctx)
+      expect(ctx.cwd()).toBe(hookPath)
+      const result = await exitWorktreeTool.call({ action: 'keep' }, ctx)
+      expect(result).toContain('hook-based')
+      expect(ctx.cwd()).toBe(nonGit)
+      expect(session.get()).toBeNull()
+    } finally {
+      fs.rmSync(nonGit, { recursive: true, force: true })
+      fs.rmSync(hookPath, { recursive: true, force: true })
+    }
+  })
+
+  it('ExitWorktree hookBased remove → 恢复 cwd + 发 WorktreeRemove hook，无 git 操作', async () => {
+    const nonGit = fs.mkdtempSync(path.join(os.tmpdir(), 'dc-hb-rm-'))
+    const hookPath = fs.mkdtempSync(path.join(os.tmpdir(), 'dc-hb-rm-path-'))
+    const firedEvents: string[] = []
+    try {
+      const { ctx, session } = makeCtx(nonGit)
+      ;(ctx as any).hookDispatch = async (event: string) => {
+        firedEvents.push(event)
+        if (event === 'WorktreeCreate') return { block: false, preventContinuation: false, stop: false, results: [], additionalContext: hookPath }
+        return { block: false, preventContinuation: false, stop: false, results: [] }
+      }
+      await enterWorktreeTool.call({ name: 'hb3' }, ctx)
+      const result = await exitWorktreeTool.call({ action: 'remove' }, ctx)
+      expect(result).toContain('移除')
+      expect(ctx.cwd()).toBe(nonGit)
+      expect(session.get()).toBeNull()
+      // hookPath directory should still exist (hook-based, no git removeWorktree)
+      expect(fs.existsSync(hookPath)).toBe(true)
+      expect(firedEvents).toContain('WorktreeRemove')
+    } finally {
+      fs.rmSync(nonGit, { recursive: true, force: true })
+      fs.rmSync(hookPath, { recursive: true, force: true })
+    }
+  })
 })
