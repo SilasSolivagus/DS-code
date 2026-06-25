@@ -53,6 +53,8 @@ export function worktreeSubagentPrompt(parentCwd: string, worktreePath: string):
 /** 跑子代理子循环，返回最后一条 assistant 文本或结构化 JSON。SubagentStart/Stop hook + L-044 结构化输出。 */
 export async function runSubagent(opts: RunSubagentOpts): Promise<string | undefined> {
   const { ctx, signal, agentId, agentType: type } = opts
+  // 子代理独立 cwd：初值=worktreePath（worktree 模式）或调用时父 cwd 快照。setCwd 漂移自身、不污染父 cwd。
+  let subCwd = opts.worktreePath ?? ctx.cwd()
   const sysPrompt = opts.worktreePath
     ? opts.systemPrompt + worktreeSubagentPrompt(ctx.cwd(), opts.worktreePath)
     : opts.systemPrompt
@@ -68,7 +70,6 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string | undef
       messages.push({ role: 'user', content: `<hook-context>\n${startOut.additionalContext}\n</hook-context>` })
     }
   }
-  let subCwd = opts.worktreePath ?? ctx.cwd()
   const subCtx: ToolContext = {
     cwd: () => subCwd,
     setCwd: d => { subCwd = d }, // 独立变量：子代理内 Bash cd 漂移自身 cwd，不污染主 cwd
