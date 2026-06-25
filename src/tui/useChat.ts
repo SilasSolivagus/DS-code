@@ -517,6 +517,7 @@ export function createChatCore(opts: {
       onUsage: (u, m) => { usageLog.push({ usage: u, model: m }); session.appendUsage(u, m) },
       getModel: () => model,
       agents,
+      worktree: settings.worktree,
     }),
     makeWebFetchTool({
       client: opts.client,

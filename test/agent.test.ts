@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { z } from 'zod'
-import { mkdtempSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync, rmSync } from 'node:fs'
+import { execSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { clearAllTasks, drainNotifications, listTasks, getTask } from '../src/tasks.js'
@@ -35,6 +36,20 @@ vi.mock('../src/api.js', () => ({
     })(),
   ),
 }))
+
+// subagentRunner mock：worktree 测试控制子代理行为（写文件/不写/抛错）。
+// 默认 null = 走真实实现（其余测试照用 chatStream script）。
+let subagentRunnerOverride: ((opts: any) => Promise<string>) | null = null
+vi.mock('../src/subagentRunner.js', async orig => {
+  const actual = await orig() as any
+  return {
+    ...actual,
+    runSubagent: vi.fn(async (opts: any) => {
+      if (subagentRunnerOverride) return subagentRunnerOverride(opts)
+      return actual.runSubagent(opts)
+    }),
+  }
+})
 
 import { makeAgentTool, subagentPermissionDecision } from '../src/tools/agent.js'
 import { BUILTIN_AGENTS } from '../src/tools/agentTypes.js'
@@ -416,6 +431,84 @@ describe('Agent 结构化输出强约束 (L-044)', () => {
     const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
     const out = await tool.call({ description: 't', prompt: 'x', subagent_type: 'general-purpose' }, ctx())
     expect(out).toBe('普通文本结果')
+  })
+})
+
+// ── worktree 辅助 ──────────────────────────────────────────────────────────────
+function initGitRepo(): string {
+  const dir = mkdtempSync(path.join(tmpdir(), 'dc-wt-'))
+  execSync('git init', { cwd: dir, stdio: 'pipe' })
+  execSync('git config user.email "test@test.com"', { cwd: dir, stdio: 'pipe' })
+  execSync('git config user.name "Test"', { cwd: dir, stdio: 'pipe' })
+  writeFileSync(path.join(dir, 'README.md'), 'init')
+  execSync('git add README.md', { cwd: dir, stdio: 'pipe' })
+  execSync('git commit -m "init"', { cwd: dir, stdio: 'pipe' })
+  return dir
+}
+
+describe('Agent isolation:worktree', () => {
+  let repo: string
+  beforeEach(() => { repo = initGitRepo(); subagentRunnerOverride = null })
+  afterEach(() => { subagentRunnerOverride = null; try { rmSync(repo, { recursive: true, force: true }) } catch {} })
+
+  it('子代理写文件→主树不变、worktree 有改动、回传 path+branch', async () => {
+    subagentRunnerOverride = async (opts) => {
+      // 在 worktreePath 写一个新文件模拟子代理改动
+      if (opts.worktreePath) writeFileSync(path.join(opts.worktreePath, 'new-file.ts'), '// new')
+      return 'done'
+    }
+    const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
+    const c: any = { cwd: () => repo, setCwd: () => {}, signal: new AbortController().signal, fileState: new Map() }
+    const out = await tool.call({ description: 't', prompt: 'p', isolation: 'worktree' }, c)
+    // 返回文本含 worktree 路径 + 分支名
+    expect(out).toContain('[worktree]')
+    expect(out).toContain('worktree-agent-')
+    expect(out).toContain('done')
+    // 主树无新文件
+    expect(existsSync(path.join(repo, 'new-file.ts'))).toBe(false)
+    // worktree 路径保留（有改动，未删）
+    const pathMatch = out.match(/改动保留在 (.+?)（/)
+    expect(pathMatch).toBeTruthy()
+    const wtPath = pathMatch![1]
+    expect(existsSync(path.join(wtPath, 'new-file.ts'))).toBe(true)
+  })
+
+  it('子代理无改动→worktree 自动删', async () => {
+    subagentRunnerOverride = async (_opts) => 'noop'
+    const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
+    const c: any = { cwd: () => repo, setCwd: () => {}, signal: new AbortController().signal, fileState: new Map() }
+    const out = await tool.call({ description: 't', prompt: 'p', isolation: 'worktree' }, c)
+    expect(out).not.toContain('[worktree]')
+    expect(out).toBe('noop')
+    // worktree 目录被删（.deepcode/worktrees/ 无残留）
+    const worktreesDir = path.join(repo, '.deepcode', 'worktrees')
+    const remaining = existsSync(worktreesDir) ? require('node:fs').readdirSync(worktreesDir) : []
+    expect(remaining.length).toBe(0)
+  })
+
+  it('非 git 仓库→抛含提示的错误', async () => {
+    const tmpDir = mkdtempSync(path.join(tmpdir(), 'dc-nongit-'))
+    subagentRunnerOverride = async () => 'noop'
+    const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
+    const c: any = { cwd: () => tmpDir, setCwd: () => {}, signal: new AbortController().signal, fileState: new Map() }
+    await expect(tool.call({ description: 't', prompt: 'p', isolation: 'worktree' }, c)).rejects.toThrow(/git 仓库/)
+    rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('isolation:worktree 后台子代理写文件→结果含 path+branch', async () => {
+    subagentRunnerOverride = async (opts) => {
+      if (opts.worktreePath) writeFileSync(path.join(opts.worktreePath, 'bg-file.ts'), '// bg')
+      return 'bg-done'
+    }
+    const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
+    const c: any = { cwd: () => repo, setCwd: () => {}, signal: new AbortController().signal, fileState: new Map() }
+    const out = await tool.call({ description: 'bg', prompt: 'p', run_in_background: true, isolation: 'worktree' }, c)
+    const id = out.match(/id=(a[0-9a-z]{8})/)![1]
+    await waitForDone(id)
+    const t = getTask(id)!
+    expect(t.status).toBe('completed')
+    expect(t.result).toContain('[worktree]')
+    expect(t.result).toContain('bg-done')
   })
 })
 

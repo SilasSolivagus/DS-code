@@ -75,6 +75,8 @@ export interface Settings {
   theme?: string
   /** 用户自设状态栏命令：执行取 stdout 附加进状态栏。仅信任 user scope（DANGEROUS_TOP_KEYS 剥离 project）。 */
   statusLineCommand?: string
+  /** worktree 隔离配置（isolation:"worktree" 子代理用）。仅信任 user scope（Task 7 layering 处理）。 */
+  worktree?: { symlinkDirectories?: string[]; sparsePaths?: string[] }
 }
 
 const DIR = path.join(os.homedir(), '.deepcode')
@@ -127,6 +129,7 @@ export function loadRawUserSettings(): Settings {
     outputStyle: raw?.outputStyle,
     theme: raw?.theme,
     statusLineCommand: raw?.statusLineCommand,
+    worktree: parseWorktreeConfig(raw?.worktree),
   }
 }
 
@@ -235,6 +238,16 @@ export function parseWebSearchConfig(raw: unknown): WebSearchSettings | undefine
   const t = pick(r.tavily); if (t) out.tavily = t
   if (typeof r.provider === 'string') out.provider = r.provider
   return Object.keys(out).length ? out : undefined
+}
+
+/** 宽松解析 settings.worktree：symlinkDirectories/sparsePaths 各取 string[]。两者均无则返 undefined。 */
+export function parseWorktreeConfig(raw: unknown): Settings['worktree'] | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const r = raw as Record<string, unknown>
+  const out: NonNullable<Settings['worktree']> = {}
+  const sd = parseStringArray(r.symlinkDirectories); if (sd) out.symlinkDirectories = sd
+  const sp = parseStringArray(r.sparsePaths); if (sp) out.sparsePaths = sp
+  return (out.symlinkDirectories || out.sparsePaths) ? out : undefined
 }
 
 /** 解析 string[]：过滤非 string、trim、去空。非数组 → undefined；空数组保留为 []（语义区分）。 */
