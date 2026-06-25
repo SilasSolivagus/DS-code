@@ -14,9 +14,9 @@ export interface AgentDefinition {
   getSystemPrompt(): string // 每类一段独立 prompt
 }
 
-// 全局子代理 deny：仅 ExitPlanMode（子代理无 plan 模式 UI）。
+// 全局子代理 deny：ExitPlanMode（无 plan 模式 UI）+ EnterWorktree/ExitWorktree（worktreeSession 仅主会话注入）。
 // Edit/Write/NotebookEdit 移除→可写；Agent 移除→可递归派子代理（照搬 CC，删信号量后无死锁）。
-export const GLOBAL_SUBAGENT_DENY = ['ExitPlanMode']
+export const GLOBAL_SUBAGENT_DENY = ['ExitPlanMode', 'EnterWorktree', 'ExitWorktree']
 
 /**
  * 照搬 CC resolveAgentTools 三步：deny 永远赢 allow；无 allow = 通配 = 全池减 deny。

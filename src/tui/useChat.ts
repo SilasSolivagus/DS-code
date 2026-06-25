@@ -29,7 +29,7 @@ import { runHooks } from '../hooks.js'
 import { makeHookRuntime } from '../hookRuntime.js'
 import { isDangerous, type Decision, type PermissionMode, type PermissionDecisionReason } from '../permissions.js'
 import { resolveDenyList, buildDenySourceMap } from '../deny.js'
-import type { ToolContext } from '../tools/types.js'
+import type { ToolContext, WorktreeSessionState } from '../tools/types.js'
 import { newSession, openSession, listSessions, loadSession, sessionIdFromFile, stripBranchSuffix, nextBranchTitle, type SessionHandle, type UsageRecord } from '../session.js'
 import { costCNY, cacheSavingsCNY } from '../pricing.js'
 import { summarize, rebuildMessages, shouldAutoCompact } from '../compact.js'
@@ -261,6 +261,7 @@ export function createChatCore(opts: {
   const checkpointStoreFor = (sessionFile: string) =>
     path.join(os.homedir(), '.deepcode', 'checkpoints', sessionIdFromFile(sessionFile))
 
+  let worktreeState: WorktreeSessionState | null = null
   const ctx: ToolContext = {
     cwd: () => cwd,
     setCwd: d => { cwd = d },
@@ -271,6 +272,7 @@ export function createChatCore(opts: {
     recordBeforeImage: (absPath: string) => { if (currentTurnId > 0) checkpointer.capture(absPath, currentTurnId) },
     hookDispatch: (event, payload) => runHooks(event, payload, settings.hooks, hookDeps),
     sessionId: () => (session ? sessionIdFromFile(session.file) : undefined),
+    worktreeSession: { get: () => worktreeState, set: s => { worktreeState = s } },
   }
   const customCommands = loadCustomCommands(cwd)
   const agents = resolveAgents(cwd) // 内建 + 自定义合并后的注册表
