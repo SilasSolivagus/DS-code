@@ -1,5 +1,19 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { acquireMemory, releaseMemory, __resetMemorySemaphoreForTest } from '../src/subagentRunner.js'
+import { acquireMemory, releaseMemory, __resetMemorySemaphoreForTest, worktreeSubagentPrompt } from '../src/subagentRunner.js'
+
+describe('worktreeSubagentPrompt', () => {
+  it('含 worktree 路径 + 隔离语义 + 不影响父代理文件', () => {
+    const p = worktreeSubagentPrompt('/repo', '/repo/.deepcode/worktrees/agent-abc')
+    expect(p).toContain('/repo/.deepcode/worktrees/agent-abc')
+    expect(p).toContain('隔离')
+    expect(p).toMatch(/不影响|不会影响/)
+  })
+
+  it('含父 cwd 路径', () => {
+    const p = worktreeSubagentPrompt('/home/user/project', '/home/user/project/.deepcode/worktrees/xyz')
+    expect(p).toContain('/home/user/project')
+  })
+})
 
 describe('subagentRunner 记忆信号量', () => {
   afterEach(() => __resetMemorySemaphoreForTest())

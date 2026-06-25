@@ -41,13 +41,23 @@ export interface RunSubagentOpts {
   signal: AbortSignal
   agentId: string
   agentType: string
+  /** worktree 路径。设置后子代理 cwd 锚定此 worktree，系统提示追加隔离说明。 */
+  worktreePath?: string
+}
+
+/** worktree 子代理隔离提示（追加在 agent 系统提示后）。对齐 CC H_4。 */
+export function worktreeSubagentPrompt(parentCwd: string, worktreePath: string): string {
+  return `\n\n你在一个隔离的 git worktree 里工作：${worktreePath}——同一仓库、同样的相对文件结构、独立工作副本。继承上下文里的路径指向父代理的工作目录（${parentCwd}），需翻译到你的 worktree 根。编辑前先重读文件（父代理可能已改动）。你的改动只留在此 worktree，不会影响父代理的文件。`
 }
 
 /** 跑子代理子循环，返回最后一条 assistant 文本或结构化 JSON。SubagentStart/Stop hook + L-044 结构化输出。 */
 export async function runSubagent(opts: RunSubagentOpts): Promise<string | undefined> {
   const { ctx, signal, agentId, agentType: type } = opts
+  const sysPrompt = opts.worktreePath
+    ? opts.systemPrompt + worktreeSubagentPrompt(ctx.cwd(), opts.worktreePath)
+    : opts.systemPrompt
   const messages: any[] = [
-    { role: 'system', content: opts.systemPrompt },
+    { role: 'system', content: sysPrompt },
     { role: 'user', content: opts.userPrompt },
   ]
   if (ctx.hookDispatch) {
@@ -58,9 +68,10 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string | undef
       messages.push({ role: 'user', content: `<hook-context>\n${startOut.additionalContext}\n</hook-context>` })
     }
   }
+  let subCwd = opts.worktreePath ?? ctx.cwd()
   const subCtx: ToolContext = {
-    cwd: ctx.cwd,
-    setCwd: () => { /* 子代理只读，不许漂移主 cwd */ },
+    cwd: () => subCwd,
+    setCwd: d => { subCwd = d }, // 独立变量：子代理内 Bash cd 漂移自身 cwd，不污染主 cwd
     get signal() { return signal }, // 前台=主 loop signal；后台=任务 AbortController（供 TaskStop）
     fileState: new Map(), // 独立 fileState，不污染主会话 read-before-edit 状态
     isSubagent: true, // 子代理纯执行：禁止起后台任务（防污染主会话通知队列）
