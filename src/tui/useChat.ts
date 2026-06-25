@@ -212,6 +212,8 @@ export interface ChatCore {
   subscribe(listener: () => void): () => void
   rewindList(): { turnId: number; preview: string; fileCount: number }[]
   rewind(toTurnId: number, mode: 'conversation' | 'code' | 'both'): void
+  /** 当前会话 cwd（EnterWorktree 切换后实时反映） */
+  getCwd(): string
   /** 退订后台任务通知订阅，避免泄漏（core 生命周期 = 进程，App 无需调用；测试与正确性需要） */
   dispose(): void
   modelList(): import('../providers.js').ModelListItem[]
@@ -273,6 +275,7 @@ export function createChatCore(opts: {
     hookDispatch: (event, payload) => runHooks(event, payload, settings.hooks, hookDeps),
     sessionId: () => (session ? sessionIdFromFile(session.file) : undefined),
     worktreeSession: { get: () => worktreeState, set: s => { worktreeState = s } },
+    worktreeConfig: () => settings.worktree,
   }
   const customCommands = loadCustomCommands(cwd)
   const agents = resolveAgents(cwd) // 内建 + 自定义合并后的注册表
@@ -1368,6 +1371,7 @@ export function createChatCore(opts: {
         notice('info', `[rewind] 代码：${parts.join('、')}`)
       }
     },
+    getCwd: () => cwd,
     dispose: () => { fireSessionEnd('exit'); unsubNotification(); unsubSteer(); steerQueue.clear(); statusLineRunner?.dispose(); void mcpCleanup?.() },
     modelList: () => providerModelList(activeProvider(), model),
     applyModel,

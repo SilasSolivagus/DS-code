@@ -61,6 +61,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     sessionId: () => sessionId,
     injectUserMessage: (c: string) => injectionBuffer.push(c),
     worktreeSession: { get: () => worktreeState, set: s => { worktreeState = s } },
+    worktreeConfig: () => settings.worktree,
   }
   const total: Usage = { prompt_tokens: 0, completion_tokens: 0, prompt_cache_hit_tokens: 0 }
   let turns = 0

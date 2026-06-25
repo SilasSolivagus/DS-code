@@ -161,12 +161,13 @@ export function FullscreenApp(props: {
 
   const suggestionsActive = suggestions.length > 0
 
-  const cwdBase = useMemo(() => path.basename(props.cwd), [])  // eslint-disable-line react-hooks/exhaustive-deps
+  const liveCwd = core.getCwd()
+  const cwdBase = path.basename(liveCwd)
   const branch = useMemo(() => {
     try {
-      return execSync('git branch --show-current', { cwd: props.cwd, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() || null
+      return execSync('git branch --show-current', { cwd: liveCwd, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() || null
     } catch { return null }
-  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [liveCwd])
   const memoryCount = useMemo(() => findMemoryFiles(props.cwd).length, [])  // eslint-disable-line react-hooks/exhaustive-deps
   const modeLabel = (state.permMode === 'acceptEdits' ? 'accept' : state.permMode === 'yolo' ? 'yolo' : state.permMode === 'plan' ? 'plan' : 'default')
     + (state.thinking ? '·think' : '')

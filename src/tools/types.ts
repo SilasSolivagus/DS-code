@@ -45,6 +45,8 @@ export interface ToolContext {
   resetSignal?: () => void
   /** 会话级活跃 worktree 状态（EnterWorktree/ExitWorktree 用）。主会话/headless 注入；子代理不注入。 */
   worktreeSession?: WorktreeSession
+  /** 会话级 EnterWorktree 用；主会话/headless 注入 */
+  worktreeConfig?: () => import('../worktree.js').WorktreeConfig | undefined
 }
 
 export interface Tool<S extends z.ZodTypeAny = z.ZodTypeAny> {

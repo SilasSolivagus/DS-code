@@ -29,7 +29,7 @@ export const enterWorktreeTool: Tool<typeof schema> = {
       ctx.worktreeSession.set({ originalCwd, worktreePath: hookPath, worktreeBranch: '', headCommit: '', gitRoot: '', hookBased: true })
       return `已在 ${hookPath} 创建 worktree（hook-based）。会话已切入该 worktree。用 ExitWorktree 退出。`
     }
-    const h = await createWorktree(root, name)
+    const h = await createWorktree(root, name, ctx.worktreeConfig?.())
     ctx.setCwd(h.worktreePath)
     ctx.worktreeSession.set({ originalCwd, ...h })
     await ctx.hookDispatch?.('WorktreeCreate', { hook_event_name: 'WorktreeCreate', name, cwd: h.worktreePath }).catch(() => {})
