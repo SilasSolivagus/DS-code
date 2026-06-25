@@ -129,12 +129,4 @@ describe('subagentRunner 记忆信号量', () => {
     releaseMemory()
   })
 
-  it('删信号量后并发子代理不死锁（无共享阻塞池）', async () => {
-    // 构造 10 个并发 runSubagent 调用（mock 版：直接 resolve，验证 Promise.all 无挂起）
-    // 删除 MAX_ACTIVE 信号量后，任意数量并发均可立即 resolve，无排队死锁风险。
-    const runFake = async (): Promise<string> => 'ok'
-    const results = await Promise.all(Array.from({ length: 10 }, () => runFake()))
-    expect(results).toHaveLength(10)
-    expect(results.every(r => r === 'ok')).toBe(true)
-  })
 })

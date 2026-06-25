@@ -22,7 +22,7 @@ export const enterWorktreeTool: Tool<typeof schema> = {
     const originalCwd = ctx.cwd()
     if (!root) {
       // 非 git 仓库：尝试 WorktreeCreate hook 兜底
-      const out = await ctx.hookDispatch?.('WorktreeCreate', { hook_event_name: 'WorktreeCreate', name })
+      const out = await ctx.hookDispatch?.('WorktreeCreate', { hook_event_name: 'WorktreeCreate', name }).catch(() => undefined)
       const hookPath = out?.additionalContext?.trim()
       if (!hookPath) throw new Error('当前目录不是 git 仓库，无法创建 worktree。')
       ctx.setCwd(hookPath)
