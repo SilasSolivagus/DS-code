@@ -200,3 +200,36 @@
 **仪式分层提醒（专家盲点）：剩余件分「能力件」（记忆批/Steering/可写subagent/rewind，用全仪式 opus 终审）vs「对齐件」（Notebook/PowerShell/Config 等表面对齐，可降仪式、并行 worktree）——别对 4.8 Notebook 和 3.1 记忆索引用一样重的流程。**
 
 **第 6 层**：单独立项「云管平台」，本表记录在案，待用户启动。新增 4.10 RemoteTrigger 归入。
+
+---
+
+## 🆕 第 7 层 · v2.1.76 → v2.1.193 新增机制（2026-06-26 bundle diff 实测）
+
+**背景**：本 roadmap 基于 CC v2.1.76 扫描。2026-06-26 拉取 npm 最新 **v2.1.193**（差 117 版），派 2 agent 对比新旧 bundle（旧 cli.js / 新 222M 原生二进制 `grep -a`）+ sdk-tools.d.ts diff，确证级。**结论：CC 这两版在「系统层」实质演进，原 roadmap 零覆盖。** 校正：Cron*/EnterWorktree/EnterPlanMode 在 v2.1.76 bundle 已存在（藏 feature flag 后），只是新版才公开到 sdk-tools.d.ts，**非净新增**（deepcode 已做 worktree 1.5 + plan mode 1.4）。
+
+### 🌟 全新大机制（本地可做，高价值，roadmap 完全未记）
+- **7.1 Workflow 编排 DSL**（最大空白）：内置工具 `RunWorkflow`，用**确定性 JS 脚本**编排多 subagent（`agent()`/`parallel()`/`pipeline()`/`phase()`/`budget`），跑在沙箱 VM（禁 `Date.now`/`Math.random`/`import()` 保可 resume），完成的 agent() 调用做快照可 `resumeFromRunId` 增量重跑；`/workflows` 浏览；`ultracode` 关键词触发。证据 0→302 hits。**纯本地可做**（deepcode 已有 1.5 可写 subagent+worktree 底座可承接）。
+- **7.2 Kairos 自主循环子系统**：`ScheduleWakeup`（自定步唤醒，`/loop dynamic mode`，delaySeconds 钳 [60,3600]，durable 持久化 `.claude/scheduled_tasks.json`）+ `Monitor`（后台监控长跑脚本，每行 stdout→chat 事件通知，persistent 跑整会话）+ PushNotification（=6.14）。组成自主长跑/自定步循环引擎。**本地可做。**
+- **7.3 后台会话生命周期**：`/background`（会话转后台释放终端）+ `/stop`（停后台会话保留 transcript+worktree）+ `/daemon`（管理后台服务/routine）+ `/loops`（管理循环任务，内测）。TUI 从同步走向并发后台。**本地可做。**
+- **7.4 FleetView**：多 agent 队列 UI（`FleetViewScreen`/`mountFleetView` 0→45）+ `fleet_view_dispatch` 后台调度器（group mode/PR-batch/host-bridge）。**本地可做**（与 1.6 Team 不同层）。
+
+### 🧩 全新小命令/工具（本地，低成本，未记）
+- `/cd`（会话切目录）· `/recap`（单行会话摘要）· `/goal`（设停止前自检目标）· `/focus`（聚焦视图）· `/tui`（切渲染器 default/fullscreen）· `/scroll-speed` · `/pause-memory`（暂停本会话自动记忆）· `/reload-skills`（热加载磁盘 skills 变更）· `/powerup`（交互式功能教学）· `/wellbeing`（休息/免打扰提醒）· `/update`+`/version`（热更新/版本，deepcode 自有版本机制）· `SendUserFile`（文件作交付物发给用户）· `/radio`（Claude FM 彩蛋）。
+
+### 📈 已有系统的增量（未记）
+- **窗口预测式 auto-compact**（`autoCompactWindow`/`applyAutoCompactWindow` 0→30，后台预算摘要预计算）——deepcode 2.3 已做主体，此增量未记。
+- **Agent/Prompt hook 类型**：hook 新增 `"type":"agent"`（带工具跑 agent）/`"type":"prompt"`（LLM 评估条件），限 PreToolUse/PostToolUse/PermissionRequest。deepcode hooks（L-042）未含这两型。
+- **REPL 工具**（4.7）：CC 正式有了「Execute JavaScript with Bun + 可调 CC 工具」——deepcode 原裁决跳过，**可重评**。
+- **MCP 增量**：`WaitForMcpServers`（等 MCP server 就绪）+ `ReadMcpResourceDir`（MCP 目录资源列举）。
+- policy-locked 企业沙箱 / remote-mirrored checkpoint（增量加固）。
+
+### ☁️ 云/平台绑定（归第 6 层，需自建后端或 N/A）
+- `Artifact`（发布 HTML/MD 到 claude.ai 网页）· `Projects`（claude.ai 云端 RAG 知识容器，跨会话共享）· `/teleport`（从 claude.ai 续接）· `/web-setup`（配 CC web）· `/ultraplan`+`/ultrareview`（云端多 agent fleet 审查/计划）· `RemoteTrigger`（=4.10，claude.ai CCR routines）· `DesignSync`+`/design-login`（claude.ai 设计系统）· Cowork 引导（`ShowOnboardingRolePicker`/`ShareOnboardingGuide`/`/team-onboarding`）· `/usage-credits` · `/setup-bedrock`+`/setup-vertex`（N/A 第三方后端）· `/schedule`（云 routines）。
+
+### 核心演进方向（4 条）
+1. 单 agent+Task → **程序化多代理编排**（Workflow DSL + FleetView + 云端 fleet）。
+2. 会话内即时 → **自主长跑/自定步循环**（Kairos：ScheduleWakeup+Monitor+PushNotification+后台会话）。
+3. 纯本地 CLI → **云端协同**（Artifact/Projects/Cowork，接 claude.ai 生态）。
+4. 基础设施静默加固（窗口 auto-compact/Agent+Prompt hook/policy sandbox/remote checkpoint）。
+
+**deepcode 取舍建议**：7.1 Workflow + 7.2 Kairos + 7.3 后台会话 是本地可做的高价值大件（CC 这两版最实质的演进），优先级应高于零散小命令；云绑定项归第 6 层。
