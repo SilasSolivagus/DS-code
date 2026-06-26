@@ -2,7 +2,7 @@
 // 斜杠命令 + @文件 浮动补全菜单：↑↓ 移动，Tab/Enter 确认补全。
 import React, { useState, useEffect } from 'react'
 import { Box, Text, useInput } from 'ink'
-import { useTheme } from '../theme.js'
+import { useTheme, GUTTER } from '../theme.js'
 import type { Suggestion } from '../suggest.js'
 
 export function Suggestions(props: {
@@ -37,7 +37,7 @@ export function Suggestions(props: {
   if (!items.length) return null
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={T.accent}>
+    <Box flexDirection="column" borderStyle="round" borderColor={T.accent} paddingX={GUTTER}>
       {items.map((item, i) => (
         // 选中项：accent 背景高亮（对齐 CC）；命令描述/提示统一 dim。
         <Box key={item.value}>

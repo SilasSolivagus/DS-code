@@ -20,7 +20,7 @@ import { QuestionDialog } from './components/QuestionDialog.js'
 import { SelectList } from './components/SelectList.js'
 import { Spinner } from './components/Spinner.js'
 import { StatusFooter } from './components/StatusFooter.js'
-import { useThemeControl, themeNames } from './theme.js'
+import { useThemeControl, themeNames, BLOCK_GAP } from './theme.js'
 import { loadRawUserSettings, saveRawUserSettings } from '../config.js'
 
 // CJK/全角字符按 2 列宽计（终端等宽规则）；用于算输入框插入点的列号。
@@ -224,6 +224,7 @@ export function App(props: {
     <Box flexDirection="column">
       {/* 欢迎框交给 Transcript 作为 Static 首项：开机出现、随对话滚入历史留存，不消失也不反复重画（仿 CC） */}
       <Transcript items={state.transcript} banner={<Banner cwd={props.cwd} model={state.model} />} />
+      <Box flexDirection="column" marginTop={BLOCK_GAP}>
       {state.pendingQuestion
         ? <QuestionDialog questions={state.pendingQuestion.questions} onDone={a => core.resolveQuestion(a)} />
         : state.pendingAsk
@@ -301,6 +302,7 @@ export function App(props: {
               />
             </>
       }
+      </Box>
       <StatusFooter
         model={state.model}
         mode={modeLabel}

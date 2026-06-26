@@ -22,7 +22,7 @@ import { Spinner } from './components/Spinner.js'
 import { StatusFooter } from './components/StatusFooter.js'
 import { clamp, page, applyFollow, nextStuck, scrollInfo } from './scroll.js'
 import { onWheel } from './wheel.js'
-import { useThemeControl, themeNames } from './theme.js'
+import { useThemeControl, themeNames, BLOCK_GAP } from './theme.js'
 import { loadRawUserSettings, saveRawUserSettings } from '../config.js'
 
 const CURSOR_PARK_OFF = process.env.DEEPCODE_NO_CURSOR_PARK === '1'
@@ -269,7 +269,7 @@ export function FullscreenApp(props: {
         onMeasureTotal={onMeasureTotal}
         banner={<Banner cwd={props.cwd} model={state.model} />}
       />
-      <Box ref={bottomRef} flexDirection="column" flexShrink={0}>
+      <Box ref={bottomRef} flexDirection="column" flexShrink={0} marginTop={BLOCK_GAP}>
         <Text dimColor>
           {(info.moreAbove || info.moreBelow)
             ? `${info.moreAbove ? '▲ 上有更多' : '▲ 已到顶'} · ${info.moreBelow ? '▼ 下有更多' : '▼ 已到底'} · 行 ${info.top}–${info.bottom}/${info.total}${stuckRef.current ? ' · 跟随' : ''}`
