@@ -22,7 +22,7 @@ import { Spinner } from './components/Spinner.js'
 import { StatusFooter } from './components/StatusFooter.js'
 import { clamp, page, applyFollow, nextStuck, scrollInfo } from './scroll.js'
 import { onWheel } from './wheel.js'
-import { useThemeControl, themeNames, BLOCK_GAP } from './theme.js'
+import { useThemeControl, themeNames, BLOCK_GAP, GUTTER } from './theme.js'
 import { loadRawUserSettings, saveRawUserSettings } from '../config.js'
 
 const CURSOR_PARK_OFF = process.env.DEEPCODE_NO_CURSOR_PARK === '1'
@@ -197,7 +197,7 @@ export function FullscreenApp(props: {
   const aboveInput = suggestionsActive ? suggestions.length : 0
   // 输入框光标行（1-based 从顶算）：ScrollView(scrollH) + 提示行(1) + 上方 suggestions + 输入框上边线(1) + 光标内容行(1)。
   // 末项加 parkRowOffset：value 折行时光标落到末视觉行（否则停在折行首行）。±1 由 pty 微调
-  const caretRow = Math.max(1, scrollH + 1 + aboveInput + 2 + parkRowOffset(draft, stdout?.columns ?? 80, dispWidth))
+  const caretRow = Math.max(1, scrollH + 1 + aboveInput + 2 + parkRowOffset(draft, (stdout?.columns ?? 80) - 2 * GUTTER, dispWidth))
 
   // 停泊状态：active=已泊待解；row/col=最新停泊目标；enabled=输入框激活可泊；id=重停泊去抖句柄。
   const parkRef = useRef<{ active: boolean; row: number; col: number; enabled: boolean; id?: ReturnType<typeof setTimeout> }>({ active: false, row: 1, col: 1, enabled: false })
@@ -247,13 +247,13 @@ export function FullscreenApp(props: {
     if (!parkRef.current.enabled) return
     const out = stdout as NodeJS.WriteStream & { __origWrite?: typeof stdout.write }
     const orig = out.__origWrite ?? out.write.bind(out)
-    const col = parkCol(draft, stdout.columns ?? 80, dispWidth)
+    const col = parkCol(draft, (stdout.columns ?? 80) - 2 * GUTTER, dispWidth)
     // 记录最新停泊目标，供 write-wrapper 在 ink 每次写完后补停泊（赢得与 ink 收尾的竞争）。
     parkRef.current.row = caretRow
-    parkRef.current.col = col
+    parkRef.current.col = col + GUTTER
     const id = setTimeout(() => {
       try {
-        ;(orig as any)(`\x1b[?25h\x1b[${caretRow};${col}H`)
+        ;(orig as any)(`\x1b[?25h\x1b[${caretRow};${col + GUTTER}H`)
         parkRef.current.active = true
       } catch { /* 忽略写入失败 */ }
     }, 0)
@@ -261,7 +261,7 @@ export function FullscreenApp(props: {
   })
 
   return (
-    <Box flexDirection="column" height={rows}>
+    <Box flexDirection="column" height={rows} paddingX={GUTTER}>
       <ScrollView
         items={state.transcript}
         scrollOffset={scrollOffset}
