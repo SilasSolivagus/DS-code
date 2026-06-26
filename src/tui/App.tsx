@@ -210,10 +210,10 @@ export function App(props: {
     if (!inputActive || !process.stdout.isTTY || CURSOR_PARK_OFF) return
     const out = process.stdout as NodeJS.WriteStream & { __origWrite?: typeof process.stdout.write }
     const orig = out.__origWrite ?? out.write.bind(out)
-    const col = parkCol(draft, process.stdout.columns ?? 80, dispWidth)  // 折行/含换行时落到末行真实列，防超宽被钳
+    const col = parkCol(draft, (process.stdout.columns ?? 80) - 2 * GUTTER, dispWidth)  // 折行/含换行时落到末行真实列，防超宽被钳
     const id = setTimeout(() => {
       try {
-        ;(orig as any)(`\x1b[?25h\x1b[${linesBelowCaret}A\x1b[${col}G`)
+        ;(orig as any)(`\x1b[?25h\x1b[${linesBelowCaret}A\x1b[${col + GUTTER}G`)
         parkRef.current = { active: true, up: linesBelowCaret }
       } catch { /* 忽略写入失败 */ }
     }, 0)
