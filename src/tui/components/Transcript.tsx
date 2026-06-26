@@ -9,7 +9,7 @@
 // 从而保证 done 项迁入时不重复输出。
 import React from 'react'
 import { Box, Static } from 'ink'
-import { useTheme } from '../theme.js'
+import { useTheme, BLOCK_GAP } from '../theme.js'
 import type { TranscriptItem } from '../useChat.js'
 import { renderItem, isDone } from '../renderItem.js'
 
@@ -28,7 +28,7 @@ export function Transcript({ items, banner }: { items: TranscriptItem[]; banner?
       {/* Static 区：banner + 已完成项只渲染一次。ink 用内部索引去重，每次 rerender 只输出相对上次新增的尾部项。*/}
       <Static items={staticItems}>
         {(item, index) => (
-          <Box key={index}>
+          <Box key={index} marginTop={index === 0 ? 0 : BLOCK_GAP}>
             {'__banner' in item ? banner : renderItem(item, index, theme)}
           </Box>
         )}
@@ -36,7 +36,9 @@ export function Transcript({ items, banner }: { items: TranscriptItem[]; banner?
 
       {/* 动态区：进行中的项 */}
       <Box flexDirection="column">
-        {liveItems.map((item, i) => renderItem(item, items.indexOf(item), theme))}
+        {liveItems.map((item, i) => (
+          <Box key={i} marginTop={i > 0 || staticItems.length > 0 ? BLOCK_GAP : 0}>{renderItem(item, items.indexOf(item), theme)}</Box>
+        ))}
       </Box>
     </Box>
   )

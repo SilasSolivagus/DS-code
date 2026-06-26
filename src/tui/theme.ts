@@ -99,3 +99,7 @@ export const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', 
 // CC 风格工作 spinner：星号动画帧 + 中文俏皮动名词（CC 轮换 Cogitating/Pondering 等）
 export const SPINNER_SYMBOLS = ['✻', '✳', '✶', '✺', '✹', '✷']
 export const THINKING_VERBS = ['琢磨中', '盘算中', '捣鼓中', '思索中', '合计中', '拾掇中', '盘点中', '鼓捣中', '推敲中', '寻思中']
+
+// 栅格化间距常量（对齐 CC 垂直节奏）：单一事实源。
+export const GUTTER = 1     // 主容器左右 paddingX（左右各留 1 列）
+export const BLOCK_GAP = 1  // transcript 块间 marginTop（块与块之间空一行）

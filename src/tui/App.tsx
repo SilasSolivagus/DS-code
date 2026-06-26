@@ -20,7 +20,7 @@ import { QuestionDialog } from './components/QuestionDialog.js'
 import { SelectList } from './components/SelectList.js'
 import { Spinner } from './components/Spinner.js'
 import { StatusFooter } from './components/StatusFooter.js'
-import { useThemeControl, themeNames } from './theme.js'
+import { useThemeControl, themeNames, BLOCK_GAP, GUTTER } from './theme.js'
 import { loadRawUserSettings, saveRawUserSettings } from '../config.js'
 
 // CJK/全角字符按 2 列宽计（终端等宽规则）；用于算输入框插入点的列号。
@@ -203,17 +203,18 @@ export function App(props: {
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // 每帧渲染后把硬件光标停到输入框插入点（用原始 write 绕过上面的解除逻辑）。
-  // 上移行数 = 底边线(1) + 页脚行数 + ink 末尾换行(1)；页脚 = 行1/行2/提示(3 固定) + 记忆行 + 工具行。
-  // 故 = 5 + 记忆行(0/1) + 工具行(0/1)。页脚行数随内容变 → 必须动态算，否则光标偏。
-  const linesBelowCaret = 5 + (memoryCount > 0 ? 1 : 0) + (toolCounts.length > 0 ? 1 : 0) + (state.statusLineOutput ? 1 : 0)
+  // 上移行数 = 底边线(1) + 页脚行数 + ink 末尾换行(1)；页脚固定行 = 行1(1) + 行2(1) + 提示(1) = 3，
+  // 加 3 个簇间/页脚顶空行（StatusFooter 外层 marginTop + 簇2 marginTop + 簇3 marginTop 各=BLOCK_GAP=1）= 6，
+  // 加底边线(1) + ink 末尾换行(1) = 8；再加按需行：记忆行 + 工具行 + statusLine行。
+  const linesBelowCaret = 8 + (memoryCount > 0 ? 1 : 0) + (toolCounts.length > 0 ? 1 : 0) + (state.statusLineOutput ? 1 : 0)
   useEffect(() => {
     if (!inputActive || !process.stdout.isTTY || CURSOR_PARK_OFF) return
     const out = process.stdout as NodeJS.WriteStream & { __origWrite?: typeof process.stdout.write }
     const orig = out.__origWrite ?? out.write.bind(out)
-    const col = parkCol(draft, process.stdout.columns ?? 80, dispWidth)  // 折行/含换行时落到末行真实列，防超宽被钳
+    const col = parkCol(draft, (process.stdout.columns ?? 80) - 2 * GUTTER, dispWidth)  // 折行/含换行时落到末行真实列，防超宽被钳
     const id = setTimeout(() => {
       try {
-        ;(orig as any)(`\x1b[?25h\x1b[${linesBelowCaret}A\x1b[${col}G`)
+        ;(orig as any)(`\x1b[?25h\x1b[${linesBelowCaret}A\x1b[${col + GUTTER}G`)
         parkRef.current = { active: true, up: linesBelowCaret }
       } catch { /* 忽略写入失败 */ }
     }, 0)
@@ -221,9 +222,10 @@ export function App(props: {
   })
 
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" paddingX={GUTTER}>
       {/* 欢迎框交给 Transcript 作为 Static 首项：开机出现、随对话滚入历史留存，不消失也不反复重画（仿 CC） */}
       <Transcript items={state.transcript} banner={<Banner cwd={props.cwd} model={state.model} />} />
+      <Box flexDirection="column" marginTop={BLOCK_GAP}>
       {state.pendingQuestion
         ? <QuestionDialog questions={state.pendingQuestion.questions} onDone={a => core.resolveQuestion(a)} />
         : state.pendingAsk
@@ -301,6 +303,7 @@ export function App(props: {
               />
             </>
       }
+      </Box>
       <StatusFooter
         model={state.model}
         mode={modeLabel}
