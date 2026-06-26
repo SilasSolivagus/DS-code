@@ -5,7 +5,7 @@
 import React, { useRef, useLayoutEffect } from 'react'
 import { Box, measureElement, type DOMElement } from 'ink'
 import { renderItem } from './renderItem.js'
-import { useTheme } from './theme.js'
+import { useTheme, BLOCK_GAP } from './theme.js'
 import type { TranscriptItem } from './useChat.js'
 
 export function ScrollView(props: {
@@ -30,7 +30,9 @@ export function ScrollView(props: {
     <Box height={props.height} overflowY="hidden" flexDirection="column" flexShrink={0}>
       <Box ref={innerRef} flexDirection="column" flexShrink={0} marginTop={-props.scrollOffset}>
         {props.banner}
-        {props.items.map((it, i) => renderItem(it, i, theme))}
+        {props.items.map((it, i) => (
+          <Box key={i} marginTop={i > 0 || props.banner ? BLOCK_GAP : 0}>{renderItem(it, i, theme)}</Box>
+        ))}
       </Box>
     </Box>
   )
