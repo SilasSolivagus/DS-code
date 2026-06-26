@@ -206,7 +206,9 @@ export function FullscreenApp(props: {
   useLayoutEffect(() => {
     try {
       const h = bottomRef.current ? measureElement(bottomRef.current).height : 0
-      if (h > 0 && h !== bottomH) setBottomH(h)
+      // 拒绝物理不可能的瞬态毛刺：底部区高 ≥ 屏高时 measureElement 偶发返回越界值（实测 80 on rows=55），
+      // 会致 availableH=1 → scrollH=1 → caretRow 塌进 banner（光标错位）。≥ 屏高一律忽略，保留上次有效值。
+      if (h > 0 && h < (stdout?.rows ?? 24) && h !== bottomH) setBottomH(h)
     } catch { /* ignore */ }
     const avail = Math.max(1, (stdout?.rows ?? 24) - bottomH)
     viewportRef.current = avail
