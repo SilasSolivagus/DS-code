@@ -37,7 +37,7 @@ export function Transcript({ items, banner }: { items: TranscriptItem[]; banner?
       {/* 动态区：进行中的项 */}
       <Box flexDirection="column">
         {liveItems.map((item, i) => (
-          <Box key={i} marginTop={BLOCK_GAP}>{renderItem(item, items.indexOf(item), theme)}</Box>
+          <Box key={i} marginTop={i > 0 || staticItems.length > 0 ? BLOCK_GAP : 0}>{renderItem(item, items.indexOf(item), theme)}</Box>
         ))}
       </Box>
     </Box>

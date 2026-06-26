@@ -23,4 +23,25 @@ describe('Transcript 块间距', () => {
     const { lastFrame } = render(<Transcript items={items} />)
     expect(hasBlankBetween(lastFrame()!, 'AAA-PROMPT', 'BBB-NOTICE')).toBe(true)
   })
+
+  it('live 区项间有空行', () => {
+    const items: TranscriptItem[] = [
+      { kind: 'assistant', text: 'LIVE-A', done: false } as TranscriptItem,
+      { kind: 'tool', name: 'X', desc: 'Y', running: true } as TranscriptItem,
+    ]
+    const { lastFrame } = render(<Transcript items={items} />)
+    expect(hasBlankBetween(lastFrame()!, 'LIVE-A', 'Y')).toBe(true)
+  })
+
+  it('屏顶无内容时首个 live 项不顶空行', () => {
+    const items: TranscriptItem[] = [
+      { kind: 'tool', name: 'TOP-TOOL', desc: 'TOP-DESC', running: true } as TranscriptItem,
+    ]
+    const { lastFrame } = render(<Transcript items={items} />)
+    const frame = lastFrame()!
+    const lines = frame.split('\n')
+    // 首行应包含顶部内容（不应以空行开头）
+    expect(lines[0].length).toBeGreaterThan(0)
+    expect(lines[0]).not.toMatch(/^\s*$/)
+  })
 })
