@@ -62,8 +62,9 @@ Artifact(发 claude.ai 网页)·Projects(云 RAG)·/teleport·/web-setup·ultrap
 
 **判据**：依赖拓扑 → 本地可行 → 用户价值 → 主题聚类。云/managed 全押后第 6 层。
 
-### 阶段 A（先清在途小队列，已 plan-ready，快赢收尾）
-栅格化 → Sleep+tips → paste-fold（含图片）。**理由**：已全 plan-ready，沉没成本低，且都碰 TUI，连续做一次性冒烟收掉，不打断后面大件。Sleep(4.3) 顺带把 SKIP 件清了。
+### 阶段 A（先清在途小队列，已 plan-ready，快赢收尾）✅ 全部完成
+栅格化 ✅ → Sleep+tips ✅ → paste-fold（含图片）✅。**理由**：已全 plan-ready，沉没成本低，且都碰 TUI，连续做一次性冒烟收掉，不打断后面大件。Sleep(4.3) 顺带把 SKIP 件清了。
+- ✅ **paste-fold + 图片识别已合 main（merge `f11165c`，2026-06-29，8 任务 SDD + opus 终审 + 真机冒烟）**：Phase 1 文本折叠 1:1 CC（pasteFold.ts；CC 考古确证 expand-before-enqueue，send/steer 双路径）；Phase 2 图片走 GLM-4.6v 识别注入（imageDescribe/clipboardImage/providers glm-4.6v，主模型见文字非像素，DeepSeek 也能用图）。冒烟揪修 ink 分块粘贴合并（去抖）+ \$-替换损坏真 bug + 页脚紧贴。**→ 阶段 A 收尾，下一步进阶段 B 大件（Auto mode / Workflow，待用户拍板起点）。**
 
 ### 阶段 B（T1 灵魂大件，按依赖排）
 1. **7.5 Auto mode**（独立、价值最高、模式层最实质变化、CC 已设默认）——先做，因它不依赖别的，且立刻提升日常体验。分类器走 DeepSeek fast 模型。
