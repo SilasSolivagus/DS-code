@@ -120,7 +120,7 @@ describe('Agent 子代理', () => {
     // call[0] = 第一幕（子代理发起），call[1] = 第二幕（带 tool 结果）
     // general-purpose 通配 = 全池减全局 deny(仅 ExitPlanMode)，含 Edit/Write/NotebookEdit 可写、含 Agent 可递归
     const sentTools = (chatStream as any).mock.calls[0][1].tools.map((t: any) => t.function.name)
-    expect(sentTools.sort()).toEqual(['Agent', 'Bash', 'Config', 'Edit', 'Glob', 'Grep', 'NotebookEdit', 'Read', 'WebFetch', 'Write'])
+    expect(sentTools.sort()).toEqual(['Agent', 'Bash', 'Config', 'Edit', 'Glob', 'Grep', 'NotebookEdit', 'Read', 'Sleep', 'WebFetch', 'Write'])
     // 递归门已开：general-purpose 池含 Agent 自身
     expect(sentTools).toContain('Agent')
     // 第二幕的 messages 应包含 Read 的 tool 结果（含文件内容），确保 Read 真正执行了
