@@ -66,7 +66,7 @@ export function StatusFooter(props: {
       </Box>
 
       {/* 簇 2：Row 2（context/缓存/budget/花费）+ Row 2.5（statusLineOutput 若有） */}
-      <Box flexDirection="column" marginTop={BLOCK_GAP}>
+      <Box flexDirection="column">
         <Text>
           <Text dimColor>Context </Text>
           <Text color={contextBarColor(usedPct, T)}>{fmtK(props.contextUsed)} / {fmtK(props.contextWindow)}</Text>
@@ -86,7 +86,7 @@ export function StatusFooter(props: {
 
       {/* 簇 3：Row 3（记忆，若有）+ Row 4（工具计数，若有）+ Row 5（命令提示，恒有）
           簇 3 命令提示恒在故不会空簇；记忆/工具缺失时不留空行。 */}
-      <Box flexDirection="column" marginTop={BLOCK_GAP}>
+      <Box flexDirection="column">
         {props.memoryCount > 0 && <Text dimColor>{`${props.memoryCount} DEEPCODE.md`}</Text>}
         {props.toolCounts.length > 0 && (
           <Text>

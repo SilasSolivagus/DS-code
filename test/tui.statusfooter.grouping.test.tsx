@@ -18,16 +18,16 @@ function blanksBetween(frame: string, a: string, b: string): number {
 }
 
 describe('StatusFooter 分组', () => {
-  it('簇 1↔簇 2、簇 2↔簇 3 之间各有空行', () => {
+  it('页脚 3 簇紧邻、簇间无空行（用户要求不隔行）', () => {
     const { lastFrame } = render(<StatusFooter {...base} />)
     const f = lastFrame()!
-    expect(blanksBetween(f, 'deepseek', 'Context')).toBeGreaterThanOrEqual(1) // 簇1↔簇2
-    expect(blanksBetween(f, 'Context', 'DEEPCODE.md')).toBeGreaterThanOrEqual(1) // 簇2↔簇3
+    expect(blanksBetween(f, 'deepseek', 'Context')).toBe(0) // 簇1↔簇2 紧邻
+    expect(blanksBetween(f, 'Context', 'DEEPCODE.md')).toBe(0) // 簇2↔簇3 紧邻
   })
 
-  it('无记忆/无工具时簇 3 不留空簇（簇2↔命令提示仍恰一空行）', () => {
+  it('无记忆/无工具时簇 3 紧接簇 2（无空行）', () => {
     const { lastFrame } = render(<StatusFooter {...base} memoryCount={0} toolCounts={[]} />)
     const f = lastFrame()!
-    expect(blanksBetween(f, 'Context', '看命令')).toBe(1)
+    expect(blanksBetween(f, 'Context', '看命令')).toBe(0)
   })
 })
