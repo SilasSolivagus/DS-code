@@ -14,6 +14,11 @@ import {
 } from '../pasteFold.js'
 import { readImageFile, readClipboardImage, IMAGE_EXT_RE } from '../../clipboardImage.js'
 
+// 粘贴合并去抖窗口（ms）+ 判定为「粘贴块」的最小长度。短去抖对粘贴内容不可感知；
+// 单字符打字（无换行、短、且无粘贴在途）走同步直插，不引入延迟。
+const PASTE_COALESCE_MS = 40
+const PASTE_MIN_LEN = 20
+
 export function InputBox(props: {
   onSubmit: (text: string, attachments?: Attachment[]) => void
   onInterrupt: () => void
@@ -48,6 +53,10 @@ export function InputBox(props: {
   const { stdout } = useStdout()
   const attachMap = useRef(new Map<number, Attachment>())
   const nextId = useRef(1)
+  // 粘贴合并：终端把大粘贴分多个 stdin data 块送来（ink 的「一次粘贴=单回调」对大粘贴不成立），
+  // 逐块各折一个占位符会泄漏原文+生成多个相邻占位符。缓冲粘贴态的块，短去抖后整体折叠一次。
+  const pasteBufRef = useRef('')
+  const pasteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // 统一变更入口：value 的 ref/state/onChange 三处必须同步，漏一处就 desync
   const setVal = (v: string) => {
@@ -73,7 +82,32 @@ export function InputBox(props: {
     if (r) { nextId.current++; attachMap.current.set(r.entry.id, r.entry); truncatedOnce.current = true; setVal(r.newText) }
   }, [value])  // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 合并缓冲区一次性折叠（去抖触发或提交前手动 flush）
+  const flushPasteBuffer = () => {
+    if (pasteTimerRef.current) { clearTimeout(pasteTimerRef.current); pasteTimerRef.current = null }
+    const raw = pasteBufRef.current
+    pasteBufRef.current = ''
+    if (!raw) return
+    const clean = normalizePaste(raw)
+    if (!clean) return
+    const rows = stdout?.rows ?? 24
+    if (shouldFold(clean, rows)) {
+      const id = nextId.current++
+      attachMap.current.set(id, { id, type: 'text', content: clean })
+      setVal(valueRef.current + makePlaceholder(id, countNewlines(clean)))
+    } else {
+      setVal(valueRef.current + clean)
+    }
+  }
+  // 卸载时清掉悬挂的去抖定时器（避免卸载后 setState）
+  useEffect(() => () => { if (pasteTimerRef.current) clearTimeout(pasteTimerRef.current) }, [])
+
   useInput((input, key) => {
+    // 控制键到来时先处理悬挂的粘贴缓冲：ESC 丢弃，其余键先 flush 把粘贴内容物化进 value
+    if (pasteTimerRef.current && (key.return || key.escape || key.backspace || key.delete || key.upArrow || key.downArrow || key.tab)) {
+      if (key.escape) { pasteBufRef.current = ''; clearTimeout(pasteTimerRef.current); pasteTimerRef.current = null }
+      else flushPasteBuffer()
+    }
     if (key.escape) {
       if (props.busy) {
         if ((props.steerQueueSize ?? 0) > 0) props.onSteerPop?.()
@@ -141,7 +175,7 @@ export function InputBox(props: {
     }
     if (key.ctrl || key.meta || key.tab) return      // tab 留给菜单
     if (input) {
-      // 图片：拖入的图片文件路径（去引号/转义空格）
+      // 图片：拖入的图片文件路径（去引号/转义空格）——单块同步检测，不进缓冲
       const trimmed = input.trim().replace(/^['"]|['"]$/g, '').replace(/\\ /g, ' ')
       if (IMAGE_EXT_RE.test(trimmed)) {
         const img = readImageFile(trimmed)
@@ -152,16 +186,17 @@ export function InputBox(props: {
           return
         }
       }
-      const clean = normalizePaste(input)
-      if (!clean) return
-      const rows = stdout?.rows ?? 24
-      if (shouldFold(clean, rows)) {
-        const id = nextId.current++
-        attachMap.current.set(id, { id, type: 'text', content: clean })
-        setVal(valueRef.current + makePlaceholder(id, countNewlines(clean)))
-      } else {
-        setVal(valueRef.current + clean)
+      // 粘贴块（含换行 / 较长 / 已有粘贴在途）→ 缓冲，去抖后整体折叠一次；
+      // 单字符打字 → 同步直插，零延迟。
+      const pasteLike = pasteTimerRef.current !== null || /[\r\n]/.test(input) || input.length > PASTE_MIN_LEN
+      if (pasteLike) {
+        pasteBufRef.current += input
+        if (pasteTimerRef.current) clearTimeout(pasteTimerRef.current)
+        pasteTimerRef.current = setTimeout(flushPasteBuffer, PASTE_COALESCE_MS)
+        return
       }
+      const clean = normalizePaste(input)
+      if (clean) setVal(valueRef.current + clean)
     }
   })
 
