@@ -145,14 +145,14 @@ export function FullscreenApp(props: {
     setValueOverride(prev => ({ text: newDraft, nonce: (prev?.nonce ?? 0) + 1 }))
   }
 
-  const submit = (text: string) => {
+  const submit = (text: string, attachments?: import('./pasteFold.js').TextEntry[]) => {
     if (text === '/exit') { exit(); return }
     if (text === '/resume') { setResumeMode(true); return }
     if (text === '/model') { setModelPickerMode(true); return }
     if (text === '/output-style') { setOutputStyleMode(true); return }
     if (text === '/theme') { setThemeMode(true); return }
     setDraft(''); setValueOverride(undefined); justPickedRef.current = null
-    void core.send(text)
+    void core.send(text, attachments)
   }
 
   const historyItems = state.transcript
@@ -324,7 +324,7 @@ export function FullscreenApp(props: {
                   history={historyItems}
                   busy={state.busy}
                   valueOverride={valueOverride}
-                  onSteer={(t) => core.steer(t)}
+                  onSteer={(t, a) => core.steer(t, a)}
                   onSteerPop={() => { const v = core.steerPop(); if (v !== undefined) setValueOverride(prev => ({ text: v, nonce: (prev?.nonce ?? 0) + 1 })) }}
                   steerQueueSize={core.steerQueue().length}
                   steerQueueItems={core.steerQueue()}
