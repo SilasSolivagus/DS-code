@@ -18,7 +18,7 @@ describe('InputBox steering 按键', () => {
     await delay()
     stdin.write('hi')
     stdin.write('\r')              // Enter
-    expect(onSteer).toHaveBeenCalledWith('hi')
+    expect(onSteer).toHaveBeenCalledWith('hi', [])
     expect(onSubmit).not.toHaveBeenCalled()
   })
 
