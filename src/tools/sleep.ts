@@ -28,7 +28,7 @@ export const sleepTool: Tool<typeof schema> = {
       }, 100)
     })
     if (ctx.signal.aborted) {
-      const elapsed = Math.round((Date.now() - start) / 1000)
+      const elapsed = Math.floor((Date.now() - start) / 1000)
       return `已中断等待（已过 ${elapsed} 秒）`
     }
     return `已等待 ${input.seconds} 秒`

@@ -28,7 +28,7 @@ describe('sleepTool', () => {
     await vi.advanceTimersByTimeAsync(1000)
     ac.abort('interrupt')
     await vi.advanceTimersByTimeAsync(100)
-    expect(await p).toMatch(/^已中断等待（已过 \d+ 秒）$/)
+    expect(await p).toBe('已中断等待（已过 1 秒）')
   })
 
   it('入参已中断则立即返回 0 秒', async () => {
