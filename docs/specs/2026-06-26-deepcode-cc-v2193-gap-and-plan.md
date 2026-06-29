@@ -93,6 +93,17 @@ T3 小命令凑一批；T4 加固按 ROI 穿插。
 
 ---
 
+## 四点五、阶段 B 起点裁决（2026-06-29，实读 CC v2.1.193 后）
+
+**裁决：阶段 B 先做 7.1 Workflow（改判，三章原推 Auto mode）。** 派 2 opus 专家实读 CC v2.1.193 bundle 后改判，新增证据：
+
+- **Workflow（8/10）**：本体 = Node 内置 `vm` 沙箱（`createContext({__proto__:null},{codeGeneration:{strings:false,wasm:false}})` 禁 eval/wasm/import()）+ 7 原语 `agent/parallel/pipeline/phase/log/budget/workflow`（args 经 VM 内 JSON.parse 注入）。确定性双层禁 `Date.now/Math.random/new Date`（静态正则 `Col()` + 不注入）→ 保 resume。Resume = append-only JSONL journal，缓存键 `(prompt,opts)`+位置，"longest unchanged prefix → 100% cache hit"，**仅同 session**。数值：并发 `min(16,cpu-2)`／单 workflow ≤1000 agent／单次 parallel/pipeline ≤4096 item／同步切片超时 30s。触发 `ultracode`。隐性最高复杂度 = **async 桥接**（VM 内 promise settle ↔ host 事件循环，`bindVMAwait/settle/call/clone`），不是 vm.Script。可复用 1.5 worktree+subagent+loop.ts 调度器。
+- **Auto mode（~7/10，需前置 eval）**：`permissionMode "auto"`（264 命中）；Shift+Tab `auto mode on ⏵⏵`（`⏵⏵`,warning）。机制 verbatim：「classifies each tool call for risky actions and prompt injection before executing, runs the ones it assesses as lower-risk, and blocks the rest」。**XML 分类器**输出 `<reasoning>`+`{"decision":"run"|"ask"|"block"}`。模型 `CLAUDE_CODE_AUTO_MODE_MODEL`→回退 `ANTHROPIC_SMALL_FAST_MODEL`（**默认 haiku 级**），`AUTO_MODE_TEMPERATURE`默认 1，`AUTO_MODE_SIBLING_CONTEXT`。自定义规则 settings 四数组 `allow/soft_deny/hard_deny/environment`+`"$defaults"`继承，**标注 `projectSettings and localSettings are repo-controllable`（信任边界要点，DANGEROUS 剥离须覆盖）**。安全栏：circuit breaker→default、`denial_limit_exceeded`→fallback to ask、malformed→fallback、cannot-assess→ask、跨对话注入拦截、jailbreak 抵抗、注入命中→flag user。CC 已设默认（`auto_default_nudge`）。
+
+- **改判核心理由**：①**「1:1 对齐 CC」保真度**——Workflow 是确定性基建，行为与模型无关，1:1 复刻=1:1 行为；Auto mode 的分类器判定被模型能力封顶，haiku→DeepSeek/GLM 不会 1:1（且 [[deepcode-next-session]]/memory 已记「glm 指令遵循弱」）。②Workflow 硬骨头是纯工程、完全可控、可强验证（resume 缓存命中率）；Auto mode 硬骨头是**安全分类器**，跑弱 fast 模型=乱拦或放行危险动作，每次 tool call 还加延迟。③Workflow 直接兑现 1.5 worktree 投资（最大空白）。
+- **Auto mode 前置条件（将来做时）**：先跑分类器模型 eval（DeepSeek-fast/GLM 能否稳定产 XML `{decision,reasoning}`+抗注入），eval 可一票否决整个特性。
+- **教训**：Auto mode 实读 agent watchdog stall（输出 14min 零增长），控制者直接接手 grep 完成；再验「subagent stall 频发须控制者兜底」。
+
 ## 五、证据存档
 - 新旧 bundle：旧 `/opt/homebrew/lib/node_modules/@anthropic-ai/.claude-code-2DTsDk1V/cli.js`(v2.1.76) / 新 scratchpad/cc-latest/package/claude(v2.1.193)。
 - agent 原始报告含 verbatim 证据：命令&工具 diff、服务&机制 diff、模式&settings&env diff、UI&提示词&hook&flag diff。
