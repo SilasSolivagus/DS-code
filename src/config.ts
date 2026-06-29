@@ -77,6 +77,10 @@ export interface Settings {
   statusLineCommand?: string
   /** git worktree 配置（isolation:"worktree" / EnterWorktree 用；全层生效不剥离）。 */
   worktree?: { symlinkDirectories?: string[]; sparsePaths?: string[] }
+  /** spinner tips 轮播开关（缺省 true）。纯 UX，非敏感，全层生效。 */
+  spinnerTips?: boolean
+  /** 自定义 spinner tips 覆盖（对齐 CC spinnerTipsOverride）。 */
+  spinnerTipsOverride?: { tips?: string[]; excludeDefault?: boolean }
 }
 
 const DIR = path.join(os.homedir(), '.deepcode')
@@ -130,6 +134,8 @@ export function loadRawUserSettings(): Settings {
     theme: raw?.theme,
     statusLineCommand: raw?.statusLineCommand,
     worktree: parseWorktreeConfig(raw?.worktree),
+    spinnerTips: typeof raw?.spinnerTips === 'boolean' ? raw.spinnerTips : undefined,
+    spinnerTipsOverride: parseSpinnerTipsOverride(raw?.spinnerTipsOverride),
   }
 }
 
@@ -248,6 +254,18 @@ export function parseWorktreeConfig(raw: unknown): Settings['worktree'] | undefi
   const sd = parseStringArray(r.symlinkDirectories); if (sd) out.symlinkDirectories = sd
   const sp = parseStringArray(r.sparsePaths); if (sp) out.sparsePaths = sp
   return (out.symlinkDirectories || out.sparsePaths) ? out : undefined
+}
+
+export function parseSpinnerTipsOverride(raw: unknown): { tips?: string[]; excludeDefault?: boolean } | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const r = raw as Record<string, unknown>
+  const out: { tips?: string[]; excludeDefault?: boolean } = {}
+  if (Array.isArray(r.tips)) {
+    const tips = r.tips.filter((t): t is string => typeof t === 'string')
+    if (tips.length) out.tips = tips
+  }
+  if (typeof r.excludeDefault === 'boolean') out.excludeDefault = r.excludeDefault
+  return Object.keys(out).length ? out : undefined
 }
 
 /** 解析 string[]：过滤非 string、trim、去空。非数组 → undefined；空数组保留为 []（语义区分）。 */

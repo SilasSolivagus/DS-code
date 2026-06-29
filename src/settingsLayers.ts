@@ -4,7 +4,7 @@ import path from 'node:path'
 import os from 'node:os'
 import {
   parsePermissions, parseHooksConfig, parseMcpServers, parseSkillsConfig,
-  parseWebSearchConfig, parseStringArray, parseProvidersConfig, parseWorktreeConfig, type Settings,
+  parseWebSearchConfig, parseStringArray, parseProvidersConfig, parseWorktreeConfig, parseSpinnerTipsOverride, type Settings,
 } from './config.js'
 import { parseMemoryConfig } from './memdir/memoryConfig.js'
 
@@ -159,6 +159,8 @@ function parsePresent(raw: any): Record<string, unknown> {
   if ('memory' in raw) p.memory = parseMemoryConfig(raw.memory)
   if ('providers' in raw) { const pv = parseProvidersConfig(raw.providers); if (pv) p.providers = pv }
   if ('worktree' in raw) { const w = parseWorktreeConfig(raw.worktree); if (w) p.worktree = w }
+  if (typeof raw.spinnerTips === 'boolean') p.spinnerTips = raw.spinnerTips
+  if ('spinnerTipsOverride' in raw) { const o = parseSpinnerTipsOverride(raw.spinnerTipsOverride); if (o) p.spinnerTipsOverride = o }
   return p
 }
 
