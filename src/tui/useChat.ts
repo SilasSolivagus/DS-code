@@ -63,7 +63,8 @@ import { resolveResumeModel, rotateModel } from './resumeModel.js'
 import { loadOutputStyles, resolveOutputStyle } from '../outputStyles.js'
 import { createStatusLineRunner, execStatusLineCommand } from '../statusLine.js'
 import { COMMIT_GUIDANCE, COMMIT_PUSH_PR_GUIDANCE, buildCommitContext, buildPrContext, isEmptyDiff, resolveBaseBranch } from '../commitGuidance.js'
-import { expandTextPlaceholders, type TextEntry } from './pasteFold.js'
+import { expandTextPlaceholders, type Attachment, type ImageEntry, type TextEntry } from './pasteFold.js'
+import { describeImage, GlmKeyMissingError } from '../imageDescribe.js'
 
 /** ! 直跑：同步执行，30s 超时，stdout+stderr 合并，超 20k 截断 */
 export function runBang(cmd: string, cwd: string): { output: string; code: number } {
@@ -188,17 +189,45 @@ export function computeSpinnerTip(
 }
 
 /** 同步展开文本占位符（不含图片）。send 与 steer 共用，保证「入队前展开」（CC）。 */
-export function expandTextAttachments(text: string, attachments?: TextEntry[]): string {
+export function expandTextAttachments(text: string, attachments?: Attachment[]): string {
   if (!attachments?.length) return text
   const textMap = new Map(
-    attachments.filter(a => a.type === 'text').map(a => [a.id, { content: a.content }]),
+    attachments.filter(a => a.type === 'text').map(a => [a.id, { content: (a as TextEntry).content }]),
   )
   return expandTextPlaceholders(text, textMap)
 }
 
-/** 把 displayText 里的附件占位符解析成最终文本。Phase 1：仅文本（同步）。Phase 2：在此追加图片异步分支。 */
-export async function resolveAttachments(text: string, attachments?: TextEntry[]): Promise<string> {
-  return expandTextAttachments(text, attachments)
+/** 把 displayText 里的附件占位符解析成最终文本。Phase 2：文本同步展开 + 图片异步 describeImage 注入。 */
+export async function resolveAttachments(
+  text: string,
+  attachments?: Attachment[],
+  deps: { describe?: typeof describeImage; onStep?: (id: number) => void; onError?: (msg: string) => void } = {},
+): Promise<string> {
+  if (!attachments?.length) return text
+  // 1) 展开文本占位符
+  const textMap = new Map(
+    attachments.filter(a => a.type === 'text').map(a => [a.id, { content: (a as TextEntry).content }]),
+  )
+  let out = expandTextPlaceholders(text, textMap)
+  // 2) 图片占位符 → describeImage 注入
+  const describe = deps.describe ?? describeImage
+  const userText = expandTextPlaceholders(text, textMap).replace(/\[Image #\d+\]/g, '').trim()
+  for (const a of attachments) {
+    if (a.type !== 'image') continue
+    const img = a as ImageEntry
+    deps.onStep?.(img.id)
+    let injected: string
+    try {
+      const desc = await describe({ base64: img.base64, mime: img.mime }, userText)
+      injected = `<图片#${img.id} 识别(glm-4.6v)>${desc}</图片#${img.id}>`
+    } catch (e) {
+      const reason = e instanceof GlmKeyMissingError ? '未配置 GLM key' : '识别失败'
+      deps.onError?.(reason)
+      injected = `<图片#${img.id} 无法识别：${reason}>`
+    }
+    out = out.replace(`[Image #${img.id}]`, injected)
+  }
+  return out
 }
 
 export interface ChatState {
@@ -230,9 +259,9 @@ export interface ChatState {
 
 export interface ChatCore {
   state: ChatState
-  send(line: string, attachments?: TextEntry[]): Promise<void> // 斜杠命令本地处理；其余走 runLoop（含边界 reminders、落盘、自动 compact）
+  send(line: string, attachments?: Attachment[]): Promise<void> // 斜杠命令本地处理；其余走 runLoop（含边界 reminders、落盘、自动 compact）
   interrupt(): void // Esc
-  steer(text: string, attachments?: TextEntry[]): void // busy 时 Enter：入队 next；若 toolInFlight 则同时软中断
+  steer(text: string, attachments?: Attachment[]): void // busy 时 Enter：入队 next；若 toolInFlight 则同时软中断
   steerPop(): string | undefined
   steerQueue(): readonly SteeringItem[]
   resolveAsk(d: Decision): void // 权限弹窗回答
@@ -918,10 +947,15 @@ export function createChatCore(opts: {
   }
 
   /** 斜杠命令本地处理（/resume 由 UI 走 resumeList/resume，/exit 归 UI） */
-  const send = async (line: string, attachments?: TextEntry[]): Promise<void> => {
+  const send = async (line: string, attachments?: Attachment[]): Promise<void> => {
     line = line.trim()
     if (!line || busy) return
-    line = expandTextAttachments(line, attachments)  // Phase 1 同步展开；Phase 2 将改为 await resolveAttachments（异步图片）
+    line = attachments?.some(a => a.type === 'image')
+      ? await resolveAttachments(line, attachments, {
+          onStep: (id) => dispatch({ type: 'push', item: { kind: 'tool', id: `img-${id}`, name: '识别图片', desc: `#${id} · glm-4.6v`, running: false, ok: true } }),
+          onError: (msg) => notice('warn', msg),
+        })
+      : expandTextAttachments(line, attachments)
     // ! 直跑：执行 shell 命令，结果作为 bang transcript 块，同时以 XML 格式入上下文（不触发模型回复）
     if (line.startsWith('!')) {
       const cmd = line.slice(1).trim()
@@ -1305,9 +1339,9 @@ export function createChatCore(opts: {
       compactAbort?.abort('user-cancel') // 压缩进行中：ESC 也能中断（否则卡在 doCompact 的 ac，永远逃不出）
       abort.abort('user-cancel')
     },
-    steer: (text: string, attachments?: TextEntry[]) => {
+    steer: (text: string, attachments?: Attachment[]) => {
       if (!text.trim()) return
-      const resolved = expandTextAttachments(text, attachments)  // 入队前展开（CC：队列存完整文本）
+      const resolved = expandTextAttachments(text, attachments)  // 入队前展开（CC：队列存完整文本；图片在 steer 路径不做识别）
       steerQueue.enqueue(resolved, 'next') // 用户路径恒 next（CC 模型：toolInFlight 时自动软中断）
       if (toolsRunning > 0) abort.abort('interrupt') // 有 tool 在跑：软中断当前 turn，loop 据 reason 续跑
     },

@@ -140,7 +140,7 @@ export function App(props: {
     setDraft('')
     setValueOverride(undefined)
     justPickedRef.current = null
-    void core.send(text, attachments as import('./pasteFold.js').TextEntry[] | undefined)
+    void core.send(text, attachments)
   }
 
   const historyItems = state.transcript
@@ -296,7 +296,7 @@ export function App(props: {
                 history={historyItems}
                 busy={state.busy}
                 valueOverride={valueOverride}
-                onSteer={(t, a) => core.steer(t, a as import('./pasteFold.js').TextEntry[] | undefined)}
+                onSteer={(t, a) => core.steer(t, a)}
                 onSteerPop={() => { const v = core.steerPop(); if (v !== undefined) setValueOverride(prev => ({ text: v, nonce: (prev?.nonce ?? 0) + 1 })) }}
                 steerQueueSize={core.steerQueue().length}
                 steerQueueItems={core.steerQueue()}
