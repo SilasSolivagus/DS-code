@@ -275,15 +275,17 @@ git commit -m "feat(paste): InputBox 折叠+截断+占位符删除+附件 map（
 
 **Interfaces:**
 - Consumes: `expandTextPlaceholders`（Task 1）、InputBox 附件（Task 2）。
-- Produces: `send(line: string, attachments?: TextEntry[]): Promise<void>`。
+- Produces: `send(line: string, attachments?: TextEntry[]): Promise<void>`；`steer(text: string, attachments?: TextEntry[]): void`；纯函数 `expandTextAttachments` / `resolveAttachments`。
 
-- [ ] **Step 1: 写失败测试** `test/useChat.expand.test.ts`（直测抽出的纯函数 `resolveAttachments`）
+**🔑 steer 路径（CC 考古确证，2026-06-29）**：实读 CC bundle v2.1.76+v2.1.193 确认 **CC 在「消息入队前」统一展开占位符**——立即发送和排队消息都在进入 message queue 之前展开，队列里存的是**已展开的完整文本**（图片才把 metadata 带进队列）。deepcode 的 steer 是独立路径（`onSteer → core.steer → steerQueue.enqueue`），故**必须在 enqueue 前展开**才忠实 CC。Phase 1 文本展开是同步的，steer 保持**同步**（不引入 async，避免破坏既有 steering 测试对 `steerQueue` 的同步断言）。send 与 steer 共用同步 helper `expandTextAttachments`（DRY）。图片（Phase 2）异步 describeImage 仅在 send 路径；busy 态拖图属罕见，Phase 2 再定（默认不支持，占位符留作已知限制）。
+
+- [ ] **Step 1: 写失败测试** `test/useChat.expand.test.ts`（直测抽出的纯函数）
 
 ```ts
 import { describe, it, expect } from 'vitest'
-import { resolveAttachments } from '../src/tui/useChat.js'
+import { resolveAttachments, expandTextAttachments } from '../src/tui/useChat.js'
 
-describe('resolveAttachments（文本部分）', () => {
+describe('resolveAttachments / expandTextAttachments（文本部分）', () => {
   it('展开文本占位符为完整原文', async () => {
     const out = await resolveAttachments('看这段 [Pasted text #1] 谢谢', [{ id: 1, type: 'text', content: 'A\nB\nC' }])
     expect(out).toBe('看这段 A\nB\nC 谢谢')
@@ -291,42 +293,71 @@ describe('resolveAttachments（文本部分）', () => {
   it('无附件原样返回', async () => {
     expect(await resolveAttachments('hello', undefined)).toBe('hello')
   })
+  it('expandTextAttachments 同步展开（steer 路径用）', () => {
+    expect(expandTextAttachments('a [Pasted text #1] b', [{ id: 1, type: 'text', content: 'X\nY' }])).toBe('a X\nY b')
+    expect(expandTextAttachments('a', undefined)).toBe('a')
+  })
 })
 ```
 
-- [ ] **Step 2: 跑测试确认失败** — Run `npm test -- useChat.expand` → FAIL（`resolveAttachments` 未导出）
+- [ ] **Step 2: 跑测试确认失败** — Run `npm test -- useChat.expand` → FAIL（未导出）
 
-- [ ] **Step 3: useChat 加 `resolveAttachments` + 改 `send` 签名**
+- [ ] **Step 3: useChat 加 `expandTextAttachments`/`resolveAttachments` + 改 `send` 签名**
 
 import 加：`import { expandTextPlaceholders, type TextEntry } from './pasteFold.js'`
 
-新增导出（模块作用域，Phase 2 会在此追加图片分支）：
+新增导出（模块作用域，Phase 2 会在 `resolveAttachments` 追加图片异步分支）：
 ```ts
-/** 把 displayText 里的附件占位符解析成最终文本。Phase 1：仅文本占位符内联展开。 */
-export async function resolveAttachments(text: string, attachments?: TextEntry[]): Promise<string> {
+/** 同步展开文本占位符（不含图片）。send 与 steer 共用，保证「入队前展开」（CC）。 */
+export function expandTextAttachments(text: string, attachments?: TextEntry[]): string {
   if (!attachments?.length) return text
-  const textMap = new Map(attachments.filter(a => a.type === 'text').map(a => [a.id, { content: a.content }]))
+  const textMap = new Map(
+    attachments.filter(a => a.type === 'text').map(a => [a.id, { content: a.content }]),
+  )
   return expandTextPlaceholders(text, textMap)
+}
+
+/** 把 displayText 里的附件占位符解析成最终文本。Phase 1：仅文本（同步）。Phase 2：在此追加图片异步分支。 */
+export async function resolveAttachments(text: string, attachments?: TextEntry[]): Promise<string> {
+  return expandTextAttachments(text, attachments)
 }
 ```
 
-`send` 签名（line 886）改为带附件，函数体最前面先解析：
+`send` 签名（现 `useChat.ts:906` 附近，`const send = async (line: string): Promise<void> =>`）改为带附件，函数体最前先解析：
 ```ts
   const send = async (line: string, attachments?: TextEntry[]): Promise<void> => {
     line = await resolveAttachments(line, attachments)
     // …（其余命令解析/expandAtRefs/runTurn 不变，line 现已是展开后的完整文本）…
 ```
-（`ChatCore.send` 类型签名 line 199 同步加 `attachments?: TextEntry[]`。）
 
-- [ ] **Step 4: App.tsx submit 透传**（line 133）
+- [ ] **Step 3b: steer 入队前展开（CC：expand before enqueue）**
+
+`ChatCore` interface（`useChat.ts:218`/`:220`）签名同步加附件：
+```ts
+  send(line: string, attachments?: TextEntry[]): Promise<void>
+  steer(text: string, attachments?: TextEntry[]): void
+```
+`steer` 实现（现 `useChat.ts:1292`）入队前**同步**展开（软中断仍立即触发，保持转向手感）：
+```ts
+    steer: (text: string, attachments?: TextEntry[]) => {
+      if (!text.trim()) return                                   // 空守卫对显示文本判断（对齐 CC）
+      const resolved = expandTextAttachments(text, attachments)  // 入队前展开（CC：队列存完整文本）
+      steerQueue.enqueue(resolved, 'next')
+      if (toolsRunning > 0) abort.abort('interrupt')
+    },
+```
+（`steerQueue.enqueue` 仍同步，既有 steering 测试不受影响。`steerPop` 返回的就是已展开文本，回填 InputBox 即完整原文，CC-equivalent。）
+
+- [ ] **Step 4: App.tsx submit 透传**（`App.tsx:133` 的 `submit` + `InputBox` 的 `onSteer`）
 ```tsx
   const submit = (text: string, attachments?: import('../pasteFold.js').TextEntry[]) => {
     // …（现有 valueOverride/历史等逻辑保留）…
     void core.send(text, attachments)
   }
 ```
+并把 `<InputBox onSteer={...}>`（`App.tsx:299`）改为透传附件：`onSteer={(t, a) => core.steer(t, a)}`。
 
-- [ ] **Step 5: FullscreenApp.tsx submit 透传**（同名 submit 包装，镜像 App.tsx 改法，传 attachments 给 `core.send`）
+- [ ] **Step 5: FullscreenApp.tsx submit + onSteer 透传**（镜像 App.tsx：`submit` 包装传 attachments 给 `core.send`（`FullscreenApp.tsx:148`）+ `onSteer`（`FullscreenApp.tsx:327`）透传附件给 `core.steer`）。**TUI 双组件铁律：两处都改。**
 
 - [ ] **Step 6: 构建 + 测试** — Run `npm run build && npm test -- useChat.expand inputbox` → PASS / tsc 无错
 
