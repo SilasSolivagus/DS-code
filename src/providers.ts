@@ -10,6 +10,7 @@ export interface ModelMeta {
   out: number
   contextWindow: number
   supportsThinking: boolean
+  supportsVision?: boolean
 }
 
 /** custom provider（用户在 settings.providers.custom 自填的 OpenAI 兼容后端）。 */
@@ -69,6 +70,8 @@ export const BUILTIN_PROVIDERS: Record<string, ProviderPreset> = {
       'glm-4.6': { hit: 0.6, miss: 3, out: 14, contextWindow: 200_000, supportsThinking: true },
       'glm-4.5': { hit: 0.6, miss: 3, out: 14, contextWindow: 128_000, supportsThinking: true },
       'glm-4.5-air': { hit: 0.2, miss: 1, out: 6, contextWindow: 128_000, supportsThinking: true },
+      'glm-4.6v': { hit: 1, miss: 1, out: 3, contextWindow: 128_000, supportsThinking: true, supportsVision: true },
+      'glm-4.6v-flash': { hit: 0, miss: 0, out: 0, contextWindow: 128_000, supportsThinking: true, supportsVision: true },
     },
     defaultMeta: GLM_DEFAULT,
   },
