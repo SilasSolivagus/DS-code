@@ -6,11 +6,21 @@
 // 实现细节：状态变更统一走 setVal helper（同步 ref+state+onChange），useInput handler
 // 读 ref 而非闭包，避免连续按键（↑↑↓）时读到旧状态。
 import React, { useState, useRef, useEffect } from 'react'
-import { Box, Text, useInput } from 'ink'
+import { Box, Text, useInput, useStdout } from 'ink'
 import { useTheme } from '../theme.js'
+import {
+  normalizePaste, shouldFold, makePlaceholder, countNewlines, truncateBuffer,
+  stripTrailingPlaceholder, type TextEntry, type Attachment,
+} from '../pasteFold.js'
+import { readImageFile, readClipboardImage, IMAGE_EXT_RE } from '../../clipboardImage.js'
+
+// 粘贴合并去抖窗口（ms）+ 判定为「粘贴块」的最小长度。短去抖对粘贴内容不可感知；
+// 单字符打字（无换行、短、且无粘贴在途）走同步直插，不引入延迟。
+const PASTE_COALESCE_MS = 40
+const PASTE_MIN_LEN = 20
 
 export function InputBox(props: {
-  onSubmit: (text: string) => void
+  onSubmit: (text: string, attachments?: Attachment[]) => void
   onInterrupt: () => void
   onChange?: (value: string) => void
   /** 补全菜单可见时，↑↓/Tab/Enter 由菜单接管（App 传入） */
@@ -20,7 +30,7 @@ export function InputBox(props: {
   /** App 层注入值（补全 pick 后替换整个 draft）。nonce 变化时才实际替换，防止 re-render 重置 */
   valueOverride?: { text: string; nonce: number }
   /** busy 态 steering：统一入口（Enter 时调用；toolInFlight 由 useChat 内部决定是否软中断） */
-  onSteer?: (text: string) => void
+  onSteer?: (text: string, attachments?: Attachment[]) => void
   /** busy 态 steering：弹出最后一条队列项并回填输入框 */
   onSteerPop?: () => void
   /** 当前 steer 队列长度（决定 ESC busy 语义） */
@@ -40,6 +50,14 @@ export function InputBox(props: {
   // 记录上次处理过的 nonce，只在 nonce 变化时注入；挂载时以当前 nonce 初始化（视为已消费，防止 remount 后老值复活）
   const lastNonceRef = useRef<number | undefined>(props.valueOverride?.nonce)
 
+  const { stdout } = useStdout()
+  const attachMap = useRef(new Map<number, Attachment>())
+  const nextId = useRef(1)
+  // 粘贴合并：终端把大粘贴分多个 stdin data 块送来（ink 的「一次粘贴=单回调」对大粘贴不成立），
+  // 逐块各折一个占位符会泄漏原文+生成多个相邻占位符。缓冲粘贴态的块，短去抖后整体折叠一次。
+  const pasteBufRef = useRef('')
+  const pasteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   // 统一变更入口：value 的 ref/state/onChange 三处必须同步，漏一处就 desync
   const setVal = (v: string) => {
     valueRef.current = v
@@ -55,7 +73,41 @@ export function InputBox(props: {
     }
   }, [props.valueOverride?.nonce])  // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 整 buffer 截断：value 超限时折叠中段为 Truncated 占位符
+  const truncatedOnce = useRef(false)
+  useEffect(() => {
+    if (value === '') { truncatedOnce.current = false; return }
+    if (truncatedOnce.current) return
+    const r = truncateBuffer(value, nextId.current)
+    if (r) { nextId.current++; attachMap.current.set(r.entry.id, r.entry); truncatedOnce.current = true; setVal(r.newText) }
+  }, [value])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 合并缓冲区一次性折叠（去抖触发或提交前手动 flush）
+  const flushPasteBuffer = () => {
+    if (pasteTimerRef.current) { clearTimeout(pasteTimerRef.current); pasteTimerRef.current = null }
+    const raw = pasteBufRef.current
+    pasteBufRef.current = ''
+    if (!raw) return
+    const clean = normalizePaste(raw)
+    if (!clean) return
+    const rows = stdout?.rows ?? 24
+    if (shouldFold(clean, rows)) {
+      const id = nextId.current++
+      attachMap.current.set(id, { id, type: 'text', content: clean })
+      setVal(valueRef.current + makePlaceholder(id, countNewlines(clean)))
+    } else {
+      setVal(valueRef.current + clean)
+    }
+  }
+  // 卸载时清掉悬挂的去抖定时器（避免卸载后 setState）
+  useEffect(() => () => { if (pasteTimerRef.current) clearTimeout(pasteTimerRef.current) }, [])
+
   useInput((input, key) => {
+    // 控制键到来时先处理悬挂的粘贴缓冲：ESC 丢弃，其余键先 flush 把粘贴内容物化进 value
+    if (pasteTimerRef.current && (key.return || key.escape || key.backspace || key.delete || key.upArrow || key.downArrow || key.tab)) {
+      if (key.escape) { pasteBufRef.current = ''; clearTimeout(pasteTimerRef.current); pasteTimerRef.current = null }
+      else flushPasteBuffer()
+    }
     if (key.escape) {
       if (props.busy) {
         if ((props.steerQueueSize ?? 0) > 0) props.onSteerPop?.()
@@ -81,12 +133,14 @@ export function InputBox(props: {
       }
       const full = pendingRef.current + valueRef.current
       if (!full.trim()) return
+      const attachments = [...attachMap.current.values()]
       if (props.busy) {
         // busy 态：Enter 统一调 onSteer（toolInFlight 时 useChat 内部附带软中断）
-        props.onSteer?.(full)
+        props.onSteer?.(full, attachments)
       } else {
-        props.onSubmit(full)
+        props.onSubmit(full, attachments)
       }
+      attachMap.current = new Map(); nextId.current = 1
       pendingRef.current = ''
       histIdxRef.current = -1
       setPending('')
@@ -106,13 +160,42 @@ export function InputBox(props: {
       return
     }
     if (key.backspace || key.delete) {
-      setVal(valueRef.current.slice(0, -1))
+      const stripped = stripTrailingPlaceholder(valueRef.current)
+      setVal(stripped !== null ? stripped : valueRef.current.slice(0, -1))
+      return
+    }
+    if (key.ctrl && input === 'v') {
+      const img = readClipboardImage()
+      if (img) {
+        const id = nextId.current++
+        attachMap.current.set(id, { id, type: 'image', ...img, source: 'clipboard' })
+        setVal(valueRef.current + `[Image #${id}]`)
+      }
       return
     }
     if (key.ctrl || key.meta || key.tab) return      // tab 留给菜单
     if (input) {
-      // 粘贴可能夹带控制字符（尤其 \r）：会覆写/串行致光标与文本错位。剥 C0/C1 控制符，保留 \n。
-      const clean = input.replace(/[\x00-\x09\x0B-\x1F\x7F]/g, '')
+      // 图片：拖入的图片文件路径（去引号/转义空格）——单块同步检测，不进缓冲
+      const trimmed = input.trim().replace(/^['"]|['"]$/g, '').replace(/\\ /g, ' ')
+      if (IMAGE_EXT_RE.test(trimmed)) {
+        const img = readImageFile(trimmed)
+        if (img) {
+          const id = nextId.current++
+          attachMap.current.set(id, { id, type: 'image', ...img, source: 'file' })
+          setVal(valueRef.current + `[Image #${id}]`)
+          return
+        }
+      }
+      // 粘贴块（含换行 / 较长 / 已有粘贴在途）→ 缓冲，去抖后整体折叠一次；
+      // 单字符打字 → 同步直插，零延迟。
+      const pasteLike = pasteTimerRef.current !== null || /[\r\n]/.test(input) || input.length > PASTE_MIN_LEN
+      if (pasteLike) {
+        pasteBufRef.current += input
+        if (pasteTimerRef.current) clearTimeout(pasteTimerRef.current)
+        pasteTimerRef.current = setTimeout(flushPasteBuffer, PASTE_COALESCE_MS)
+        return
+      }
+      const clean = normalizePaste(input)
       if (clean) setVal(valueRef.current + clean)
     }
   })

@@ -4,7 +4,7 @@
 // 已剔除 CC 的云端专属信息（5h 配额窗口、hooks、auto-mode 循环）——deepcode 是按 token 计费的 DeepSeek。
 import React from 'react'
 import { Box, Text } from 'ink'
-import { useTheme, DEFAULT_THEME, BLOCK_GAP } from '../theme.js'
+import { useTheme, DEFAULT_THEME } from '../theme.js'
 
 export function contextBarColor(pct: number, theme: typeof DEFAULT_THEME = DEFAULT_THEME): string {
   if (pct >= 95) return theme.err
@@ -48,7 +48,7 @@ export function StatusFooter(props: {
   // / `N DEEPCODE.md`（独立行，仅有时显示）/ `✓ Bash ×8 | ✓ Read ×4`（独立行，| 分隔、× 前留空）/ `/ 看命令…`。
   // 注意：记忆行/工具行按需出现 → 行数可变，App 的 IME 光标偏移须同步动态计算（footerExtraRows）。
   return (
-    <Box flexDirection="column" marginTop={BLOCK_GAP}>
+    <Box flexDirection="column">
       {/* 簇 1：Row 1（模型/模式/git） */}
       <Box flexDirection="column">
         <Text>
@@ -66,7 +66,7 @@ export function StatusFooter(props: {
       </Box>
 
       {/* 簇 2：Row 2（context/缓存/budget/花费）+ Row 2.5（statusLineOutput 若有） */}
-      <Box flexDirection="column" marginTop={BLOCK_GAP}>
+      <Box flexDirection="column">
         <Text>
           <Text dimColor>Context </Text>
           <Text color={contextBarColor(usedPct, T)}>{fmtK(props.contextUsed)} / {fmtK(props.contextWindow)}</Text>
@@ -86,7 +86,7 @@ export function StatusFooter(props: {
 
       {/* 簇 3：Row 3（记忆，若有）+ Row 4（工具计数，若有）+ Row 5（命令提示，恒有）
           簇 3 命令提示恒在故不会空簇；记忆/工具缺失时不留空行。 */}
-      <Box flexDirection="column" marginTop={BLOCK_GAP}>
+      <Box flexDirection="column">
         {props.memoryCount > 0 && <Text dimColor>{`${props.memoryCount} DEEPCODE.md`}</Text>}
         {props.toolCounts.length > 0 && (
           <Text>

@@ -130,7 +130,7 @@ export function App(props: {
     setValueOverride(prev => ({ text: newDraft, nonce: (prev?.nonce ?? 0) + 1 }))
   }
 
-  const submit = (text: string) => {
+  const submit = (text: string, attachments?: import('./pasteFold.js').Attachment[]) => {
     if (text === '/exit') { exit(); return }
     if (text === '/resume') { setResumeMode(true); return }
     if (text === '/model') { setModelPickerMode(true); return }
@@ -140,7 +140,7 @@ export function App(props: {
     setDraft('')
     setValueOverride(undefined)
     justPickedRef.current = null
-    void core.send(text)
+    void core.send(text, attachments)
   }
 
   const historyItems = state.transcript
@@ -204,9 +204,9 @@ export function App(props: {
 
   // 每帧渲染后把硬件光标停到输入框插入点（用原始 write 绕过上面的解除逻辑）。
   // 上移行数 = 底边线(1) + 页脚行数 + ink 末尾换行(1)；页脚固定行 = 行1(1) + 行2(1) + 提示(1) = 3，
-  // 加 3 个簇间/页脚顶空行（StatusFooter 外层 marginTop + 簇2 marginTop + 簇3 marginTop 各=BLOCK_GAP=1）= 6，
-  // 加底边线(1) + ink 末尾换行(1) = 8；再加按需行：记忆行 + 工具行 + statusLine行。
-  const linesBelowCaret = 8 + (memoryCount > 0 ? 1 : 0) + (toolCounts.length > 0 ? 1 : 0) + (state.statusLineOutput ? 1 : 0)
+  // 页脚簇间/顶空行已全去（紧贴输入框）；加底边线(1) + ink 末尾换行(1) = 5；
+  // 再加按需行：记忆行 + 工具行 + statusLine行。
+  const linesBelowCaret = 5 + (memoryCount > 0 ? 1 : 0) + (toolCounts.length > 0 ? 1 : 0) + (state.statusLineOutput ? 1 : 0)
   useEffect(() => {
     if (!inputActive || !process.stdout.isTTY || CURSOR_PARK_OFF) return
     const out = process.stdout as NodeJS.WriteStream & { __origWrite?: typeof process.stdout.write }
@@ -296,7 +296,7 @@ export function App(props: {
                 history={historyItems}
                 busy={state.busy}
                 valueOverride={valueOverride}
-                onSteer={(t) => core.steer(t)}
+                onSteer={(t, a) => core.steer(t, a)}
                 onSteerPop={() => { const v = core.steerPop(); if (v !== undefined) setValueOverride(prev => ({ text: v, nonce: (prev?.nonce ?? 0) + 1 })) }}
                 steerQueueSize={core.steerQueue().length}
                 steerQueueItems={core.steerQueue()}
