@@ -23,6 +23,9 @@ import { runAutoDream } from '../services/memory/autoDream.js'
 import { buildSystemPrompt, findMemoryFiles, PLAN_MODE_GUIDANCE } from '../prompt.js'
 import { formatMemory } from '../memory.js'
 import { loadSettings, loadRawUserSettings, saveRawUserSettings, addUserAllowRule, removeUserAllowRuleByValue, removeUserDenyRuleByValue, SETTINGS_FILE } from '../config.js'
+import type { Settings } from '../config.js'
+import { loadAppState, saveAppState } from '../tipsState.js'
+import { selectTip, recordTipShown } from './tips.js'
 import { formatPermissionRules, resolveRuleRemoval } from '../permissionsView.js'
 import { loadLayeredSettings } from '../settingsLayers.js'
 import { runHooks } from '../hooks.js'
@@ -168,6 +171,21 @@ export interface PendingAsk { toolName: string; desc: string; dangerous: boolean
 export interface PendingQuestion { questions: Question[]; resolve: (a: Answer[] | null) => void }
 export interface PendingPlanApproval { plan: string; allowedPrompts?: AllowedPrompt[]; resolve: (approved: boolean) => void }
 
+/** 启动时算一次 spinner tip：递增会话计数→按冷却选一条→记录历史→持久化。返回 tip 文案或 null。 */
+export function computeSpinnerTip(
+  settings: Pick<Settings, 'spinnerTips' | 'spinnerTipsOverride'>,
+  stateFile?: string,
+  rng?: () => number,
+): string | null {
+  if (settings.spinnerTips === false) return null
+  const st = stateFile ? loadAppState(stateFile) : loadAppState()
+  st.startupCount += 1
+  const tip = selectTip({ startupCount: st.startupCount, tipsHistory: st.tipsHistory, override: settings.spinnerTipsOverride, rng })
+  if (tip) st.tipsHistory = recordTipShown(tip.id, st.startupCount, st.tipsHistory)
+  if (stateFile) saveAppState(st, stateFile); else saveAppState(st)
+  return tip?.content ?? null
+}
+
 export interface ChatState {
   transcript: TranscriptItem[]
   busy: boolean
@@ -183,6 +201,7 @@ export interface ChatState {
   turnStartAt: number | null // 当前轮开始时间戳（spinner 计算耗时秒数；空闲为 null）
   turnOutTokens: number      // 当前轮累计输出 token（spinner 实时显示；流式估算，turn 边界用真实值校准）
   hookProgress: string | null // 1.7 当前运行中的慢阶段 hook 文案（null=无）
+  spinnerTip: string | null // 5.10 本会话固定显示的 tip（null=关闭/无合格）
   sessionCost(): number
   cacheHitRate(): number // usageLog 累计 hit/prompt，DeepSeek 状态行核心指标
   cacheSavings(): number // usageLog 累计缓存省下金额（CNY），DeepSeek 状态行
@@ -304,6 +323,7 @@ export function createChatCore(opts: {
   const usageLog: UsageRecord[] = []
   let session!: SessionHandle
   let hookProgress: string | null = null
+  const spinnerTip: string | null = computeSpinnerTip(settings)
   const hookDeps = {
     ...makeHookRuntime({
       client: opts.client,
@@ -363,7 +383,7 @@ export function createChatCore(opts: {
   // 5.7 statusLine 输出（onChange 闭包按引用捕获 setState，运行期才调用，无 TDZ）
   let statusLineOutput: string | null = null
   const snap = (): ChatState => ({
-    transcript, busy, model, thinking, effortLevel, permMode, pendingAsk, pendingQuestion, pendingPlanApproval, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, hookProgress, sessionCost, cacheHitRate, cacheSavings, contextPct, contextUsed, contextWindow, tokenBudget: tokenBudgetGet, budgetUsed: budgetUsedGet, statusLineOutput,
+    transcript, busy, model, thinking, effortLevel, permMode, pendingAsk, pendingQuestion, pendingPlanApproval, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, hookProgress, spinnerTip, sessionCost, cacheHitRate, cacheSavings, contextPct, contextUsed, contextWindow, tokenBudget: tokenBudgetGet, budgetUsed: budgetUsedGet, statusLineOutput,
   })
   let state = snap()
   const setState = (): void => {
