@@ -19,6 +19,7 @@ describe('InputBox image capture', () => {
     await new Promise(r => setTimeout(r, 20))
     stdin.write('\r')
     await new Promise(r => setTimeout(r, 20))
+    expect(onSubmit).toHaveBeenCalledTimes(1)
     const [text, attachments] = onSubmit.mock.calls[0]
     expect(text).toMatch(/\[Image #1\]/)
     expect(attachments[0]).toMatchObject({ type: 'image', mime: 'image/png', source: 'file' })

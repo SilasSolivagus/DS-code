@@ -211,7 +211,7 @@ export async function resolveAttachments(
   let out = expandTextPlaceholders(text, textMap)
   // 2) 图片占位符 → describeImage 注入
   const describe = deps.describe ?? describeImage
-  const userText = expandTextPlaceholders(text, textMap).replace(/\[Image #\d+\]/g, '').trim()
+  const userText = out.replace(/\[Image #\d+\]/g, '').trim()
   for (const a of attachments) {
     if (a.type !== 'image') continue
     const img = a as ImageEntry
@@ -225,7 +225,7 @@ export async function resolveAttachments(
       deps.onError?.(reason)
       injected = `<图片#${img.id} 无法识别：${reason}>`
     }
-    out = out.replace(`[Image #${img.id}]`, injected)
+    out = out.replace(`[Image #${img.id}]`, () => injected)
   }
   return out
 }

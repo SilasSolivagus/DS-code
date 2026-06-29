@@ -64,4 +64,16 @@ describe('resolveAttachments — 图片识别注入', () => {
     )
     expect(out).toBe('some text 和 <图片#2 识别(glm-4.6v)>hello image</图片#2>')
   })
+
+  it('$& 等特殊替换模式在描述中不损坏输出（回归 Fix #1）', async () => {
+    const fakeDescribe = async () => '价格是 $&100'
+    const out = await resolveAttachments(
+      '看图 [Image #1]',
+      [{ id: 1, type: 'image', base64: 'A', mime: 'image/png', source: 'file' }],
+      { describe: fakeDescribe },
+    )
+    // 描述中的 $& 必须原样保留，不得被 String.replace 插回占位符
+    expect(out).toContain('价格是 $&100')
+    expect(out).not.toContain('[Image #1]')
+  })
 })
