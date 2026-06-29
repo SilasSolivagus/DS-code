@@ -195,9 +195,10 @@ export function FullscreenApp(props: {
   const frameH = Math.min(scrollH + bottomH, rows) // 实际渲染总高（un-park 用：ink 把光标留在此底部）
   frameHRef.current = frameH
   const aboveInput = suggestionsActive ? suggestions.length : 0
-  // 输入框光标行（1-based 从顶算）：ScrollView(scrollH) + 提示行(1) + 上方 suggestions + 输入框上边线(1) + 光标内容行(1)。
+  // 输入框光标行（1-based 从顶算）：ScrollView(scrollH) + bottomRef 顶 marginTop 空行(BLOCK_GAP，栅格化加)
+  // + 提示行(1) + 上方 suggestions + 输入框上边线(1) + 光标内容行(1)。
   // 末项加 parkRowOffset：value 折行时光标落到末视觉行（否则停在折行首行）。±1 由 pty 微调
-  const caretRow = Math.max(1, scrollH + 1 + aboveInput + 2 + parkRowOffset(draft, (stdout?.columns ?? 80) - 2 * GUTTER, dispWidth))
+  const caretRow = Math.max(1, scrollH + BLOCK_GAP + 1 + aboveInput + 2 + parkRowOffset(draft, (stdout?.columns ?? 80) - 2 * GUTTER, dispWidth))
 
   // 停泊状态：active=已泊待解；row/col=最新停泊目标；enabled=输入框激活可泊；id=重停泊去抖句柄。
   const parkRef = useRef<{ active: boolean; row: number; col: number; enabled: boolean; id?: ReturnType<typeof setTimeout> }>({ active: false, row: 1, col: 1, enabled: false })
