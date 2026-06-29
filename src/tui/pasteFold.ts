@@ -1,5 +1,7 @@
 // src/tui/pasteFold.ts — 文本粘贴折叠（1:1 复刻 CC bundle v2.1.76）。纯逻辑。
 export interface TextEntry { id: number; type: 'text'; content: string }
+export interface ImageEntry { id: number; type: 'image'; base64: string; mime: string; source: 'file' | 'clipboard' }
+export type Attachment = TextEntry | ImageEntry
 
 export const PASTE_CHAR_THRESHOLD = 800   // CC DG1
 export const TRUNCATE_LIMIT = 10000        // CC qfz

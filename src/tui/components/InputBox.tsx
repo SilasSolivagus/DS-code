@@ -10,11 +10,12 @@ import { Box, Text, useInput, useStdout } from 'ink'
 import { useTheme } from '../theme.js'
 import {
   normalizePaste, shouldFold, makePlaceholder, countNewlines, truncateBuffer,
-  stripTrailingPlaceholder, type TextEntry,
+  stripTrailingPlaceholder, type TextEntry, type Attachment,
 } from '../pasteFold.js'
+import { readImageFile, readClipboardImage, IMAGE_EXT_RE } from '../../clipboardImage.js'
 
 export function InputBox(props: {
-  onSubmit: (text: string, attachments?: TextEntry[]) => void
+  onSubmit: (text: string, attachments?: Attachment[]) => void
   onInterrupt: () => void
   onChange?: (value: string) => void
   /** 补全菜单可见时，↑↓/Tab/Enter 由菜单接管（App 传入） */
@@ -24,7 +25,7 @@ export function InputBox(props: {
   /** App 层注入值（补全 pick 后替换整个 draft）。nonce 变化时才实际替换，防止 re-render 重置 */
   valueOverride?: { text: string; nonce: number }
   /** busy 态 steering：统一入口（Enter 时调用；toolInFlight 由 useChat 内部决定是否软中断） */
-  onSteer?: (text: string, attachments?: TextEntry[]) => void
+  onSteer?: (text: string, attachments?: Attachment[]) => void
   /** busy 态 steering：弹出最后一条队列项并回填输入框 */
   onSteerPop?: () => void
   /** 当前 steer 队列长度（决定 ESC busy 语义） */
@@ -45,7 +46,7 @@ export function InputBox(props: {
   const lastNonceRef = useRef<number | undefined>(props.valueOverride?.nonce)
 
   const { stdout } = useStdout()
-  const attachMap = useRef(new Map<number, TextEntry>())
+  const attachMap = useRef(new Map<number, Attachment>())
   const nextId = useRef(1)
 
   // 统一变更入口：value 的 ref/state/onChange 三处必须同步，漏一处就 desync
@@ -129,8 +130,28 @@ export function InputBox(props: {
       setVal(stripped !== null ? stripped : valueRef.current.slice(0, -1))
       return
     }
+    if (key.ctrl && input === 'v') {
+      const img = readClipboardImage()
+      if (img) {
+        const id = nextId.current++
+        attachMap.current.set(id, { id, type: 'image', ...img, source: 'clipboard' })
+        setVal(valueRef.current + `[Image #${id}]`)
+      }
+      return
+    }
     if (key.ctrl || key.meta || key.tab) return      // tab 留给菜单
     if (input) {
+      // 图片：拖入的图片文件路径（去引号/转义空格）
+      const trimmed = input.trim().replace(/^['"]|['"]$/g, '').replace(/\\ /g, ' ')
+      if (IMAGE_EXT_RE.test(trimmed)) {
+        const img = readImageFile(trimmed)
+        if (img) {
+          const id = nextId.current++
+          attachMap.current.set(id, { id, type: 'image', ...img, source: 'file' })
+          setVal(valueRef.current + `[Image #${id}]`)
+          return
+        }
+      }
       const clean = normalizePaste(input)
       if (!clean) return
       const rows = stdout?.rows ?? 24

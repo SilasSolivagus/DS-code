@@ -130,7 +130,7 @@ export function App(props: {
     setValueOverride(prev => ({ text: newDraft, nonce: (prev?.nonce ?? 0) + 1 }))
   }
 
-  const submit = (text: string, attachments?: import('./pasteFold.js').TextEntry[]) => {
+  const submit = (text: string, attachments?: import('./pasteFold.js').Attachment[]) => {
     if (text === '/exit') { exit(); return }
     if (text === '/resume') { setResumeMode(true); return }
     if (text === '/model') { setModelPickerMode(true); return }
@@ -140,7 +140,7 @@ export function App(props: {
     setDraft('')
     setValueOverride(undefined)
     justPickedRef.current = null
-    void core.send(text, attachments)
+    void core.send(text, attachments as import('./pasteFold.js').TextEntry[] | undefined)
   }
 
   const historyItems = state.transcript
@@ -296,7 +296,7 @@ export function App(props: {
                 history={historyItems}
                 busy={state.busy}
                 valueOverride={valueOverride}
-                onSteer={(t, a) => core.steer(t, a)}
+                onSteer={(t, a) => core.steer(t, a as import('./pasteFold.js').TextEntry[] | undefined)}
                 onSteerPop={() => { const v = core.steerPop(); if (v !== undefined) setValueOverride(prev => ({ text: v, nonce: (prev?.nonce ?? 0) + 1 })) }}
                 steerQueueSize={core.steerQueue().length}
                 steerQueueItems={core.steerQueue()}
