@@ -3,7 +3,7 @@
 // 对照 CC 真实样式（图6）：耗时超 60s 显示 `Nm Ms`；token 用 ↓（输出/收到，CC 同款）。
 // 符号每 120ms 轮换；动名词每次挂载固定；耗时由 turnStartAt 计算，每秒重渲染一次。
 import React, { useState, useEffect } from 'react'
-import { Text } from 'ink'
+import { Text, Box } from 'ink'
 import { useTheme, SPINNER_SYMBOLS, THINKING_VERBS } from '../theme.js'
 
 /** ≥1000 显示 1 位小数 + k（1234→1.2k），否则整数 */
@@ -20,9 +20,10 @@ interface SpinnerProps {
   turnStartAt: number | null
   turnOutTokens: number
   hookLabel?: string | null
+  tip?: string | null
 }
 
-export function Spinner({ turnStartAt, turnOutTokens, hookLabel }: SpinnerProps) {
+export function Spinner({ turnStartAt, turnOutTokens, hookLabel, tip }: SpinnerProps) {
   const T = useTheme()
   const [symIdx, setSymIdx] = useState(0)
   const [, setTick] = useState(0) // 每秒重渲染以刷新耗时
@@ -41,8 +42,11 @@ export function Spinner({ turnStartAt, turnOutTokens, hookLabel }: SpinnerProps)
     return <Text color={T.accent}>{symbol} {hookLabel}</Text>
   }
   return (
-    <Text color={T.accent}>
-      {symbol} {verb}… ({fmtElapsed(elapsed)} · ↓ {fmtTokens(turnOutTokens)} tokens · esc 中断)
-    </Text>
+    <Box flexDirection="column">
+      <Text color={T.accent}>
+        {symbol} {verb}… ({fmtElapsed(elapsed)} · ↓ {fmtTokens(turnOutTokens)} tokens · esc 中断)
+      </Text>
+      {tip ? <Text color={T.dim}>💡 {tip}</Text> : null}
+    </Box>
   )
 }
