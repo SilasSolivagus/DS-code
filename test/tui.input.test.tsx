@@ -27,7 +27,7 @@ describe('InputBox', () => {
     expect(onSubmit).not.toHaveBeenCalled()
     r.stdin.write('第二行')
     r.stdin.write('\r')
-    expect(onSubmit).toHaveBeenCalledWith('第一行\n第二行')
+    expect(onSubmit).toHaveBeenCalledWith('第一行\n第二行', [])
   })
 
   it('↑↓ 翻历史', async () => {
