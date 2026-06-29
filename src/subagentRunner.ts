@@ -43,6 +43,10 @@ export interface RunSubagentOpts {
   agentType: string
   /** worktree 路径。设置后子代理 cwd 锚定此 worktree，系统提示追加隔离说明。 */
   worktreePath?: string
+  /** 推理开关。默认 false（保持现有所有调用者行为不变）。Workflow agent({effort}) 用。 */
+  thinking?: boolean
+  /** 推理档位（thinking=true 时透传 api reasoning_effort）。 */
+  effortLevel?: 'low' | 'medium' | 'high'
 }
 
 /** worktree 子代理隔离提示（追加在 agent 系统提示后）。对齐 CC H_4。 */
@@ -89,7 +93,8 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string | undef
       client: opts.client,
       tools: subTools,
       model: opts.model,
-      thinking: false,
+      thinking: opts.thinking ?? false,
+      effortLevel: opts.effortLevel,
       // 子代理无审批 UI：安全命令自动放行、危险命令拒绝（yolo+钳制，见 subagentPermissionDecision）。
       permission: { mode: 'default', rules: [], saveRule: () => {}, ask: async (_n, desc) => subagentPermissionDecision(desc) },
       ctx: subCtx,
