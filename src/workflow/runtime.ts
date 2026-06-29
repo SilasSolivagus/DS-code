@@ -58,8 +58,39 @@ export function createRuntime(deps: RuntimeDeps): SandboxHooks & { agentCount: (
     deps.onProgress(rec)
   }
 
-  async function parallel(): Promise<unknown[]> { throw new Error('implemented in Task 8') }
-  async function pipeline(): Promise<unknown[]> { throw new Error('implemented in Task 8') }
+  // 并发上限调度：跑 thunks，最多 MAX_CONCURRENCY 在途，结果保序，throw→null
+  async function runWithCap<T>(thunks: (() => Promise<T>)[]): Promise<(T | null)[]> {
+    const results: (T | null)[] = new Array(thunks.length).fill(null)
+    let next = 0
+    async function worker() {
+      while (next < thunks.length) {
+        const i = next++
+        try { results[i] = await thunks[i]() } catch { results[i] = null }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(MAX_CONCURRENCY, thunks.length) }, worker))
+    return results
+  }
+
+  async function parallel(thunks: unknown[]): Promise<unknown[]> {
+    if (!Array.isArray(thunks) || thunks.some(t => typeof t !== 'function')) {
+      throw new Error('parallel() expects an array of functions, not promises. Wrap each call: () => agent(...)')
+    }
+    if (thunks.length > MAX_ITEMS) throw new Error(`A single parallel()/pipeline() call accepts at most ${MAX_ITEMS} items; passing more is an explicit error, not a silent truncation.`)
+    return runWithCap(thunks as (() => Promise<unknown>)[])
+  }
+
+  async function pipeline(items: unknown[], ...stages: unknown[]): Promise<unknown[]> {
+    if (items.length > MAX_ITEMS) throw new Error(`A single parallel()/pipeline() call accepts at most ${MAX_ITEMS} items; passing more is an explicit error, not a silent truncation.`)
+    const fns = stages as ((prev: unknown, orig: unknown, idx: number) => unknown)[]
+    // 每 item 独立穿全 stage，无 barrier；并发受 cap 约束
+    const thunks = items.map((orig, idx) => async () => {
+      let cur: unknown = orig
+      for (const stage of fns) cur = await stage(cur, orig, idx)
+      return cur
+    })
+    return runWithCap(thunks)
+  }
   async function workflow(nameOrRef: unknown, a?: unknown): Promise<unknown> {
     if (!deps.resolveWorkflow) throw new Error('Nested workflow() is not available here.')
     return deps.resolveWorkflow(nameOrRef, a)
