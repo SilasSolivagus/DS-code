@@ -4,7 +4,7 @@
 // 已剔除 CC 的云端专属信息（5h 配额窗口、hooks、auto-mode 循环）——deepcode 是按 token 计费的 DeepSeek。
 import React from 'react'
 import { Box, Text } from 'ink'
-import { useTheme, DEFAULT_THEME, BLOCK_GAP } from '../theme.js'
+import { useTheme, DEFAULT_THEME } from '../theme.js'
 
 export function contextBarColor(pct: number, theme: typeof DEFAULT_THEME = DEFAULT_THEME): string {
   if (pct >= 95) return theme.err
@@ -48,7 +48,7 @@ export function StatusFooter(props: {
   // / `N DEEPCODE.md`（独立行，仅有时显示）/ `✓ Bash ×8 | ✓ Read ×4`（独立行，| 分隔、× 前留空）/ `/ 看命令…`。
   // 注意：记忆行/工具行按需出现 → 行数可变，App 的 IME 光标偏移须同步动态计算（footerExtraRows）。
   return (
-    <Box flexDirection="column" marginTop={BLOCK_GAP}>
+    <Box flexDirection="column">
       {/* 簇 1：Row 1（模型/模式/git） */}
       <Box flexDirection="column">
         <Text>
