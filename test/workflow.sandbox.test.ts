@@ -38,4 +38,11 @@ describe('runSandbox', () => {
   it('eval 被禁（codeGeneration.strings:false）', async () => {
     await expect(runSandbox(`return eval('1+1')`, null, hooks(), new AbortController().signal)).rejects.toThrow()
   })
+  it('Math.random 在沙箱内被删除（确定性兜底实证）', async () => {
+    const out = await runSandbox(`return typeof Math.random`, null, hooks(), new AbortController().signal)
+    expect(out).toBe('undefined')
+  })
+  it('import() 在沙箱内不可用', async () => {
+    await expect(runSandbox(`return import('node:fs')`, null, hooks(), new AbortController().signal)).rejects.toThrow()
+  })
 })
