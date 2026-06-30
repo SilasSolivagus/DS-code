@@ -64,6 +64,48 @@ describe('keepalive', () => {
   })
 })
 
+describe('tick 序列化（每次至多触发一条）', () => {
+  it('两条同时到期 → 第一个 tick 只触发一条，busy 解除后第二个 tick 触发第二条', () => {
+    let busy = false
+    const fired: string[] = []
+    const svc = new SchedulerService({
+      isIdle: () => !busy,
+      fire: (_d, p) => { fired.push(p); busy = true },
+      cwd: () => '/tmp/proj',
+      doneMeansMerged: () => false,
+    })
+    const now = 1_000_000_000_000
+    svc.scheduleWakeup(60, 'r1', 'A', now)
+    svc.scheduleWakeup(60, 'r2', 'B', now)
+    svc.tick(now + 180_000)
+    expect(fired.length).toBe(1)
+    busy = false
+    svc.tick(now + 200_000)
+    expect(fired.length).toBe(2)
+  })
+
+  it('两条即时到期的 one-shot cron → 两次 tick 各触发一条，之后队列清空', () => {
+    const fired: string[] = []
+    const svc = new SchedulerService({
+      isIdle: () => true,
+      fire: (_d, p) => fired.push(p),
+      cwd: () => '/tmp/proj',
+      doneMeansMerged: () => false,
+    })
+    const now = 1_000_000_000_000
+    // 直接 push 两条即时到期的 one-shot cron 条目（模拟 reload missedOneShots 路径）
+    ;(svc as any).entries.push(
+      { id: 'm1', kind: 'cron', cron: '* * * * *', prompt: 'M1', recurring: false, durable: false, createdAt: now - 1000, nextFireAt: now },
+      { id: 'm2', kind: 'cron', cron: '* * * * *', prompt: 'M2', recurring: false, durable: false, createdAt: now - 1000, nextFireAt: now },
+    )
+    svc.tick(now)
+    expect(fired.length).toBe(1)
+    svc.tick(now + 100)
+    expect(fired.length).toBe(2)
+    expect(svc.list().length).toBe(0)
+  })
+})
+
 describe('addCron / recurring', () => {
   it('recurring 触发后重算 nextFireAt（不移除）', () => {
     const { svc, fired } = mk()

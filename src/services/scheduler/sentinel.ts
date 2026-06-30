@@ -28,18 +28,23 @@ const TICK_DYNAMIC =
   `Run the autonomous check using the loop instructions established earlier in this conversation. If you cannot find them, treat this as a no-op tick.\n` +
   `You scheduled this tick via the ScheduleWakeup tool (not a recurring cron). To keep the loop alive, call ScheduleWakeup again at the end of this turn with \`prompt\` set to the literal sentinel \`${SENTINEL_DYNAMIC}\` — otherwise the loop ends after this tick.`
 
-/** 维护 first-fire 状态：首发 prepend preamble，后续只短 tick。reset 清状态（新循环/会话）。 */
+/** 维护 first-fire 状态：首发 prepend preamble，后续只短 tick。reset 清状态（新循环/会话）。
+ *  delivered 按 kind 独立跟踪：动态循环与 cron 循环并发时各自有完整首发，互不干扰。 */
 export function createSentinelResolver(opts: { doneMeansMerged: () => boolean }) {
-  let delivered = false
+  const delivered = { cron: false, dynamic: false }
   return {
     resolve(prompt: string): string {
       if (!isSentinel(prompt)) return prompt
-      const tick = prompt === SENTINEL_DYNAMIC ? TICK_DYNAMIC : TICK_CRON
-      if (delivered) return tick
-      delivered = true
+      const kind = prompt === SENTINEL_DYNAMIC ? 'dynamic' : 'cron'
+      const tick = kind === 'dynamic' ? TICK_DYNAMIC : TICK_CRON
+      if (delivered[kind]) return tick
+      delivered[kind] = true
       const tail = opts.doneMeansMerged() ? PREAMBLE_TAIL_PERSIST : PREAMBLE_TAIL_QUIET
       return `${PREAMBLE_HEAD}\n${tail}\n${tick}`
     },
-    reset(): void { delivered = false },
+    reset(kind?: 'cron' | 'dynamic'): void {
+      if (kind) delivered[kind] = false
+      else { delivered.cron = false; delivered.dynamic = false }
+    },
   }
 }

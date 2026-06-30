@@ -38,10 +38,31 @@ describe('resolver', () => {
     const r = createSentinelResolver({ doneMeansMerged: () => false })
     expect(r.resolve(SENTINEL_DYNAMIC)).toContain('do one quick CI/threads check and stop in a single line')
   })
-  it('reset 后重新首发', () => {
+  it('reset() 无参重置两种 kind 后均重新首发', () => {
     const r = createSentinelResolver({ doneMeansMerged: () => false })
     r.resolve(SENTINEL_DYNAMIC)
+    r.resolve(SENTINEL_CRON)
     r.reset()
     expect(r.resolve(SENTINEL_DYNAMIC)).toContain('# Autonomous loop check')
+    expect(r.resolve(SENTINEL_CRON)).toContain('# Autonomous loop check')
+  })
+  it('各 kind 独立首发：dynamic 和 cron 各有自己的 delivered 状态', () => {
+    const r = createSentinelResolver({ doneMeansMerged: () => false })
+    // 首发 dynamic → full preamble
+    expect(r.resolve(SENTINEL_DYNAMIC)).toContain('# Autonomous loop check')
+    // 首发 cron → full preamble（独立于 dynamic，不受 dynamic delivered 影响）
+    expect(r.resolve(SENTINEL_CRON)).toContain('# Autonomous loop check')
+    // 第二次 dynamic → short tick only
+    expect(r.resolve(SENTINEL_DYNAMIC)).not.toContain('# Autonomous loop check')
+    // 第二次 cron → short tick only
+    expect(r.resolve(SENTINEL_CRON)).not.toContain('# Autonomous loop check')
+  })
+  it('reset(kind) 仅重置指定 kind 的首发状态', () => {
+    const r = createSentinelResolver({ doneMeansMerged: () => false })
+    r.resolve(SENTINEL_DYNAMIC)  // dynamic delivered
+    r.resolve(SENTINEL_CRON)     // cron delivered
+    r.reset('dynamic')           // 仅重置 dynamic
+    expect(r.resolve(SENTINEL_DYNAMIC)).toContain('# Autonomous loop check')  // dynamic 再首发
+    expect(r.resolve(SENTINEL_CRON)).not.toContain('# Autonomous loop check') // cron 仍短 tick
   })
 })

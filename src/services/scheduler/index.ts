@@ -62,22 +62,26 @@ export class SchedulerService {
       this._reloading = false
     }
     this.persist(cwd)  // single persist after re-arming all durable jobs
-    for (const j of loaded.missedOneShots) this.deps.fire('（错过的定时任务补跑）', j.prompt)
+    // 错过的 one-shot 不直接 fire（会并发 runTurn），而是 push 为即时到期条目，
+    // 让序列化 tick 一次一条按序触发。
+    for (const j of loaded.missedOneShots) this.entries.push({ ...j, nextFireAt: now })
   }
 
   persist(cwd: string): void {
     saveDurable(cwd, this.entries.filter((e): e is CronJob => e.kind === 'cron' && e.durable))
   }
 
-  /** ScheduleWakeup 落点。delaySeconds 已在工具层 clamp；此处取整到整分钟。重置 keepalive budget 与哨兵首发态。 */
+  /** ScheduleWakeup 落点。delaySeconds 已在工具层 clamp；此处取整到整分钟。重置 keepalive budget。 */
   scheduleWakeup(clampedSeconds: number, reason: string, prompt: string, now = Date.now()): string {
     const id = genId('k')
     this.entries.push({ id, kind: 'wakeup', fireAt: roundUpToMinute(now, clampedSeconds), prompt, reason })
     this.keepaliveBudget = KEEPALIVE_BUDGET
     this._scheduledThisTurn = true
-    if (reason !== 'keepalive') this.resolver.reset()
     return id
   }
+
+  /** 重置哨兵首发状态（新循环开始时调用）。kind 省略则两种都重置。 */
+  resetLoopPreamble(kind?: 'cron' | 'dynamic'): void { this.resolver.reset(kind) }
 
   /** 消费并重置"本轮已调用 ScheduleWakeup"标志。useChat 在 runTurn 末调用。 */
   consumeScheduled(): boolean {
@@ -103,7 +107,8 @@ export class SchedulerService {
     this.entries.push({ id, kind: 'wakeup', fireAt: now + KEEPALIVE_MS, prompt: '<<autonomous-loop-dynamic>>', reason: 'keepalive' })
   }
 
-  /** 中央 tick：扫全部条目，到期且 idle 则触发。 */
+  /** 中央 tick：每次至多触发一条到期条目（序列化，防多 runTurn 并发竞争 session 状态）。
+   *  顶部 isIdle 守卫确保上一 turn 结束前不抢跑；未触发的条目留待下个 10s tick。 */
   tick(now: number): void {
     if (!this.deps.isIdle()) return
     const due = this.entries.filter(e => (e.kind === 'wakeup' ? e.fireAt : e.nextFireAt) <= now)
@@ -111,16 +116,18 @@ export class SchedulerService {
       if (e.kind === 'wakeup') {
         this.cancel(e.id)
         this.deps.fire(WAKEUP_TICK_LINE, this.resolver.resolve(e.prompt))
+        return
       } else {
         const agedOut = e.recurring && (now - e.createdAt) >= JITTER.recurringMaxAgeMs
         if (!e.recurring || agedOut) {
           this.cancel(e.id)
           this.deps.fire('（定时任务 tick）', this.resolver.resolve(e.prompt))
-          continue
+          return
         }
         this.deps.fire('（定时任务 tick）', this.resolver.resolve(e.prompt))
         const n = nextFire(e.cron, new Date(now))
         e.nextFireAt = n ? n.getTime() + jitterMs(e.id, this.periodMs(e.cron), true) : Infinity
+        return
       }
     }
   }

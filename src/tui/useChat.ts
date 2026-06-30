@@ -1339,8 +1339,10 @@ export function createChatCore(opts: {
         notice('info', `已建循环：每 ${line.split(' ')[1]} 跑一次。立即跑首轮。`)
         await runTurn('（/loop 首轮）', p.prompt)
       } else if (p.mode === 'dynamic') {
+        scheduler.resetLoopPreamble('dynamic')
         await runTurn('（/loop 自起步）', LOOP_GUIDANCE.dynamic(p.prompt))
       } else {
+        scheduler.resetLoopPreamble('dynamic')
         await runTurn('（/loop 自主）', LOOP_GUIDANCE.autonomous())
       }
       return
