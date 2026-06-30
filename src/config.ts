@@ -81,6 +81,10 @@ export interface Settings {
   spinnerTips?: boolean
   /** 自定义 spinner tips 覆盖（对齐 CC spinnerTipsOverride）。 */
   spinnerTipsOverride?: { tips?: string[]; excludeDefault?: boolean }
+  /** 跳过 ultracode 关键字触发的多智能体消费警告（缺省 false）。 */
+  skipWorkflowUsageWarning?: boolean
+  /** 启用 ultracode 关键字自动触发 Workflow 工具引导（缺省 true）。 */
+  workflowKeywordTriggerEnabled?: boolean
 }
 
 const DIR = path.join(os.homedir(), '.deepcode')

@@ -52,6 +52,7 @@ import { attachMcpTools } from '../mcp.js'
 import { loadSkills, substituteSkillArgs } from '../skillsLoader.js'
 import { makeSkillTool } from '../tools/skill.js'
 import { detectEffortKeyword } from '../text.js'
+import { detectUltracode, workflowUsageWarning } from '../workflow/trigger.js'
 import { parseTokenBudget } from '../tokenBudget.js'
 import { memdirFor, sessionMemoryPathFor, findGitRoot, sanitizeProjectKey } from '../memdir/paths.js'
 import { DEFAULT_MEMORY_CONFIG } from '../memdir/memoryConfig.js'
@@ -387,6 +388,7 @@ export function createChatCore(opts: {
   let baselineLen = 0         // 与 lastPromptTokens 原子配对：lastPromptTokens 覆盖的 messages 前缀长度（发送前预估只估超出此前缀的新消息）
   let costWarned = false      // $阈值提醒只发一次
   let compactWarned = false   // 上下文≥90% 一次性提示
+  let workflowWarnShown = false // ultracode 消费门：首次弹一次
   const MAX_AUTO_COMPACT_FAILURES = 3
   let consecutiveCompactFailures = 0
 
@@ -724,6 +726,12 @@ export function createChatCore(opts: {
     }
     // plan 模式：每轮注入指引，确保模型始终感知约束（仿 CC system-reminder 注入）
     if (permMode === 'plan') boundary.push(PLAN_MODE_GUIDANCE)
+    // ultracode 关键字触发：注入 Workflow 工具引导 + 首次消费门警告
+    if (settings.workflowKeywordTriggerEnabled !== false && detectUltracode(displayLine)) {
+      boundary.push('<ultracode>Use the Workflow tool to orchestrate this as a multi-agent workflow. Break the task into parallel steps and invoke Workflow with a plan.</ultracode>')
+      const warn = workflowUsageWarning(workflowWarnShown || (settings.skipWorkflowUsageWarning ?? false))
+      if (warn) { workflowWarnShown = true; notice('warn', warn) }
+    }
     for (const [p, mtime] of ctx.fileState) {
       try {
         if (fs.statSync(p).mtimeMs !== mtime) {
