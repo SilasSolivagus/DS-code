@@ -7,6 +7,10 @@ import { runWorkflow } from '../workflow/orchestrator.js'
 import { makeInProcessBackend } from '../workflow/backend.js'
 import { registerTask, updateTask, generateTaskId, enqueueNotification, getTask } from '../tasks.js'
 import type { JournalRecord } from '../workflow/types.js'
+import { allTools } from './index.js'
+import { makeWebFetchTool } from './webfetch.js'
+import { makeAgentTool } from './agent.js'
+import { BUILTIN_AGENTS, type AgentDefinition } from './agentTypes.js'
 
 const schema = z.object({
   script: z.string().optional().describe('内联 workflow 脚本（以 export const meta = {...} 开头）'),
@@ -20,13 +24,19 @@ export interface WorkflowToolDeps {
   client: OpenAI
   onUsage: (u: Usage, model: string) => void
   sessionModel: string
-  agents: { agentType: string; getSystemPrompt: () => string; outputSchema?: z.ZodTypeAny }[]
+  agents: AgentDefinition[]
   runSubagent: (opts: any) => Promise<string | undefined>
   journalDir: string
   resolveModelAlias?: (m: string) => string
 }
 
 export function makeWorkflowTool(deps: WorkflowToolDeps): Tool<typeof schema> {
+  // 子代理工具池：照搬 agent.ts 建法（allTools + WebFetch + Agent 自身），供 resolveAgentTools 筛选。
+  // Workflow 不在 allTools 里，也在 GLOBAL_SUBAGENT_DENY 中，不会进入池。
+  const webFetchTool = makeWebFetchTool({ client: deps.client, onUsage: deps.onUsage })
+  const agentTool = makeAgentTool({ client: deps.client, onUsage: deps.onUsage, getModel: () => deps.sessionModel })
+  const toolPool: Tool<any>[] = [...allTools, webFetchTool, agentTool]
+  const resolvedAgents = deps.agents.length ? deps.agents : BUILTIN_AGENTS
   return {
     name: 'Workflow',
     description: 'orchestrate subagents with deterministic JavaScript workflow. Use this tool for multi-step orchestration where control flow should be deterministic (loops, conditionals, fan-out) rather than model-driven.',
@@ -45,7 +55,8 @@ export function makeWorkflowTool(deps: WorkflowToolDeps): Tool<typeof schema> {
         onUsage: deps.onUsage,
         ctx,
         signal: abort.signal,
-        agents: deps.agents,
+        agents: resolvedAgents,
+        toolPool,
         resolveModelAlias: deps.resolveModelAlias,
       })
       registerTask({

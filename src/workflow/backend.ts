@@ -1,9 +1,10 @@
 // src/workflow/backend.ts
 import type OpenAI from 'openai'
 import { z } from 'zod'
-import type { ToolContext } from '../tools/types.js'
+import type { ToolContext, Tool } from '../tools/types.js'
 import type { Usage } from '../api.js'
 import type { AgentSpec, AgentEffort } from './types.js'
+import { BUILTIN_AGENTS, GLOBAL_SUBAGENT_DENY, resolveAgentTools, type AgentDefinition } from '../tools/agentTypes.js'
 
 export interface WorkflowBackend {
   runAgent(spec: AgentSpec): Promise<{ status: 'ok' | 'error'; result: unknown }>
@@ -22,7 +23,8 @@ export interface InProcessBackendDeps {
   onUsage: (u: Usage, model: string) => void
   ctx: ToolContext
   signal: AbortSignal
-  agents: { agentType: string; getSystemPrompt: () => string; outputSchema?: z.ZodTypeAny }[]
+  agents: AgentDefinition[]
+  toolPool?: Tool<any>[]
   resolveModelAlias?: (m: string) => string
 }
 
@@ -37,13 +39,15 @@ export function makeInProcessBackend(deps: InProcessBackendDeps): WorkflowBacken
       const model = spec.opts.model ? (deps.resolveModelAlias?.(spec.opts.model) ?? spec.opts.model) : deps.sessionModel
       const agentType = spec.opts.agentType ?? 'general-purpose'
       const def = deps.agents.find(a => a.agentType === agentType)
+      const resolvedDef = def ?? BUILTIN_AGENTS.find(a => a.agentType === 'general-purpose') ?? BUILTIN_AGENTS[0]
       const systemPrompt = def?.getSystemPrompt() ?? ''
       // schema：JSON Schema → 这里 v1 用 zod 透传层；若 def 有 outputSchema 用之，否则把 JSON Schema 包成 z.any 校验占位
       const outputSchema = spec.opts.schema ? z.any() : def?.outputSchema
+      const resolvedTools = resolveAgentTools(resolvedDef, deps.toolPool ?? [], GLOBAL_SUBAGENT_DENY)
       try {
         const raw = await deps.runSubagent({
           client: deps.client, onUsage: deps.onUsage, systemPrompt, userPrompt: spec.prompt,
-          tools: [], model, outputSchema, ctx: deps.ctx, signal: deps.signal,
+          tools: resolvedTools, model, outputSchema, ctx: deps.ctx, signal: deps.signal,
           agentId: spec.agentId, agentType,
           worktreePath: spec.opts.isolation === 'worktree' ? undefined : undefined, // worktree 由 orchestrator 预置（Task 10 接 worktree.ts）
           thinking: effortLevel !== undefined, effortLevel,
