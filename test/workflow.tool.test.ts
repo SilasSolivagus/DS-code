@@ -64,3 +64,27 @@ describe('Workflow 工具 — Fix 1b: scriptPath / name 解析', () => {
     ).rejects.toThrow('Workflow script file not found:')
   })
 })
+
+describe('Workflow 工具 — Gap 2: budget token 计账', () => {
+  it('runSubagent onUsage 上报后 deps.onUsage 收到 completion_tokens（onUsage 包装接线验证）', async () => {
+    const received: number[] = []
+    const runSubagent = vi.fn().mockImplementation(async (opts: any) => {
+      opts.onUsage({ prompt_tokens: 10, completion_tokens: 7, prompt_cache_hit_tokens: 0 }, 'test-model')
+      return 'done'
+    })
+    const tool = makeWorkflowTool({
+      client: {} as any,
+      onUsage: (u: any) => received.push(u.completion_tokens),
+      sessionModel: 'm', agents: [],
+      runSubagent: runSubagent as any,
+      journalDir: mkdtempSync(join(tmpdir(), 'wf-budget-')),
+    })
+    await tool.call(
+      { script: `export const meta={name:"t",description:"d"}\nconst r=await agent("hi")\nreturn r` } as any,
+      { cwd: () => '/', signal: new AbortController().signal } as any,
+    )
+    // wait for the fire-and-forget runWorkflow to complete
+    await new Promise(r => setTimeout(r, 200))
+    expect(received[0]).toBe(7)
+  })
+})

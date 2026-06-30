@@ -47,4 +47,22 @@ describe('InProcessBackend', () => {
     expect(call.tools).toHaveLength(1)
     expect(call.tools[0].name).toBe('Read')
   })
+
+  it('Gap 1: resolveModelAlias 被调用，返回值作为 model 传给 runSubagent', async () => {
+    const resolveModelAlias = vi.fn().mockReturnValue('deepseek-v4-flash')
+    const runSubagent = vi.fn().mockResolvedValue(null)
+    const backend = makeInProcessBackend({
+      runSubagent: runSubagent as any,
+      sessionModel: 'glm-5.2',
+      client: {} as any,
+      onUsage: () => {},
+      ctx: {} as any,
+      signal: new AbortController().signal,
+      agents: [],
+      resolveModelAlias,
+    })
+    await backend.runAgent({ prompt: 'p', opts: { model: 'flash' }, agentId: 'a3', index: 0 })
+    expect(resolveModelAlias).toHaveBeenCalledWith('flash')
+    expect(runSubagent.mock.calls[0][0].model).toBe('deepseek-v4-flash')
+  })
 })

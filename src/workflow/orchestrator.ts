@@ -33,11 +33,11 @@ export async function runWorkflow(opts: RunWorkflowOpts): Promise<{ runId: strin
     backend: opts.backend, journal, records, budget: opts.budget,
     onProgress: opts.onProgress, abortSignal: opts.abortSignal, resolveWorkflow: opts.resolveWorkflow,
   })
+  await journal.append({ type: 'workflow_start', runId, name: meta.name })
   const start = (globalThis.performance?.now?.() ?? 0)
   const result = await runSandbox(scriptBody, opts.args, runtime, opts.abortSignal)
   const ms = Math.round((globalThis.performance?.now?.() ?? 0) - start)
   const agents = runtime.agentCount()
   await journal.append({ type: 'workflow_complete', runId, agents, ms })
-  void meta // meta.name/phases 供 UI/进度展示（Task 11）
   return { runId, result, agents }
 }

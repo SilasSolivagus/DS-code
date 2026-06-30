@@ -27,6 +27,16 @@ describe('formatWorkflowProgress', () => {
     expect(s.runId).toBe('w1')
     expect(s.done).toBe(false)
   })
+
+  it('Gap 3: workflow_start 记录中的 name 正确出现在 summary.name', () => {
+    const recs = [
+      { type: 'workflow_start', runId: 'wf_abc', name: 'My Workflow' },
+      { type: 'workflow_phase', index: 0, title: 'Phase 1', phaseIndex: 0 },
+      { type: 'workflow_complete', runId: 'wf_abc', agents: 2, ms: 500 },
+    ] as any
+    const s = formatWorkflowProgress(recs, { id: 'task1', status: 'completed' } as any)
+    expect(s.name).toBe('My Workflow')
+  })
 })
 
 describe('WorkflowView 渲染', () => {

@@ -72,11 +72,13 @@ export function makeWorkflowTool(deps: WorkflowToolDeps): Tool<typeof schema> {
       const taskId = generateTaskId('local_workflow')
       const abort = new AbortController()
       const progress: JournalRecord[] = []
+      let spentTokens = 0
+      const runOnUsage = (u: Usage, m: string) => { spentTokens += u.completion_tokens; deps.onUsage(u, m) }
       const backend = makeInProcessBackend({
         runSubagent: deps.runSubagent,
         sessionModel: deps.sessionModel,
         client: deps.client,
-        onUsage: deps.onUsage,
+        onUsage: runOnUsage,
         ctx,
         signal: abort.signal,
         agents: resolvedAgents,
@@ -101,7 +103,7 @@ export function makeWorkflowTool(deps: WorkflowToolDeps): Tool<typeof schema> {
         runId,
         journalDir: deps.journalDir,
         backend,
-        budget: { total: null, spent: () => 0, remaining: () => Infinity },
+        budget: { total: null, spent: () => spentTokens, remaining: () => Infinity },
         onProgress: r => progress.push(r),
         abortSignal: abort.signal,
       }).then(res => {

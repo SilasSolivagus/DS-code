@@ -61,7 +61,7 @@ import { createRecaller } from '../services/memory/recall.js'
 import { findRelevantMemories } from '../memdir/findRelevantMemories.js'
 import { SteeringQueue, formatSteeringMessage, type SteeringItem } from '../steering.js'
 import { type SessionMemoryState, shouldUpdateSessionMemory, runSessionMemoryUpdate } from '../services/memory/sessionMemory.js'
-import { activeFastModel, activeProvider, belongsToProvider, modelList as providerModelList } from '../providers.js'
+import { activeFastModel, activeProvider, belongsToProvider, modelList as providerModelList, resolveSubModel } from '../providers.js'
 import { resolveResumeModel, rotateModel } from './resumeModel.js'
 import { loadOutputStyles, resolveOutputStyle } from '../outputStyles.js'
 import { createStatusLineRunner, execStatusLineCommand } from '../statusLine.js'
@@ -599,6 +599,7 @@ export function createChatCore(opts: {
       agents,
       runSubagent,
       journalDir: path.join(cwd, '.deepcode', 'workflows'),
+      resolveModelAlias: (m: string) => resolveSubModel(m, model),
     }),
     makeWebFetchTool({
       client: opts.client,
