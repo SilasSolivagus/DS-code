@@ -65,6 +65,10 @@ describe('roundUpToMinute', () => {
     expect(d.getSeconds()).toBe(0)
     expect(d.getMinutes()).toBe(32)
   })
+  it('落在整分钟边界则不前进', () => {
+    const base = new Date(2026, 5, 30, 9, 30, 0).getTime()
+    expect(roundUpToMinute(base, 60)).toBe(new Date(2026, 5, 30, 9, 31, 0).getTime()) // 09:30:00+60s=09:31:00 整点不再进
+  })
 })
 
 describe('jitterMs', () => {

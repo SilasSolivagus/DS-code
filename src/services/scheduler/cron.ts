@@ -55,7 +55,7 @@ export function cronMatches(expr: string, d: Date): boolean {
   const p = parseCron(expr)
   if (!p) return false
   const dow = d.getDay() // 0=Sunday
-  const dowOk = p[4].includes(dow) || (dow === 0 && p[4].includes(7)) || (p[4].includes(0) && dow === 7)
+  const dowOk = p[4].includes(dow) || (dow === 0 && p[4].includes(7))
   return p[0].includes(d.getMinutes())
     && p[1].includes(d.getHours())
     && p[2].includes(d.getDate())
@@ -103,5 +103,5 @@ export function jitterMs(id: string, periodMs: number, recurring: boolean): numb
   const cap = recurring
     ? Math.min(periodMs * JITTER.recurringFrac, JITTER.recurringCapMs)
     : JITTER.oneShotMaxMs
-  return cap <= 0 ? 0 : h % Math.floor(cap)
+  return cap < 1 ? 0 : h % Math.floor(cap)
 }
