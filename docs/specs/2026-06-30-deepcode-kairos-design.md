@@ -116,6 +116,7 @@ deepcode `Settings`（`src/config.ts`）加布尔键 `doneMeansMerged`。为 tru
 | Monitor 任务模型 | `local_bash`+`kind:monitor` | 同 | 1:1 |
 | jitter 数值 | config 0.5/30min（运行时） vs 文案 10%/15min（建议）| 用 **config 值** | config 治理运行时，文案仅建议；两者 CC 自身不一致 |
 | durable 路径 + 信任边界 | 项目级 `<cwd>/.claude/scheduled_tasks.json`，启动自动重加，无信任门 | **1:1：项目级 `<cwd>/.deepcode/scheduled_tasks.json`，无信任门**（用户拍板） | 见 §9 安全 |
+| Monitor plan-mode 执行 | Monitor `isReadOnly` 标记（CC 同标只读/并发安全）| **1:1：保持 `isReadOnly:true`，不在 plan-mode 门额外拦**（用户拍板 2026-06-30）| Monitor 实际 `bash -c <command>` 执行任意 shell；deepcode plan-mode 门（`permissions.ts:232`）只拦 `!isReadOnly`→Monitor 在 plan mode 可执行 shell，破「只读探索」契约。**已知接受风险**（CC 也标只读，可能同此行为）；缓解=子代理 deny-list + isSubagent guard 仍生效，仅 plan-mode 主会话可触 |
 
 ## 8. durable 持久化（`store.ts`）
 
