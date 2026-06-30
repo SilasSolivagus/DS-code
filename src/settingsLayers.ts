@@ -163,6 +163,7 @@ function parsePresent(raw: any): Record<string, unknown> {
   if ('spinnerTipsOverride' in raw) { const o = parseSpinnerTipsOverride(raw.spinnerTipsOverride); if (o) p.spinnerTipsOverride = o }
   if (typeof raw.skipWorkflowUsageWarning === 'boolean') p.skipWorkflowUsageWarning = raw.skipWorkflowUsageWarning
   if (typeof raw.workflowKeywordTriggerEnabled === 'boolean') p.workflowKeywordTriggerEnabled = raw.workflowKeywordTriggerEnabled
+  if (typeof raw.doneMeansMerged === 'boolean') p.doneMeansMerged = raw.doneMeansMerged
   return p
 }
 

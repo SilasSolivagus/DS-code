@@ -142,6 +142,7 @@ export function loadRawUserSettings(): Settings {
     worktree: parseWorktreeConfig(raw?.worktree),
     spinnerTips: typeof raw?.spinnerTips === 'boolean' ? raw.spinnerTips : undefined,
     spinnerTipsOverride: parseSpinnerTipsOverride(raw?.spinnerTipsOverride),
+    doneMeansMerged: typeof raw?.doneMeansMerged === 'boolean' ? raw.doneMeansMerged : undefined,
   }
 }
 

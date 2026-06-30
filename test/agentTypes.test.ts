@@ -29,8 +29,8 @@ const def = (over: Partial<AgentDefinition>): AgentDefinition => ({
 })
 
 describe('GLOBAL_SUBAGENT_DENY', () => {
-  it('含 ExitPlanMode + EnterWorktree + ExitWorktree + Workflow + ScheduleWakeup + CronCreate/List/Delete + Monitor + TaskStop（可写+可递归，worktree/workflow/loop/cron/task 工具仅主会话）', () => {
-    expect(GLOBAL_SUBAGENT_DENY).toEqual(['ExitPlanMode', 'EnterWorktree', 'ExitWorktree', 'Workflow', 'ScheduleWakeup', 'CronCreate', 'CronList', 'CronDelete', 'Monitor', 'TaskStop'])
+  it('含 ExitPlanMode + EnterWorktree + ExitWorktree + Workflow + ScheduleWakeup + CronCreate/List/Delete + Monitor + TaskStop + PushNotification（可写+可递归，worktree/workflow/loop/cron/task/notification 工具仅主会话）', () => {
+    expect(GLOBAL_SUBAGENT_DENY).toEqual(['ExitPlanMode', 'EnterWorktree', 'ExitWorktree', 'Workflow', 'ScheduleWakeup', 'CronCreate', 'CronList', 'CronDelete', 'Monitor', 'TaskStop', 'PushNotification'])
   })
 })
 
