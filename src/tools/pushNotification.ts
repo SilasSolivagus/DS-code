@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import fs from 'node:fs'
 import type { Tool } from './types.js'
 
 const BEL = '\x07'
@@ -30,7 +31,12 @@ export const pushNotificationTool: Tool<typeof schema> = {
   needsPermission: () => false,
   async call(input) {
     const msg = input.message.slice(0, 200).replace(/\n/g, ' ')
-    try { process.stdout.write(oscNotification(msg)) } catch { /* 尽力 */ }
+    const seq = oscNotification(msg)
+    try {
+      fs.writeFileSync('/dev/tty', seq)  // 直写控制终端，绕过 ink 全屏 stdout 渲染管理
+    } catch {
+      try { process.stdout.write(seq) } catch { /* 尽力而为 */ }
+    }
     return `已发送桌面通知：${msg}`
   },
 }
