@@ -6,6 +6,8 @@ import type OpenAI from 'openai'
 import { runLoop } from './loop.js'
 import { allTools } from './tools/index.js'
 import { makeAgentTool } from './tools/agent.js'
+import { makeWorkflowTool } from './tools/workflow.js'
+import { runSubagent } from './subagentRunner.js'
 import { resolveAgents } from './agentsLoader.js'
 import { makeWebFetchTool } from './tools/webfetch.js'
 import { makeWebSearchTool, resolveWebSearchConfig } from './tools/webSearchTool.js'
@@ -23,7 +25,7 @@ import { makeSkillTool } from './tools/skill.js'
 import { TaskListStore } from './taskList.js'
 import { costCNY } from './pricing.js'
 import { resolveDenyList, buildDenySourceMap } from './deny.js'
-import { activeFastModel } from './providers.js'
+import { activeFastModel, resolveSubModel } from './providers.js'
 import type { ToolContext, WorktreeSessionState } from './tools/types.js'
 import type { Usage } from './api.js'
 
@@ -112,7 +114,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
   })
   const gen = runLoop(messages, {
     client: opts.client,
-    tools: [...allTools, taskCreateTool, taskGetTool, taskUpdateTool, taskListTool, makeAgentTool({ client: opts.client, onUsage: (u, _model) => addUsage(u), getModel: () => model, agents, worktree: settings.worktree }), makeWebFetchTool({ client: opts.client, onUsage: (u, _model) => addUsage(u) }), makeWebSearchTool({ config: resolveWebSearchConfig(settings) }), bgTaskListTool, taskOutputTool, taskStopTool, ...mcpTools, makeSkillTool(skills, { client: opts.client, onUsage: (u, _m) => addUsage(u), getModel: () => model, agents, skillPool: [...allTools, makeWebFetchTool({ client: opts.client, onUsage: (u, _m) => addUsage(u) })], listingBudgetChars: settings.skills?.listingBudgetChars })],
+    tools: [...allTools, taskCreateTool, taskGetTool, taskUpdateTool, taskListTool, makeAgentTool({ client: opts.client, onUsage: (u, _model) => addUsage(u), getModel: () => model, agents, worktree: settings.worktree }), makeWorkflowTool({ client: opts.client, onUsage: (u, _model) => addUsage(u), sessionModel: model, agents, runSubagent, journalDir: path.join(cwd, '.deepcode', 'workflows'), resolveModelAlias: (m: string) => resolveSubModel(m, model) }), makeWebFetchTool({ client: opts.client, onUsage: (u, _model) => addUsage(u) }), makeWebSearchTool({ config: resolveWebSearchConfig(settings) }), bgTaskListTool, taskOutputTool, taskStopTool, ...mcpTools, makeSkillTool(skills, { client: opts.client, onUsage: (u, _m) => addUsage(u), getModel: () => model, agents, skillPool: [...allTools, makeWebFetchTool({ client: opts.client, onUsage: (u, _m) => addUsage(u) })], listingBudgetChars: settings.skills?.listingBudgetChars })],
     model,
     thinking: false,
     maxToolResultChars: settings.maxToolResultChars,

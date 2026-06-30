@@ -21,6 +21,7 @@ export const BUILTIN_COMMANDS: Suggestion[] = [
   { value: '/export', hint: '导出对话到 markdown' },
   { value: '/config', hint: '查看合并配置与来源追溯' },
   { value: '/permissions', hint: '权限规则管理' },
+  { value: '/workflows', hint: '查看 workflow 运行历史' },
   { value: '/init', hint: '生成 DEEPCODE.md' },
   { value: '/keybindings', hint: '查看快捷键' },
   { value: '/help', hint: '帮助' },

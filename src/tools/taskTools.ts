@@ -45,7 +45,10 @@ export const taskOutputTool: Tool<typeof outputSchema> = {
     const chunk = buf.subarray(from).toString('utf8')
     updateTask(t.id, { outputOffset: buf.length })
     if (TERMINAL.includes(t.status)) updateTask(t.id, { notified: true })
-    return `<status>${t.status}</status>\n${chunk}`
+    // 无文件流输出（如 Workflow：结果存 task.result 而非 outputFile）时回退到 result，
+    // 否则模型轮询 TaskOutput 只看到 <status> 看不到产出。
+    const body = chunk || (t.result ?? '')
+    return `<status>${t.status}</status>\n${body}`
   },
 }
 

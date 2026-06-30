@@ -12,6 +12,8 @@ import type OpenAI from 'openai'
 import { runLoop, type LoopDeps, type LoopEvent } from '../loop.js'
 import { allTools } from '../tools/index.js'
 import { makeAgentTool } from '../tools/agent.js'
+import { makeWorkflowTool } from '../tools/workflow.js'
+import { runSubagent } from '../subagentRunner.js'
 import { makeWebFetchTool } from '../tools/webfetch.js'
 import { makeWebSearchTool, resolveWebSearchConfig } from '../tools/webSearchTool.js'
 import { makeAskUserQuestionTool, type Question, type Answer } from '../tools/askUserQuestion.js'
@@ -50,6 +52,7 @@ import { attachMcpTools } from '../mcp.js'
 import { loadSkills, substituteSkillArgs } from '../skillsLoader.js'
 import { makeSkillTool } from '../tools/skill.js'
 import { detectEffortKeyword } from '../text.js'
+import { detectUltracode, workflowUsageWarning } from '../workflow/trigger.js'
 import { parseTokenBudget } from '../tokenBudget.js'
 import { memdirFor, sessionMemoryPathFor, findGitRoot, sanitizeProjectKey } from '../memdir/paths.js'
 import { DEFAULT_MEMORY_CONFIG } from '../memdir/memoryConfig.js'
@@ -58,7 +61,7 @@ import { createRecaller } from '../services/memory/recall.js'
 import { findRelevantMemories } from '../memdir/findRelevantMemories.js'
 import { SteeringQueue, formatSteeringMessage, type SteeringItem } from '../steering.js'
 import { type SessionMemoryState, shouldUpdateSessionMemory, runSessionMemoryUpdate } from '../services/memory/sessionMemory.js'
-import { activeFastModel, activeProvider, belongsToProvider, modelList as providerModelList } from '../providers.js'
+import { activeFastModel, activeProvider, belongsToProvider, modelList as providerModelList, resolveSubModel } from '../providers.js'
 import { resolveResumeModel, rotateModel } from './resumeModel.js'
 import { loadOutputStyles, resolveOutputStyle } from '../outputStyles.js'
 import { createStatusLineRunner, execStatusLineCommand } from '../statusLine.js'
@@ -385,6 +388,7 @@ export function createChatCore(opts: {
   let baselineLen = 0         // 与 lastPromptTokens 原子配对：lastPromptTokens 覆盖的 messages 前缀长度（发送前预估只估超出此前缀的新消息）
   let costWarned = false      // $阈值提醒只发一次
   let compactWarned = false   // 上下文≥90% 一次性提示
+  let workflowWarnShown = false // ultracode 消费门：首次弹一次
   const MAX_AUTO_COMPACT_FAILURES = 3
   let consecutiveCompactFailures = 0
 
@@ -588,6 +592,15 @@ export function createChatCore(opts: {
       agents,
       worktree: settings.worktree,
     }),
+    makeWorkflowTool({
+      client: opts.client,
+      onUsage: (u, m) => { usageLog.push({ usage: u, model: m }); session.appendUsage(u, m) },
+      sessionModel: model,
+      agents,
+      runSubagent,
+      journalDir: path.join(cwd, '.deepcode', 'workflows'),
+      resolveModelAlias: (m: string) => resolveSubModel(m, model),
+    }),
     makeWebFetchTool({
       client: opts.client,
       onUsage: (u, m) => { usageLog.push({ usage: u, model: m }); session.appendUsage(u, m) },
@@ -714,6 +727,12 @@ export function createChatCore(opts: {
     }
     // plan 模式：每轮注入指引，确保模型始终感知约束（仿 CC system-reminder 注入）
     if (permMode === 'plan') boundary.push(PLAN_MODE_GUIDANCE)
+    // ultracode 关键字触发：注入 Workflow 工具引导 + 首次消费门警告
+    if (settings.workflowKeywordTriggerEnabled !== false && detectUltracode(displayLine)) {
+      boundary.push('<ultracode>Use the Workflow tool to orchestrate this as a multi-agent workflow. Break the task into parallel steps and invoke Workflow with a plan.</ultracode>')
+      const warn = workflowUsageWarning(workflowWarnShown || (settings.skipWorkflowUsageWarning ?? false))
+      if (warn) { workflowWarnShown = true; notice('warn', warn) }
+    }
     for (const [p, mtime] of ctx.fileState) {
       try {
         if (fs.statSync(p).mtimeMs !== mtime) {
@@ -1185,6 +1204,28 @@ export function createChatCore(opts: {
     }
     if (line === '/stats') {
       notice('info', formatStats(sessionStats(messages, usageLog), sessionCost(), cacheHitRate()))
+      return
+    }
+    if (line.split(/\s+/)[0] === '/workflows') {
+      const workflowDir = path.join(cwd, '.deepcode', 'workflows')
+      try {
+        const runIds = fs.readdirSync(workflowDir)
+        if (runIds.length === 0) { notice('info', '（无 workflow 运行记录）'); return }
+        const { formatWorkflowProgress } = await import('./WorkflowView.js')
+        const lines: string[] = []
+        for (const runId of runIds) {
+          try {
+            const raw = fs.readFileSync(path.join(workflowDir, runId, 'journal.jsonl'), 'utf8')
+            const records = raw.split('\n').filter(Boolean).map(l => JSON.parse(l))
+            const isDone = records.some((r: any) => r.type === 'workflow_complete')
+            const s = formatWorkflowProgress(records, { id: runId, status: isDone ? 'completed' : 'running' })
+            const phaseLine = s.phases.map(p => `  ${s.done ? '✓' : '⟳'} ${p.title} · ${p.agents} agents`).join('\n')
+            const footer = s.done ? `Completed in ${(s.ms / 1000).toFixed(1)}s · ${s.agents} agents` : '（进行中）'
+            lines.push([s.name || s.runId || runId, phaseLine, footer].filter(Boolean).join('\n'))
+          } catch { /* skip */ }
+        }
+        notice('info', lines.length ? lines.join('\n\n') : '（无有效 workflow 记录）')
+      } catch { notice('info', '（无 workflow 运行记录）') }
       return
     }
     if (line === '/memory') {

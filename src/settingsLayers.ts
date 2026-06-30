@@ -161,6 +161,8 @@ function parsePresent(raw: any): Record<string, unknown> {
   if ('worktree' in raw) { const w = parseWorktreeConfig(raw.worktree); if (w) p.worktree = w }
   if (typeof raw.spinnerTips === 'boolean') p.spinnerTips = raw.spinnerTips
   if ('spinnerTipsOverride' in raw) { const o = parseSpinnerTipsOverride(raw.spinnerTipsOverride); if (o) p.spinnerTipsOverride = o }
+  if (typeof raw.skipWorkflowUsageWarning === 'boolean') p.skipWorkflowUsageWarning = raw.skipWorkflowUsageWarning
+  if (typeof raw.workflowKeywordTriggerEnabled === 'boolean') p.workflowKeywordTriggerEnabled = raw.workflowKeywordTriggerEnabled
   return p
 }
 

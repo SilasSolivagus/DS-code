@@ -3,9 +3,11 @@
 // 复用 App 的全部接线，仅把转录渲染换成 ScrollView，并加滚动状态 + alt-screen 生命周期 +
 // 绝对定位 IME 光标停泊。useChat 会话核心零改动。内联模式仍走 App。
 import React, { useMemo, useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react'
+import fs from 'node:fs'
 import path from 'node:path'
 import { execSync } from 'node:child_process'
 import { Box, Text, measureElement, useApp, useInput, useStdout, type DOMElement } from 'ink'
+import { WorkflowView, formatWorkflowProgress, type WorkflowRunSummary } from './WorkflowView.js'
 import { createChatCore, useChat } from './useChat.js'
 import { findMemoryFiles } from '../prompt.js'
 import { computeSuggestions } from './suggest.js'
@@ -66,6 +68,8 @@ export function FullscreenApp(props: {
   const [outputStyleMode, setOutputStyleMode] = useState(false)
   const [themeMode, setThemeMode] = useState(false)
   const { themeName, setThemeName } = useThemeControl()
+  const [workflowsMode, setWorkflowsMode] = useState(false)
+  const [workflowRuns, setWorkflowRuns] = useState<WorkflowRunSummary[]>([])
   const [lastSigint, setLastSigint] = useState(0)
   const justPickedRef = useRef<string | null>(null)
   const [valueOverride, setValueOverride] = useState<{ text: string; nonce: number } | undefined>(undefined)
@@ -92,12 +96,13 @@ export function FullscreenApp(props: {
   }, [])
 
   useEffect(() => {
-    if (state.pendingAsk || state.pendingQuestion || state.pendingPlanApproval || resumeMode || modelPickerMode || outputStyleMode || themeMode) {
+    if (state.pendingAsk || state.pendingQuestion || state.pendingPlanApproval || resumeMode || modelPickerMode || outputStyleMode || themeMode || workflowsMode) {
       setDraft(''); setValueOverride(undefined); justPickedRef.current = null
     }
-  }, [!!state.pendingAsk, !!state.pendingQuestion, !!state.pendingPlanApproval, resumeMode, modelPickerMode, outputStyleMode, themeMode])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [!!state.pendingAsk, !!state.pendingQuestion, !!state.pendingPlanApproval, resumeMode, modelPickerMode, outputStyleMode, themeMode, workflowsMode])  // eslint-disable-line react-hooks/exhaustive-deps
 
   useInput((input, key) => {
+    if (key.escape && workflowsMode) { setWorkflowsMode(false); return }
     const ms = Math.max(0, totalRef.current - viewportRef.current)
     // 改 offset/stuck 后靠 setTick 触发重渲，info/跟随由下方 reconcile effect 统一重算
     if (key.pageUp) { stuckRef.current = false; setOffset(page(scrollRef.current, 'up', viewportRef.current, ms)); setTick(x => x + 1); return }
@@ -109,7 +114,7 @@ export function FullscreenApp(props: {
       else setLastSigint(now)
     }
     // Shift+Tab 循环权限模式（default→acceptEdits→plan→default）。
-    if (key.shift && key.tab && !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion && !resumeMode && !modelPickerMode && !outputStyleMode && !themeMode) {
+    if (key.shift && key.tab && !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion && !resumeMode && !modelPickerMode && !outputStyleMode && !themeMode && !workflowsMode) {
       void core.send('/cycle-mode')
     }
   })
@@ -151,6 +156,23 @@ export function FullscreenApp(props: {
     if (text === '/model') { setModelPickerMode(true); return }
     if (text === '/output-style') { setOutputStyleMode(true); return }
     if (text === '/theme') { setThemeMode(true); return }
+    if (text.trim().split(/\s+/)[0] === '/workflows') {
+      const journalDir = path.join(props.cwd, '.deepcode', 'workflows')
+      const runs: WorkflowRunSummary[] = []
+      try {
+        for (const runId of fs.readdirSync(journalDir)) {
+          try {
+            const raw = fs.readFileSync(path.join(journalDir, runId, 'journal.jsonl'), 'utf8')
+            const records = raw.split('\n').filter(Boolean).map(l => JSON.parse(l))
+            const isDone = records.some((r: any) => r.type === 'workflow_complete')
+            runs.push(formatWorkflowProgress(records, { id: runId, status: isDone ? 'completed' : 'running' }))
+          } catch { /* skip bad journal */ }
+        }
+      } catch { /* no journal dir */ }
+      setWorkflowRuns(runs)
+      setWorkflowsMode(true)
+      return
+    }
     setDraft(''); setValueOverride(undefined); justPickedRef.current = null
     void core.send(text, attachments)
   }
@@ -183,7 +205,7 @@ export function FullscreenApp(props: {
     return order.map(name => ({ name, n: counts.get(name)! }))
   }, [state.transcript])
 
-  const inputActive = !state.pendingAsk && !state.pendingQuestion && !state.pendingPlanApproval && !resumeMode && !modelPickerMode && !outputStyleMode && !themeMode && !state.busy
+  const inputActive = !state.pendingAsk && !state.pendingQuestion && !state.pendingPlanApproval && !resumeMode && !modelPickerMode && !outputStyleMode && !themeMode && !workflowsMode && !state.busy
 
   // —— 全屏几何（每帧算）——
   const rows = stdout?.rows ?? 24
@@ -313,6 +335,11 @@ export function FullscreenApp(props: {
                 }}
                 onCancel={() => setThemeMode(false)}
               />
+            : workflowsMode
+            ? <Box flexDirection="column">
+                <WorkflowView runs={workflowRuns} />
+                <Text dimColor>（按 Esc 返回）</Text>
+              </Box>
             : <>
                 {state.busy && <Spinner turnStartAt={state.turnStartAt} turnOutTokens={state.turnOutTokens} hookLabel={state.hookProgress} tip={state.spinnerTip} />}
                 {suggestionsActive && <Suggestions items={suggestions} onPick={handlePick} />}

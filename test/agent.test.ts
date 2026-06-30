@@ -52,7 +52,7 @@ vi.mock('../src/subagentRunner.js', async orig => {
 })
 
 import { makeAgentTool, subagentPermissionDecision } from '../src/tools/agent.js'
-import { BUILTIN_AGENTS } from '../src/tools/agentTypes.js'
+import { BUILTIN_AGENTS, GLOBAL_SUBAGENT_DENY, resolveAgentTools } from '../src/tools/agentTypes.js'
 import { parseAgentFile } from '../src/agentsLoader.js'
 import { STRUCTURED_OUTPUT_TOOL_NAME } from '../src/tools/structuredOutput.js'
 
@@ -559,5 +559,22 @@ describe('Agent 无死锁并发（删 MAX_ACTIVE 信号量后）', () => {
     )
     expect(results).toHaveLength(10)
     expect(results.every((r, i) => r === `结果${i}`)).toBe(true)
+  })
+})
+
+describe('Agent GLOBAL_SUBAGENT_DENY 含 Workflow（仅一层嵌套）', () => {
+  it('子代理池不含 Workflow', () => {
+    const fakeWorkflow: any = {
+      name: 'Workflow', description: 'orchestrate', inputSchema: {},
+      isReadOnly: true, needsPermission: () => false, call: async () => '',
+    }
+    const pool: any[] = [
+      fakeWorkflow,
+      { name: 'Read', description: 'read', inputSchema: {}, isReadOnly: true, needsPermission: () => false, call: async () => '' },
+    ]
+    const def = BUILTIN_AGENTS.find(a => a.agentType === 'general-purpose')!
+    const result = resolveAgentTools(def, pool, GLOBAL_SUBAGENT_DENY)
+    expect(result.map(t => t.name)).not.toContain('Workflow')
+    expect(result.map(t => t.name)).toContain('Read')
   })
 })

@@ -29,8 +29,8 @@ const def = (over: Partial<AgentDefinition>): AgentDefinition => ({
 })
 
 describe('GLOBAL_SUBAGENT_DENY', () => {
-  it('含 ExitPlanMode + EnterWorktree + ExitWorktree（可写+可递归，worktree 工具仅主会话）', () => {
-    expect(GLOBAL_SUBAGENT_DENY).toEqual(['ExitPlanMode', 'EnterWorktree', 'ExitWorktree'])
+  it('含 ExitPlanMode + EnterWorktree + ExitWorktree + Workflow（可写+可递归，worktree/workflow 工具仅主会话）', () => {
+    expect(GLOBAL_SUBAGENT_DENY).toEqual(['ExitPlanMode', 'EnterWorktree', 'ExitWorktree', 'Workflow'])
   })
 })
 
