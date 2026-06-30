@@ -1,9 +1,12 @@
 // src/tools/workflow.ts
 import { z } from 'zod'
+import { existsSync, readFileSync } from 'node:fs'
+import { isAbsolute, resolve, join } from 'node:path'
+import { homedir } from 'node:os'
 import type OpenAI from 'openai'
 import type { Tool } from './types.js'
 import type { Usage } from '../api.js'
-import { runWorkflow } from '../workflow/orchestrator.js'
+import { runWorkflow, generateRunId } from '../workflow/orchestrator.js'
 import { makeInProcessBackend } from '../workflow/backend.js'
 import { registerTask, updateTask, generateTaskId, enqueueNotification, getTask } from '../tasks.js'
 import type { JournalRecord } from '../workflow/types.js'
@@ -44,7 +47,28 @@ export function makeWorkflowTool(deps: WorkflowToolDeps): Tool<typeof schema> {
     isReadOnly: true,
     needsPermission: () => false,
     async call(input, ctx) {
-      const script = input.script ?? ''
+      // 优先级：scriptPath > name > script
+      let script: string
+      if (input.scriptPath) {
+        const absPath = isAbsolute(input.scriptPath) ? input.scriptPath : resolve(ctx.cwd(), input.scriptPath)
+        if (!existsSync(absPath)) throw new Error(`Workflow script file not found: ${absPath}`)
+        script = readFileSync(absPath, 'utf8')
+      } else if (input.name) {
+        const cwd = ctx.cwd()
+        const projectPath = join(cwd, '.deepcode', 'workflows', `${input.name}.js`)
+        const userPath = join(homedir(), '.deepcode', 'workflows', `${input.name}.js`)
+        if (existsSync(projectPath)) {
+          script = readFileSync(projectPath, 'utf8')
+        } else if (existsSync(userPath)) {
+          script = readFileSync(userPath, 'utf8')
+        } else {
+          throw new Error(`Workflow not found: ${input.name}`)
+        }
+      } else {
+        script = input.script ?? ''
+      }
+
+      const runId = input.resumeFromRunId ?? generateRunId()
       const taskId = generateTaskId('local_workflow')
       const abort = new AbortController()
       const progress: JournalRecord[] = []
@@ -74,7 +98,7 @@ export function makeWorkflowTool(deps: WorkflowToolDeps): Tool<typeof schema> {
       void runWorkflow({
         script,
         args: input.args,
-        runId: input.resumeFromRunId,
+        runId,
         journalDir: deps.journalDir,
         backend,
         budget: { total: null, spent: () => 0, remaining: () => Infinity },
@@ -92,7 +116,7 @@ export function makeWorkflowTool(deps: WorkflowToolDeps): Tool<typeof schema> {
       return JSON.stringify({
         status: 'async_launched',
         taskId,
-        runId: input.resumeFromRunId ?? '(generating wf_...)',
+        runId,
         taskType: 'local_workflow',
       })
     },
