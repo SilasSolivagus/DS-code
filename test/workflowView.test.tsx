@@ -17,6 +17,16 @@ describe('formatWorkflowProgress', () => {
     expect(s.done).toBe(true)
     expect(s.ms).toBe(1234)
   })
+
+  it('进行中的 run（无 workflow_complete）用 task.id 作 runId', () => {
+    const recs = [
+      { type: 'workflow_phase', index: 0, title: 'Scan', phaseIndex: 0 },
+      { type: 'workflow_agent', index: 1, agentId: 'a', model: 'm', status: 'ok', prompt: 'p', optsKey: '{}', result: 1 },
+    ] as any
+    const s = formatWorkflowProgress(recs, { id: 'w1', status: 'running' } as any)
+    expect(s.runId).toBe('w1')
+    expect(s.done).toBe(false)
+  })
 })
 
 describe('WorkflowView 渲染', () => {

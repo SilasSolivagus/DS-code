@@ -14,7 +14,7 @@ export interface WorkflowRunSummary {
 
 export function formatWorkflowProgress(records: JournalRecord[], task: { id: string; status: string }): WorkflowRunSummary {
   const phases: { title: string; agents: number }[] = []
-  let agents = 0, ms = 0, done = false, runId = '', name = ''
+  let agents = 0, ms = 0, done = false, runId = task.id, name = ''
   for (const r of records) {
     if (r.type === 'workflow_phase') phases.push({ title: r.title, agents: 0 })
     else if (r.type === 'workflow_agent') { agents++; if (phases.length) phases[phases.length - 1].agents++ }
