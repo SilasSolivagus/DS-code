@@ -95,7 +95,9 @@ T3 小命令凑一批；T4 加固按 ROI 穿插。
 
 ## 四点五、阶段 B 起点裁决（2026-06-29，实读 CC v2.1.193 后）
 
-> ✅✅✅ **2026-06-30 更新：7.1 Workflow 已完成并合 main（merge `655b3ca`）。** 12 任务 SDD + 4「全部连线」fix（runId 表面化/scriptPath-name 解析/结构化 resume 键/budget·alias·name·workflow() 嵌套）+ 2 真机冒烟 fix + ask-chain 既有 bug 修复。opus 全分支终审 + glm-5.2 真机端到端冒烟成功。全量 1421 passed。spec/plan `docs/{specs,plans}/2026-06-29-deepcode-workflow*`。**阶段 B 下一件候选：7.5 Auto mode（需先跑分类器模型 eval）/ 7.2 Kairos / 7.3 后台会话 / 7.4 FleetView，开新会话拍板。**
+> ✅✅✅ **2026-06-30 更新：7.1 Workflow 已完成并合 main（merge `655b3ca`）。** 12 任务 SDD + 4「全部连线」fix（runId 表面化/scriptPath-name 解析/结构化 resume 键/budget·alias·name·workflow() 嵌套）+ 2 真机冒烟 fix + ask-chain 既有 bug 修复。opus 全分支终审 + glm-5.2 真机端到端冒烟成功。全量 1421 passed。spec/plan `docs/{specs,plans}/2026-06-29-deepcode-workflow*`。
+
+> ✅✅✅✅ **2026-06-30 更新：7.2 Kairos 自主循环已完成并合 main。** 全量 1:1 CC v2.1.193：会话内 `src/services/scheduler/` 子系统（cron matcher/双哨兵 resolver/SchedulerService 单中央 idle-tick + keepalive/durable store + 按目录 lock + 漏跑补偿 + 7天 age-out）+ 19 工具（ScheduleWakeup/Monitor 逐行+令牌桶+200ms批/CronCreate·List·Delete/TaskStop/PushNotification OSC+BEL兜底+/dev/tty）+ `/loop` 命令(fixed/dynamic/autonomous) + doneMeansMerged preamble 变体门控。13 任务 SDD + 全分支 opus 终审 4 fix（**Critical 串行化 scheduler 触发防多 due 并发 runTurn** + 动态循环短 tick 复发 + 哨兵按 kind 解耦 + Monitor plan-mode 1:1 接受风险）+ glm-5.2 综合真机冒烟 PASS（durable cron 跨重启 / Monitor 流 / push 序列直达终端铁证）。全量 1479 passed。spec/plan `docs/{specs,plans}/2026-06-30-deepcode-kairos*`。**阶段 B 下一件候选：7.5 Auto mode（需先跑分类器模型 eval）/ 7.3 后台会话 / 7.4 FleetView，开新会话拍板。**
 
 **裁决：阶段 B 先做 7.1 Workflow（改判，三章原推 Auto mode）。** 派 2 opus 专家实读 CC v2.1.193 bundle 后改判，新增证据：
 
