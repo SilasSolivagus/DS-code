@@ -68,7 +68,7 @@ describe('addCron / recurring', () => {
   it('recurring 触发后重算 nextFireAt（不移除）', () => {
     const { svc, fired } = mk()
     const now = new Date(2026, 5, 30, 9, 29, 30).getTime()
-    svc.addCron({ id: 'c1', kind: 'cron', cron: '* * * * *', prompt: 'P', recurring: true, durable: false, createdAt: now, nextFireAt: 0 })
+    svc.addCron({ id: 'c1', kind: 'cron', cron: '* * * * *', prompt: 'P', recurring: true, durable: false, createdAt: now, nextFireAt: 0 }, now)
     svc.tick(new Date(2026, 5, 30, 9, 31, 0).getTime())
     expect(fired.length).toBeGreaterThanOrEqual(1)
     expect(svc.list().some(e => e.id === 'c1')).toBe(true)
@@ -76,14 +76,14 @@ describe('addCron / recurring', () => {
   it('one-shot 触发后移除', () => {
     const { svc } = mk()
     const now = new Date(2026, 5, 30, 9, 29, 30).getTime()
-    svc.addCron({ id: 'c2', kind: 'cron', cron: '* * * * *', prompt: 'P', recurring: false, durable: false, createdAt: now, nextFireAt: 0 })
+    svc.addCron({ id: 'c2', kind: 'cron', cron: '* * * * *', prompt: 'P', recurring: false, durable: false, createdAt: now, nextFireAt: 0 }, now)
     svc.tick(new Date(2026, 5, 30, 9, 31, 0).getTime())
     expect(svc.list().some(e => e.id === 'c2')).toBe(false)
   })
   it('recurring 超 7 天 age-out：最终一跑后移除', () => {
     const { svc, fired } = mk()
     const created = new Date(2026, 5, 1, 9, 0, 0).getTime()
-    svc.addCron({ id: 'c3', kind: 'cron', cron: '* * * * *', prompt: 'P', recurring: true, durable: false, createdAt: created, nextFireAt: 0 })
+    svc.addCron({ id: 'c3', kind: 'cron', cron: '* * * * *', prompt: 'P', recurring: true, durable: false, createdAt: created, nextFireAt: 0 }, created)
     svc.tick(new Date(2026, 5, 30, 9, 31, 0).getTime()) // 29 天后
     expect(fired.length).toBe(1)
     expect(svc.list().some(e => e.id === 'c3')).toBe(false)

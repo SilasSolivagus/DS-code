@@ -52,9 +52,9 @@ export class SchedulerService {
     return id
   }
 
-  addCron(job: CronJob): void {
+  addCron(job: CronJob, now = Date.now()): void {
     if (job.nextFireAt === 0) {
-      const n = nextFire(job.cron, new Date(job.createdAt))
+      const n = nextFire(job.cron, new Date(now))
       job.nextFireAt = n ? n.getTime() + jitterMs(job.id, this.periodMs(job.cron), job.recurring) : Infinity
     }
     this.entries.push(job)
@@ -78,8 +78,12 @@ export class SchedulerService {
         this.deps.fire('（自主循环 tick）', this.resolver.resolve(e.prompt))
       } else {
         const agedOut = e.recurring && (now - e.createdAt) >= JITTER.recurringMaxAgeMs
+        if (!e.recurring || agedOut) {
+          this.cancel(e.id)
+          this.deps.fire('（定时任务 tick）', this.resolver.resolve(e.prompt))
+          continue
+        }
         this.deps.fire('（定时任务 tick）', this.resolver.resolve(e.prompt))
-        if (!e.recurring || agedOut) { this.cancel(e.id); continue }
         const n = nextFire(e.cron, new Date(now))
         e.nextFireAt = n ? n.getTime() + jitterMs(e.id, this.periodMs(e.cron), true) : Infinity
       }
