@@ -31,6 +31,25 @@ vi.mock('../src/api.js', async orig => ({
   ),
 }))
 
+// 隔离宿主机 ~/.deepcode/settings.json 的权限规则：钉空 permissions.allow/deny，
+// 使权限测试（ask-chain 等）不受用户累积的 allow 规则影响（如 Bash(echo hello:*) 会让 ask 不弹 → 测试挂死）。
+vi.mock('../src/settingsLayers.js', async orig => {
+  const actual = (await orig()) as any
+  return {
+    ...actual,
+    loadLayeredSettings: (cwd: string, flagPath?: string) => {
+      const real = actual.loadLayeredSettings(cwd, flagPath)
+      return {
+        ...real,
+        // memory.enabled=false：禁掉每轮末 fire-and-forget 的提取/dream（本文件无测试依赖之），
+        // 避免 mock 脚本耗尽时的 "[memory] 提取失败" 噪音与测试结束后晚到的 console.error→write EPIPE。
+        settings: { ...real.settings, permissions: { allow: [], deny: [] }, memory: { ...real.settings.memory, enabled: false } },
+        permissionSources: { allow: {}, deny: {} },
+      }
+    },
+  }
+})
+
 import { transcriptReducer, type TranscriptItem, createChatCore } from '../src/tui/useChat.js'
 
 const usage = { prompt_tokens: 50, completion_tokens: 20, prompt_cache_hit_tokens: 40 }
