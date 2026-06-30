@@ -66,31 +66,58 @@ export const monitorTool: Tool<typeof schema> = {
     const child = spawn('bash', ['-c', input.command], { detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
     registerTask({ id, type: 'local_bash', kind: 'monitor', status: 'running', description: input.description, startTime: Date.now(), outputFile, outputOffset: 0, notified: false, command: input.command, child } as any)
 
+    // Fix 2: drain stderr to prevent child stall at ~64KB buffer
+    child.stderr?.resume()
+
     const bucket = new TokenBucket(Date.now())
     let buf = ''
     let suppressed = 0
+    let stopped = false  // Fix 1: guard shouldStop branch against re-firing
+
+    // Fix 4: 200ms line batching
+    let pending: string[] = []
+    let batchTimer: NodeJS.Timeout | null = null
+    const flushBatch = (): void => {
+      if (pending.length) {
+        enqueueNotification({ id, type: 'local_bash', kind: 'monitor', status: 'running', description: pending.join('\n'), startTime: 0, outputFile, outputOffset: 0, notified: false } as any)
+        pending = []
+      }
+      batchTimer = null
+    }
+
     const emit = (line: string): void => {
       const now = Date.now()
       if (bucket.shouldStop(now)) {
-        updateTask(id, { status: 'killed' } as any)
-        killProcessTree(child, 'SIGTERM')
-        enqueueNotification({ id, type: 'local_bash', kind: 'monitor', status: 'killed', description: `[Monitor 已停——输出过多，${suppressed} 个事件被抑制。换更狠的过滤]`, startTime: 0, outputFile, outputOffset: 0, notified: false } as any)
+        if (!stopped) {  // Fix 1: only kill+notify once
+          stopped = true
+          flushBatch()  // Fix 4: flush pending before stop notification
+          updateTask(id, { status: 'killed' } as any)
+          killProcessTree(child, 'SIGTERM')
+          enqueueNotification({ id, type: 'local_bash', kind: 'monitor', status: 'killed', description: `[Monitor 已停——输出过多，${suppressed} 个事件被抑制。换更狠的过滤]`, startTime: 0, outputFile, outputOffset: 0, notified: false } as any)
+        }
         return
       }
       if (!bucket.allow(now)) { suppressed++; return }
       const trimmed = line.slice(0, MONITOR.perLineCap)
       ws.write(line + '\n')
-      enqueueNotification({ id, type: 'local_bash', kind: 'monitor', status: 'running', description: `Monitor「${input.description}」: ${trimmed}`, startTime: 0, outputFile, outputOffset: 0, notified: false } as any)
+      // Fix 4: batch lines arriving within batchMs into one notification
+      pending.push(`Monitor「${input.description}」: ${trimmed}`)
+      if (batchTimer === null) {
+        batchTimer = setTimeout(flushBatch, MONITOR.batchMs)
+        batchTimer.unref?.()
+      }
     }
     child.stdout.on('data', (d: Buffer) => {
       buf += d.toString()
       let nl: number
       while ((nl = buf.indexOf('\n')) >= 0) { const line = buf.slice(0, nl); buf = buf.slice(nl + 1); if (line.trim()) emit(line) }
     })
-    child.once('exit', code => {
+    child.once('exit', (code, signal) => {  // Fix 3: capture signal for null-code display
+      flushBatch()  // Fix 4: flush pending before exit notification
       ws.end()
-      updateTask(id, { status: code === 0 ? 'completed' : 'failed', endTime: Date.now() } as any)
-      enqueueNotification({ id, type: 'local_bash', kind: 'monitor', status: code === 0 ? 'completed' : 'failed', description: `Monitor「${input.description}」结束（退出码 ${code}）`, startTime: 0, outputFile, outputOffset: 0, notified: false } as any)
+      const exitStatus = code === 0 ? 'completed' : 'failed'
+      updateTask(id, { status: exitStatus, endTime: Date.now() } as any)
+      enqueueNotification({ id, type: 'local_bash', kind: 'monitor', status: exitStatus, description: `Monitor「${input.description}」结束（退出码 ${code ?? signal}）`, startTime: 0, outputFile, outputOffset: 0, notified: false } as any)
     })
     if (timeout !== undefined) setTimeout(() => { if (child.exitCode === null) killProcessTree(child, 'SIGTERM') }, timeout).unref?.()
     return `Monitor 已启动 id=${id}（${input.persistent ? '常驻' : `${timeout}ms 超时`}）。事件将作为 task-notification 到达。用 TaskStop ${id} 停止。`
