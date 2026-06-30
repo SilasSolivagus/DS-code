@@ -6,10 +6,11 @@ import { createSentinelResolver } from './sentinel.js'
 
 export const KEEPALIVE_MS = 1_200_000  // 20min 兜底
 export const KEEPALIVE_BUDGET = 1
+export const WAKEUP_TICK_LINE = '（自主循环 tick）'
 const TICK_MS = 10_000
 
 const ID_CHARS = '0123456789abcdefghijklmnopqrstuvwxyz'
-function genId(prefix: string, rand: (n: number) => Buffer = crypto.randomBytes): string {
+export function genId(prefix: string, rand: (n: number) => Buffer = crypto.randomBytes): string {
   const b = rand(8)
   let s = ''
   for (let i = 0; i < 8; i++) s += ID_CHARS[b[i] % 36]
@@ -84,7 +85,7 @@ export class SchedulerService {
     for (const e of due) {
       if (e.kind === 'wakeup') {
         this.cancel(e.id)
-        this.deps.fire('（自主循环 tick）', this.resolver.resolve(e.prompt))
+        this.deps.fire(WAKEUP_TICK_LINE, this.resolver.resolve(e.prompt))
       } else {
         const agedOut = e.recurring && (now - e.createdAt) >= JITTER.recurringMaxAgeMs
         if (!e.recurring || agedOut) {

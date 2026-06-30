@@ -41,7 +41,7 @@ import { summarize, rebuildMessages, shouldAutoCompact } from '../compact.js'
 import { estimateTextTokens, estimateMessagesTokens, effectiveThreshold } from '../tokenEstimate.js'
 import { TaskListStore } from '../taskList.js'
 import { loadCustomCommands, expandCommand, INIT_PROMPT, formatContext, parseLoopCommand, LOOP_GUIDANCE } from '../commands.js'
-import { SchedulerService } from '../services/scheduler/index.js'
+import { SchedulerService, WAKEUP_TICK_LINE, genId } from '../services/scheduler/index.js'
 import { setScheduler } from '../tools/scheduleWakeup.js'
 import { resolveAgents } from '../agentsLoader.js'
 import { exportTranscript } from '../export.js'
@@ -703,7 +703,7 @@ export function createChatCore(opts: {
     const loopActive =
       displayLine === '（/loop 自起步）' ||
       displayLine === '（/loop 自主）' ||
-      displayLine === '（自主循环 tick）'
+      displayLine === WAKEUP_TICK_LINE
     scheduler.consumeScheduled() // 重置跨 turn 遗留标志（本轮终点 consumeScheduled 会再读正确值）
     // UserPromptSubmit hook：用户输入提交前。block/preventContinuation→拦截不发；additionalContext→附到 user 文本。
     // 守卫与 loop.ts 的 `if (deps.hooks)` 一致：未配 hooks 时不引入额外 await（保持 idle 唤醒时序）。
@@ -1334,7 +1334,7 @@ export function createChatCore(opts: {
     if (line === '/loop' || line.startsWith('/loop ')) {
       const p = parseLoopCommand(line)
       if (p.mode === 'fixed') {
-        scheduler.addCron({ id: 'c-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6), kind: 'cron', cron: p.cron, prompt: p.prompt, recurring: true, durable: false, createdAt: Date.now(), nextFireAt: 0 })
+        scheduler.addCron({ id: genId('c'), kind: 'cron', cron: p.cron, prompt: p.prompt, recurring: true, durable: false, createdAt: Date.now(), nextFireAt: 0 })
         notice('info', `已建循环：每 ${line.split(' ')[1]} 跑一次。立即跑首轮。`)
         await runTurn('（/loop 首轮）', p.prompt)
       } else if (p.mode === 'dynamic') {
