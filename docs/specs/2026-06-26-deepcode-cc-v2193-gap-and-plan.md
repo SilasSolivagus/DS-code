@@ -95,6 +95,8 @@ T3 小命令凑一批；T4 加固按 ROI 穿插。
 
 ## 四点五、阶段 B 起点裁决（2026-06-29，实读 CC v2.1.193 后）
 
+> ✅✅✅ **2026-06-30 更新：7.1 Workflow 已完成并合 main（merge `655b3ca`）。** 12 任务 SDD + 4「全部连线」fix（runId 表面化/scriptPath-name 解析/结构化 resume 键/budget·alias·name·workflow() 嵌套）+ 2 真机冒烟 fix + ask-chain 既有 bug 修复。opus 全分支终审 + glm-5.2 真机端到端冒烟成功。全量 1421 passed。spec/plan `docs/{specs,plans}/2026-06-29-deepcode-workflow*`。**阶段 B 下一件候选：7.5 Auto mode（需先跑分类器模型 eval）/ 7.2 Kairos / 7.3 后台会话 / 7.4 FleetView，开新会话拍板。**
+
 **裁决：阶段 B 先做 7.1 Workflow（改判，三章原推 Auto mode）。** 派 2 opus 专家实读 CC v2.1.193 bundle 后改判，新增证据：
 
 - **Workflow（8/10）**：本体 = Node 内置 `vm` 沙箱（`createContext({__proto__:null},{codeGeneration:{strings:false,wasm:false}})` 禁 eval/wasm/import()）+ 7 原语 `agent/parallel/pipeline/phase/log/budget/workflow`（args 经 VM 内 JSON.parse 注入）。确定性双层禁 `Date.now/Math.random/new Date`（静态正则 `Col()` + 不注入）→ 保 resume。Resume = append-only JSONL journal，缓存键 `(prompt,opts)`+位置，"longest unchanged prefix → 100% cache hit"，**仅同 session**。数值：并发 `min(16,cpu-2)`／单 workflow ≤1000 agent／单次 parallel/pipeline ≤4096 item／同步切片超时 30s。触发 `ultracode`。隐性最高复杂度 = **async 桥接**（VM 内 promise settle ↔ host 事件循环，`bindVMAwait/settle/call/clone`），不是 vm.Script。可复用 1.5 worktree+subagent+loop.ts 调度器。
