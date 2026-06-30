@@ -27,7 +27,7 @@ export interface AgentSpec {
 
 export type JournalRecord =
   | { type: 'workflow_start'; runId: string; name: string }
-  | { type: 'workflow_agent'; index: number; label?: string; phaseIndex?: number; phaseTitle?: string; agentId: string; model: string; status: 'ok' | 'error' | 'skipped'; prompt: string; optsKey: string; result: unknown }
+  | { type: 'workflow_agent'; index: number; key: string; label?: string; phaseIndex?: number; phaseTitle?: string; agentId: string; model: string; status: 'ok' | 'error' | 'skipped'; prompt: string; optsKey: string; result: unknown }
   | { type: 'workflow_log'; index: number; message: string }
   | { type: 'workflow_phase'; index: number; title: string; phaseIndex: number }
   | { type: 'workflow_tool'; index: number; name: string }

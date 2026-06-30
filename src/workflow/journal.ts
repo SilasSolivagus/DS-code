@@ -28,9 +28,11 @@ export function optsKeyOf(opts: unknown): string {
   return JSON.stringify(sort(opts ?? {}))
 }
 
-/** resume 缓存查询：同 index 的 workflow_agent 记录，prompt+optsKey 全等 → 命中。 */
-export function cachedAgent(records: JournalRecord[], index: number, prompt: string, optsKey: string): { hit: boolean; result?: unknown } {
-  const rec = records.find(r => r.type === 'workflow_agent' && r.index === index)
+/** resume 缓存查询：同结构化 key 的 workflow_agent 记录，prompt+optsKey 全等 → 命中。
+ *  key 由 agent() 在编排树中的确定性位置（路径 + 同路径序号）派生，
+ *  并发完成顺序不影响匹配（多 stage pipeline 的 fan-out 下也稳定）。 */
+export function cachedAgent(records: JournalRecord[], key: string, prompt: string, optsKey: string): { hit: boolean; result?: unknown } {
+  const rec = records.find(r => r.type === 'workflow_agent' && r.key === key)
   if (rec && rec.type === 'workflow_agent' && rec.prompt === prompt && rec.optsKey === optsKey) {
     return { hit: true, result: rec.result }
   }

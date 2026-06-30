@@ -23,7 +23,7 @@ describe('runtime.agent()', () => {
     expect(d.backend.runAgent).toHaveBeenCalledOnce()
   })
   it('resume 缓存命中 → 跳过 backend', async () => {
-    const records = [{ type: 'workflow_agent', index: 0, agentId: 'a0', model: 'm', status: 'ok', prompt: 'p', optsKey: optsKeyOf({}), result: 'cached' }]
+    const records = [{ type: 'workflow_agent', index: 0, key: '#0', agentId: 'a0', model: 'm', status: 'ok', prompt: 'p', optsKey: optsKeyOf({}), result: 'cached' }]
     const d = deps({ records })
     const rt = createRuntime(d as any)
     expect(await rt.agent('p')).toBe('cached')
