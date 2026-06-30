@@ -85,6 +85,8 @@ export interface Settings {
   skipWorkflowUsageWarning?: boolean
   /** 启用 ultracode 关键字自动触发 Workflow 工具引导（缺省 true）。 */
   workflowKeywordTriggerEnabled?: boolean
+  /** /loop 自主模式结束判定：true=合并即视为任务完成（哨兵 preamble 用 persist 变体）。Task 14 加写入。 */
+  doneMeansMerged?: boolean
 }
 
 const DIR = path.join(os.homedir(), '.deepcode')

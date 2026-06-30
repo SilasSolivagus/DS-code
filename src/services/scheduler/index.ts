@@ -21,6 +21,7 @@ export class SchedulerService {
   private timer: NodeJS.Timeout | null = null
   private keepaliveBudget = KEEPALIVE_BUDGET
   private resolver = createSentinelResolver({ doneMeansMerged: () => this.deps.doneMeansMerged() })
+  private _scheduledThisTurn = false
 
   constructor(private deps: SchedulerDeps) {}
 
@@ -48,8 +49,16 @@ export class SchedulerService {
     const id = genId('k')
     this.entries.push({ id, kind: 'wakeup', fireAt: roundUpToMinute(now, clampedSeconds), prompt, reason })
     this.keepaliveBudget = KEEPALIVE_BUDGET
+    this._scheduledThisTurn = true
     if (reason !== 'keepalive') this.resolver.reset()
     return id
+  }
+
+  /** 消费并重置"本轮已调用 ScheduleWakeup"标志。useChat 在 runTurn 末调用。 */
+  consumeScheduled(): boolean {
+    const v = this._scheduledThisTurn
+    this._scheduledThisTurn = false
+    return v
   }
 
   addCron(job: CronJob, now = Date.now()): void {

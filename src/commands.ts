@@ -27,6 +27,43 @@ export const INIT_PROMPT = `请分析本项目并生成 DEEPCODE.md 项目记忆
 3. 用 Write 写入 DEEPCODE.md，内容包含三节：构建/测试/运行命令（从清单文件查证，不要猜）、架构要点（主要模块及职责，带路径）、代码风格约定（从现有代码归纳）
 保持简洁：只写对后续编码任务有用的事实，不写营销性描述。`
 
+// 把 5m/30s/1h/2d 间隔转 5-field cron（近似：分钟级用 */N，小时/天用整点）。
+function intervalToCron(tok: string): string | null {
+  const m = /^(\d+)(s|m|h|d)$/.exec(tok)
+  if (!m) return null
+  const n = Number(m[1])
+  switch (m[2]) {
+    case 's': case 'm': return `*/${Math.max(1, n)} * * * *`   // 秒近似为分钟（cron 最小分钟）
+    case 'h': return n === 1 ? '0 * * * *' : `0 */${n} * * *`
+    case 'd': return n === 1 ? '0 9 * * *' : `0 9 */${n} * *`
+    default: return null
+  }
+}
+
+export type LoopParse =
+  | { mode: 'fixed'; cron: string; prompt: string }
+  | { mode: 'dynamic'; prompt: string }
+  | { mode: 'autonomous' }
+
+export function parseLoopCommand(line: string): LoopParse {
+  const rest = line.replace(/^\/loop\b/, '').trim()
+  if (!rest) return { mode: 'autonomous' }
+  const sp = rest.indexOf(' ')
+  const first = sp < 0 ? rest : rest.slice(0, sp)
+  const cron = intervalToCron(first)
+  if (cron && sp >= 0) return { mode: 'fixed', cron, prompt: rest.slice(sp + 1).trim() }
+  return { mode: 'dynamic', prompt: rest }
+}
+
+/** /loop 展开成给模型的编排指令（dynamic/autonomous 用；fixed 直接建 cron 无需指令）。 */
+export const LOOP_GUIDANCE = {
+  dynamic: (prompt: string) =>
+    `你正处于 /loop 动态自定步模式。现在执行这个任务：\n\n${prompt}\n\n` +
+    `做完本轮后，若任务需要继续，在 turn 末调用 ScheduleWakeup（prompt 设为同一任务文本）安排下次续跑；不需要继续就省略调用结束循环。`,
+  autonomous: () =>
+    `你正处于自主 /loop 模式。现在立即跑第一次自主检查，然后在 turn 末调用 ScheduleWakeup（prompt 设为字面 \`<<autonomous-loop-dynamic>>\`）保持循环；要停就省略调用。`,
+}
+
 /** /context 简版：按 CJK 感知 token 估算各部分占比，外加上次请求的真实 usage */
 export function formatContext(
   messages: any[],
