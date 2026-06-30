@@ -104,6 +104,12 @@ describe('taskOutputTool', () => {
     expect(out).toBe('任务 zzz 不存在')
   })
 
+  it('无文件流输出但有 result（如 Workflow）→ 回退到 result', async () => {
+    registerTask(mkTask({ id: 'w11111111', type: 'local_workflow', status: 'completed', outputFile: '', result: '{"summary":"done"}' }))
+    const out = await taskOutputTool.call({ task_id: 'w11111111' }, ctx())
+    expect(out).toBe('<status>completed</status>\n{"summary":"done"}')
+  })
+
   it('终态任务读后置 notified=true（读过即静默）', async () => {
     const f = path.join(tmpDir, 'b5.log')
     fs.writeFileSync(f, 'done')

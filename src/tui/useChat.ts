@@ -1206,7 +1206,7 @@ export function createChatCore(opts: {
       notice('info', formatStats(sessionStats(messages, usageLog), sessionCost(), cacheHitRate()))
       return
     }
-    if (line === '/workflows') {
+    if (line.split(/\s+/)[0] === '/workflows') {
       const workflowDir = path.join(cwd, '.deepcode', 'workflows')
       try {
         const runIds = fs.readdirSync(workflowDir)

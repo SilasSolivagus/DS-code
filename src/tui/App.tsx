@@ -142,7 +142,7 @@ export function App(props: {
     if (text === '/output-style') { setOutputStyleMode(true); return }
     if (text === '/theme') { setThemeMode(true); return }
     if (text === '/rewind') { setRewindStep('point'); return }
-    if (text === '/workflows') {
+    if (text.trim().split(/\s+/)[0] === '/workflows') {
       const journalDir = path.join(props.cwd, '.deepcode', 'workflows')
       const runs: WorkflowRunSummary[] = []
       try {
