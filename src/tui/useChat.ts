@@ -1197,6 +1197,28 @@ export function createChatCore(opts: {
       notice('info', formatStats(sessionStats(messages, usageLog), sessionCost(), cacheHitRate()))
       return
     }
+    if (line === '/workflows') {
+      const workflowDir = path.join(cwd, '.deepcode', 'workflows')
+      try {
+        const runIds = fs.readdirSync(workflowDir)
+        if (runIds.length === 0) { notice('info', '（无 workflow 运行记录）'); return }
+        const { formatWorkflowProgress } = await import('./WorkflowView.js')
+        const lines: string[] = []
+        for (const runId of runIds) {
+          try {
+            const raw = fs.readFileSync(path.join(workflowDir, runId, 'journal.jsonl'), 'utf8')
+            const records = raw.split('\n').filter(Boolean).map(l => JSON.parse(l))
+            const isDone = records.some((r: any) => r.type === 'workflow_complete')
+            const s = formatWorkflowProgress(records, { id: runId, status: isDone ? 'completed' : 'running' })
+            const phaseLine = s.phases.map(p => `  ${s.done ? '✓' : '⟳'} ${p.title} · ${p.agents} agents`).join('\n')
+            const footer = s.done ? `Completed in ${(s.ms / 1000).toFixed(1)}s · ${s.agents} agents` : '（进行中）'
+            lines.push([s.name || s.runId || runId, phaseLine, footer].filter(Boolean).join('\n'))
+          } catch { /* skip */ }
+        }
+        notice('info', lines.length ? lines.join('\n\n') : '（无有效 workflow 记录）')
+      } catch { notice('info', '（无 workflow 运行记录）') }
+      return
+    }
     if (line === '/memory') {
       notice('info', formatMemory(findMemoryFiles(cwd), os.homedir()))
       return

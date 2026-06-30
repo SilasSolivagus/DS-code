@@ -1,0 +1,29 @@
+// test/workflowView.test.tsx
+import { describe, it, expect } from 'vitest'
+import { render } from 'ink-testing-library'
+import React from 'react'
+import { WorkflowView, formatWorkflowProgress } from '../src/tui/WorkflowView.js'
+
+describe('formatWorkflowProgress', () => {
+  it('汇总 phase/agent 计数与完成态', () => {
+    const recs = [
+      { type: 'workflow_phase', index: 0, title: 'Scan', phaseIndex: 0 },
+      { type: 'workflow_agent', index: 1, agentId: 'a', model: 'm', status: 'ok', prompt: 'p', optsKey: '{}', result: 1 },
+      { type: 'workflow_complete', runId: 'wf_abc', agents: 1, ms: 1234 },
+    ] as any
+    const s = formatWorkflowProgress(recs, { id: 'w1', status: 'completed' } as any)
+    expect(s.agents).toBe(1)
+    expect(s.phases[0].title).toBe('Scan')
+    expect(s.done).toBe(true)
+    expect(s.ms).toBe(1234)
+  })
+})
+
+describe('WorkflowView 渲染', () => {
+  it('显示 phase 标题与 Completed 行', () => {
+    const runs = [{ runId: 'wf_abc', name: 't', done: true, agents: 1, ms: 1234, phases: [{ title: 'Scan', agents: 1 }] }]
+    const { lastFrame } = render(<WorkflowView runs={runs as any} />)
+    expect(lastFrame()).toContain('Scan')
+    expect(lastFrame()).toMatch(/Completed in/)
+  })
+})

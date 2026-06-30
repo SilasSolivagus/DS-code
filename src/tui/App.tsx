@@ -3,9 +3,11 @@
 // InputBox value 注入：通过 valueOverride={{ text, nonce }} prop 实现（最小改动，保持 InputBox 内部受控逻辑不变）。
 // 补全菜单隐藏策略：onPick 后设置 justPickedValue，若 draft === justPickedValue 则不展示菜单；用户再输入时 draft 变化即恢复。
 import React, { useMemo, useState, useRef, useEffect } from 'react'
+import fs from 'node:fs'
 import path from 'node:path'
 import { execSync } from 'node:child_process'
 import { Box, Text, useApp, useInput } from 'ink'
+import { WorkflowView, formatWorkflowProgress, type WorkflowRunSummary } from './WorkflowView.js'
 import { createChatCore, useChat } from './useChat.js'
 import { findMemoryFiles } from '../prompt.js'
 import { computeSuggestions } from './suggest.js'
@@ -68,32 +70,35 @@ export function App(props: {
   const { themeName, setThemeName } = useThemeControl()
   const [rewindStep, setRewindStep] = useState<'point' | 'mode' | null>(null)
   const [rewindTurn, setRewindTurn] = useState<number | null>(null)
+  const [workflowsMode, setWorkflowsMode] = useState(false)
+  const [workflowRuns, setWorkflowRuns] = useState<WorkflowRunSummary[]>([])
   const [lastSigint, setLastSigint] = useState(0)
   // 补全菜单隐藏：onPick 后记录刚选中的值，若 draft 恰好等于该值则不显示菜单
   const justPickedRef = useRef<string | null>(null)
   // InputBox value 注入：通过 nonce 强制 InputBox 接受新值
   const [valueOverride, setValueOverride] = useState<{ text: string; nonce: number } | undefined>(undefined)
 
-  // pendingAsk / pendingPlanApproval / resumeMode / rewindStep 激活时清除 draft 和 valueOverride，防止 InputBox 卸载后 remount 时老值复活
+  // pendingAsk / pendingPlanApproval / resumeMode / rewindStep / workflowsMode 激活时清除 draft 和 valueOverride，防止 InputBox 卸载后 remount 时老值复活
   useEffect(() => {
-    if (state.pendingAsk || state.pendingQuestion || state.pendingPlanApproval || resumeMode || modelPickerMode || outputStyleMode || themeMode || rewindStep) {
+    if (state.pendingAsk || state.pendingQuestion || state.pendingPlanApproval || resumeMode || modelPickerMode || outputStyleMode || themeMode || rewindStep || workflowsMode) {
       setDraft('')
       setValueOverride(undefined)
       justPickedRef.current = null
     }
-  }, [!!state.pendingAsk, !!state.pendingQuestion, !!state.pendingPlanApproval, resumeMode, modelPickerMode, outputStyleMode, themeMode, rewindStep])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [!!state.pendingAsk, !!state.pendingQuestion, !!state.pendingPlanApproval, resumeMode, modelPickerMode, outputStyleMode, themeMode, rewindStep, workflowsMode])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ctrl+C 两次退出（App 层统一管理，exitOnCtrlC: false 时才需要）
   // Ctrl+C 两次退出 + Shift+Tab 循环权限模式（default→acceptEdits→plan→default）。
   // Shift+Tab=ESC[Z，ink useInput 在多数终端识别为 key.tab+key.shift（QuestionDialog 亦用此键回上一题）；
   // 个别终端不识别时此分支静默不触发，可用 /plan、/accept 命令作保底。
   useInput((input, key) => {
+    if (key.escape && workflowsMode) { setWorkflowsMode(false); return }
     if (key.ctrl && input === 'c') {
       const now = Date.now()
       if (now - lastSigint < 2000) exit()
       else setLastSigint(now)
     }
-    if (key.shift && key.tab && !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion && !resumeMode && !modelPickerMode && !outputStyleMode && !themeMode && !rewindStep) {
+    if (key.shift && key.tab && !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion && !resumeMode && !modelPickerMode && !outputStyleMode && !themeMode && !rewindStep && !workflowsMode) {
       void core.send('/cycle-mode')
     }
   })
@@ -137,6 +142,23 @@ export function App(props: {
     if (text === '/output-style') { setOutputStyleMode(true); return }
     if (text === '/theme') { setThemeMode(true); return }
     if (text === '/rewind') { setRewindStep('point'); return }
+    if (text === '/workflows') {
+      const journalDir = path.join(props.cwd, '.deepcode', 'workflows')
+      const runs: WorkflowRunSummary[] = []
+      try {
+        for (const runId of fs.readdirSync(journalDir)) {
+          try {
+            const raw = fs.readFileSync(path.join(journalDir, runId, 'journal.jsonl'), 'utf8')
+            const records = raw.split('\n').filter(Boolean).map(l => JSON.parse(l))
+            const isDone = records.some((r: any) => r.type === 'workflow_complete')
+            runs.push(formatWorkflowProgress(records, { id: runId, status: isDone ? 'completed' : 'running' }))
+          } catch { /* skip bad journal */ }
+        }
+      } catch { /* no journal dir */ }
+      setWorkflowRuns(runs)
+      setWorkflowsMode(true)
+      return
+    }
     setDraft('')
     setValueOverride(undefined)
     justPickedRef.current = null
@@ -182,7 +204,7 @@ export function App(props: {
   // 协作解法：包装 stdout.write——ink 每次写帧前，若光标处于停泊态，先把它移回底部（下移
   // 同样行数），让 eraseLines 从正确位置开始；写完帧后再把光标停回插入点。两者不再对抗。
   const parkRef = useRef<{ active: boolean; up: number }>({ active: false, up: 0 })
-  const inputActive = !state.pendingAsk && !state.pendingQuestion && !state.pendingPlanApproval && !resumeMode && !modelPickerMode && !outputStyleMode && !themeMode && !rewindStep && !state.busy
+  const inputActive = !state.pendingAsk && !state.pendingQuestion && !state.pendingPlanApproval && !resumeMode && !modelPickerMode && !outputStyleMode && !themeMode && !rewindStep && !workflowsMode && !state.busy
 
   // 安装一次：包装 process.stdout.write，写帧前自动解除停泊（移回底部）
   // 诊断/逃生：DEEPCODE_NO_CURSOR_PARK=1 关掉整套光标停泊（退回原版 ink）——用于排查滚动/重绘问题。
@@ -261,6 +283,11 @@ export function App(props: {
               }}
               onCancel={() => setThemeMode(false)}
             />
+          : workflowsMode
+          ? <Box flexDirection="column">
+              <WorkflowView runs={workflowRuns} />
+              <Text dimColor>（按 Esc 返回）</Text>
+            </Box>
           : rewindStep === 'point'
           ? (() => {
               const pts = core.rewindList()
