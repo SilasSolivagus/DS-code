@@ -2,14 +2,16 @@ import { describe, it, expect } from 'vitest'
 import { oscNotification, pushNotificationTool } from '../../src/tools/pushNotification.js'
 
 describe('oscNotification', () => {
-  it('iTerm/默认 → OSC 9', () => {
-    expect(oscNotification('hi', 'iTerm.app')).toBe('\x1b]9;hi\x07')
+  it('iTerm/默认 → OSC 9 + 独立 BEL', () => {
+    expect(oscNotification('hi', 'iTerm.app')).toBe('\x1b]9;hi\x07\x07')
   })
-  it('Ghostty → OSC 777', () => {
+  it('Ghostty → OSC 777 + 独立 BEL', () => {
     expect(oscNotification('hi', 'ghostty')).toContain('\x1b]777;notify;')
+    expect(oscNotification('hi', 'ghostty')).toMatch(/\x07\x07$/)
   })
-  it('未知终端 → 至少含响铃兜底', () => {
-    expect(oscNotification('hi', undefined)).toContain('\x07')
+  it('未知终端 → OSC 9 + 独立 BEL 响铃兜底', () => {
+    expect(oscNotification('hi', 'unknown')).toBe('\x1b]9;hi\x07\x07')
+    expect(oscNotification('hi', 'unknown')).toMatch(/\x07\x07$/)
   })
 })
 

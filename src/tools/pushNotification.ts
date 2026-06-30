@@ -6,10 +6,13 @@ const BEL = '\x07'
 /** 按终端类型选 OSC 转义。iTerm2→OSC 9；Ghostty→OSC 777；Kitty→OSC 99；未知→响铃兜底。 */
 export function oscNotification(message: string, term = process.env.TERM_PROGRAM): string {
   const t = (term ?? '').toLowerCase()
-  if (t.includes('ghostty')) return `\x1b]777;notify;deepcode;${message}${BEL}`
-  if (t.includes('kitty')) return `\x1b]99;;${message}${BEL}`
-  // iTerm2 与默认：OSC 9（含响铃兜底语义）
-  return `\x1b]9;${message}${BEL}`
+  let osc: string
+  if (t.includes('ghostty')) osc = `\x1b]777;notify;deepcode;${message}${BEL}`
+  else if (t.includes('kitty')) osc = `\x1b]99;;${message}${BEL}`
+  // iTerm2 与默认：OSC 9
+  else osc = `\x1b]9;${message}${BEL}`
+  // 末尾独立 BEL 响铃兜底：桌面通知未启用的终端至少响一声
+  return osc + BEL
 }
 
 const schema = z.object({
