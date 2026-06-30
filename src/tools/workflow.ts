@@ -1,12 +1,10 @@
 // src/tools/workflow.ts
 import { z } from 'zod'
-import { existsSync, readFileSync } from 'node:fs'
-import { isAbsolute, resolve, join } from 'node:path'
-import { homedir } from 'node:os'
 import type OpenAI from 'openai'
 import type { Tool } from './types.js'
 import type { Usage } from '../api.js'
 import { runWorkflow, generateRunId } from '../workflow/orchestrator.js'
+import { resolveWorkflowScript } from '../workflow/resolve.js'
 import { makeInProcessBackend } from '../workflow/backend.js'
 import { registerTask, updateTask, generateTaskId, enqueueNotification, getTask } from '../tasks.js'
 import type { JournalRecord } from '../workflow/types.js'
@@ -50,20 +48,9 @@ export function makeWorkflowTool(deps: WorkflowToolDeps): Tool<typeof schema> {
       // 优先级：scriptPath > name > script
       let script: string
       if (input.scriptPath) {
-        const absPath = isAbsolute(input.scriptPath) ? input.scriptPath : resolve(ctx.cwd(), input.scriptPath)
-        if (!existsSync(absPath)) throw new Error(`Workflow script file not found: ${absPath}`)
-        script = readFileSync(absPath, 'utf8')
+        script = resolveWorkflowScript({ scriptPath: input.scriptPath }, ctx.cwd())
       } else if (input.name) {
-        const cwd = ctx.cwd()
-        const projectPath = join(cwd, '.deepcode', 'workflows', `${input.name}.js`)
-        const userPath = join(homedir(), '.deepcode', 'workflows', `${input.name}.js`)
-        if (existsSync(projectPath)) {
-          script = readFileSync(projectPath, 'utf8')
-        } else if (existsSync(userPath)) {
-          script = readFileSync(userPath, 'utf8')
-        } else {
-          throw new Error(`Workflow not found: ${input.name}`)
-        }
+        script = resolveWorkflowScript(input.name, ctx.cwd())
       } else {
         script = input.script ?? ''
       }
@@ -101,6 +88,7 @@ export function makeWorkflowTool(deps: WorkflowToolDeps): Tool<typeof schema> {
         script,
         args: input.args,
         runId,
+        cwd: ctx.cwd(),
         journalDir: deps.journalDir,
         backend,
         budget: { total: null, spent: () => spentTokens, remaining: () => Infinity },
