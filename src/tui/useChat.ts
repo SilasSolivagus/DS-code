@@ -40,7 +40,9 @@ import { costCNY, cacheSavingsCNY } from '../pricing.js'
 import { summarize, rebuildMessages, shouldAutoCompact } from '../compact.js'
 import { estimateTextTokens, estimateMessagesTokens, effectiveThreshold } from '../tokenEstimate.js'
 import { TaskListStore } from '../taskList.js'
-import { loadCustomCommands, expandCommand, INIT_PROMPT, formatContext } from '../commands.js'
+import { loadCustomCommands, expandCommand, INIT_PROMPT, formatContext, parseLoopCommand, LOOP_GUIDANCE } from '../commands.js'
+import { SchedulerService, WAKEUP_TICK_LINE, genId } from '../services/scheduler/index.js'
+import { setScheduler } from '../tools/scheduleWakeup.js'
 import { resolveAgents } from '../agentsLoader.js'
 import { exportTranscript } from '../export.js'
 import os from 'node:os'
@@ -697,6 +699,12 @@ export function createChatCore(opts: {
 
   /** 非斜杠输入：边界 reminders → user 消息落盘 → runLoop 驱动 →落盘 + 自动 compact */
   const runTurn = async (displayLine: string, userText: string): Promise<void> => {
+    // 动态 /loop 标志：displayLine 为这些值时，本轮属于动态/自主循环，turn 末需检查是否已续跑。
+    const loopActive =
+      displayLine === '（/loop 自起步）' ||
+      displayLine === '（/loop 自主）' ||
+      displayLine === WAKEUP_TICK_LINE
+    scheduler.consumeScheduled() // 重置跨 turn 遗留标志（本轮终点 consumeScheduled 会再读正确值）
     // UserPromptSubmit hook：用户输入提交前。block/preventContinuation→拦截不发；additionalContext→附到 user 文本。
     // 守卫与 loop.ts 的 `if (deps.hooks)` 一致：未配 hooks 时不引入额外 await（保持 idle 唤醒时序）。
     if (settings.hooks) {
@@ -939,6 +947,8 @@ export function createChatCore(opts: {
     turnStartAt = null
     setState()
     refreshStatusLine() // 5.7 turn 结束触发 statusLine 刷新
+    // keepalive：动态/自主循环 turn 末，若模型未调用 ScheduleWakeup，武装兜底 wakeup（budget 守卫在 service 内）。
+    if (loopActive && !scheduler.consumeScheduled()) scheduler.onTurnEndedWithoutReschedule()
     // 收尾自检：若某后台任务在本轮终止点 drain 之后、busy 复位之前完成入队，会滞留队列；
     // 此处 busy 已 false，重新唤醒一次把滞留通知补上（无则即返），避免拖到下次用户输入。
     wakeOnNotification()
@@ -955,6 +965,16 @@ export function createChatCore(opts: {
     void runTurn('（后台任务完成通知）', text)
   }
   const unsubNotification = onNotification(wakeOnNotification)
+
+  const scheduler = new SchedulerService({
+    isIdle: () => !busy,
+    fire: (displayLine, prompt) => { void runTurn(displayLine, prompt) },
+    cwd: () => cwd,
+    doneMeansMerged: () => loadSettings(cwd).doneMeansMerged === true,
+  })
+  setScheduler(scheduler)
+  scheduler.start()
+  scheduler.reload(cwd)
 
   const applyModel = (id: string): void => {
     model = id
@@ -1312,6 +1332,22 @@ export function createChatCore(opts: {
       return
     }
 
+    if (line === '/loop' || line.startsWith('/loop ')) {
+      const p = parseLoopCommand(line)
+      if (p.mode === 'fixed') {
+        scheduler.addCron({ id: genId('c'), kind: 'cron', cron: p.cron, prompt: p.prompt, recurring: true, durable: false, createdAt: Date.now(), nextFireAt: 0 })
+        notice('info', `已建循环：每 ${line.split(' ')[1]} 跑一次。立即跑首轮。`)
+        await runTurn('（/loop 首轮）', p.prompt)
+      } else if (p.mode === 'dynamic') {
+        scheduler.resetLoopPreamble('dynamic')
+        await runTurn('（/loop 自起步）', LOOP_GUIDANCE.dynamic(p.prompt))
+      } else {
+        scheduler.resetLoopPreamble('dynamic')
+        await runTurn('（/loop 自主）', LOOP_GUIDANCE.autonomous())
+      }
+      return
+    }
+
     // 斜杠命令：/init、skill 命令、自定义命令；未知则报错
     let userText = line
     if (line === '/init') {
@@ -1484,7 +1520,7 @@ export function createChatCore(opts: {
       }
     },
     getCwd: () => cwd,
-    dispose: () => { fireSessionEnd('exit'); unsubNotification(); unsubSteer(); steerQueue.clear(); statusLineRunner?.dispose(); void mcpCleanup?.() },
+    dispose: () => { fireSessionEnd('exit'); unsubNotification(); unsubSteer(); steerQueue.clear(); statusLineRunner?.dispose(); scheduler.stop(); setScheduler(null); void mcpCleanup?.() },
     modelList: () => providerModelList(activeProvider(), model),
     applyModel,
     outputStyleList,

@@ -16,7 +16,7 @@ export interface AgentDefinition {
 
 // 全局子代理 deny：ExitPlanMode（无 plan 模式 UI）+ EnterWorktree/ExitWorktree（worktreeSession 仅主会话注入）。
 // Edit/Write/NotebookEdit 移除→可写；Agent 移除→可递归派子代理（照搬 CC，删信号量后无死锁）。
-export const GLOBAL_SUBAGENT_DENY = ['ExitPlanMode', 'EnterWorktree', 'ExitWorktree', 'Workflow']
+export const GLOBAL_SUBAGENT_DENY = ['ExitPlanMode', 'EnterWorktree', 'ExitWorktree', 'Workflow', 'ScheduleWakeup', 'CronCreate', 'CronList', 'CronDelete', 'Monitor', 'TaskStop', 'PushNotification']
 
 /**
  * 照搬 CC resolveAgentTools 三步：deny 永远赢 allow；无 allow = 通配 = 全池减 deny。

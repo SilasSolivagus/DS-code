@@ -28,6 +28,8 @@ export interface BackgroundTask {
   result?: string
   // hook 专有（async/asyncRewake）
   asyncRewake?: boolean
+  // kind 判别
+  kind?: 'monitor'
 }
 
 export interface TaskNotification {
@@ -85,13 +87,15 @@ const queue: TaskNotification[] = []
 const subscribers = new Set<() => void>()
 
 function toNotification(task: BackgroundTask): TaskNotification {
-  const kind = task.type === 'local_agent' ? '子代理' : task.type === 'local_hook' ? '命令钩子' : task.type === 'local_workflow' ? '工作流' : '命令'
+  const kind = task.kind === 'monitor' ? '监控'
+    : task.type === 'local_agent' ? '子代理' : task.type === 'local_hook' ? '命令钩子' : task.type === 'local_workflow' ? '工作流' : '命令'
   return {
     id: task.id,
     status: task.status,
     summary: `${kind}${statusZh(task.status)}`,
-    result: (task.type === 'local_agent' || task.type === 'local_hook' || task.type === 'local_workflow') ? task.result : undefined,
-    outputFile: task.type === 'local_bash' ? task.outputFile : undefined,
+    result: task.kind === 'monitor' ? task.description
+      : (task.type === 'local_agent' || task.type === 'local_hook' || task.type === 'local_workflow') ? task.result : undefined,
+    outputFile: task.type === 'local_bash' && task.kind !== 'monitor' ? task.outputFile : undefined,
   }
 }
 
