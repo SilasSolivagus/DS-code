@@ -5,7 +5,7 @@ import path from 'node:path'
 import type { ChildProcess } from 'node:child_process'
 import { TASKS_DIR } from './config.js'
 
-export type TaskType = 'local_bash' | 'local_agent' | 'local_hook'
+export type TaskType = 'local_bash' | 'local_agent' | 'local_hook' | 'local_workflow'
 export type TaskStatus = 'running' | 'completed' | 'failed' | 'killed'
 
 export interface BackgroundTask {
@@ -73,7 +73,7 @@ const ID_CHARS = '0123456789abcdefghijklmnopqrstuvwxyz' // [0-9a-z]，36 字符
 
 /** 前缀（bash→'b' / agent→'a'）+ 8 位 [0-9a-z]。rand 可注入以便测确定输出。 */
 export function generateTaskId(type: TaskType, rand: (n: number) => Buffer = crypto.randomBytes): string {
-  const prefix = type === 'local_bash' ? 'b' : 'a'
+  const prefix = type === 'local_bash' ? 'b' : type === 'local_workflow' ? 'w' : 'a'
   const bytes = rand(8)
   let s = ''
   for (let i = 0; i < 8; i++) s += ID_CHARS[bytes[i] % ID_CHARS.length]
@@ -85,12 +85,12 @@ const queue: TaskNotification[] = []
 const subscribers = new Set<() => void>()
 
 function toNotification(task: BackgroundTask): TaskNotification {
-  const kind = task.type === 'local_agent' ? '子代理' : task.type === 'local_hook' ? '命令钩子' : '命令'
+  const kind = task.type === 'local_agent' ? '子代理' : task.type === 'local_hook' ? '命令钩子' : task.type === 'local_workflow' ? '工作流' : '命令'
   return {
     id: task.id,
     status: task.status,
     summary: `${kind}${statusZh(task.status)}`,
-    result: (task.type === 'local_agent' || task.type === 'local_hook') ? task.result : undefined,
+    result: (task.type === 'local_agent' || task.type === 'local_hook' || task.type === 'local_workflow') ? task.result : undefined,
     outputFile: task.type === 'local_bash' ? task.outputFile : undefined,
   }
 }

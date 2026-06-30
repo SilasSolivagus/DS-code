@@ -12,6 +12,8 @@ import type OpenAI from 'openai'
 import { runLoop, type LoopDeps, type LoopEvent } from '../loop.js'
 import { allTools } from '../tools/index.js'
 import { makeAgentTool } from '../tools/agent.js'
+import { makeWorkflowTool } from '../tools/workflow.js'
+import { runSubagent } from '../subagentRunner.js'
 import { makeWebFetchTool } from '../tools/webfetch.js'
 import { makeWebSearchTool, resolveWebSearchConfig } from '../tools/webSearchTool.js'
 import { makeAskUserQuestionTool, type Question, type Answer } from '../tools/askUserQuestion.js'
@@ -587,6 +589,14 @@ export function createChatCore(opts: {
       getModel: () => model,
       agents,
       worktree: settings.worktree,
+    }),
+    makeWorkflowTool({
+      client: opts.client,
+      onUsage: (u, m) => { usageLog.push({ usage: u, model: m }); session.appendUsage(u, m) },
+      sessionModel: model,
+      agents,
+      runSubagent,
+      journalDir: path.join(cwd, '.deepcode', 'workflows'),
     }),
     makeWebFetchTool({
       client: opts.client,
