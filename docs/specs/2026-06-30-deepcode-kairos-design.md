@@ -110,7 +110,7 @@ deepcode `Settings`（`src/config.ts`）加布尔键 `doneMeansMerged`。为 tru
 |---|---|---|---|
 | daemon 边界 | 调度工具会话内 + 可选 daemon 层 | 仅会话内，不做 daemon | 专家裁决工具不依赖 daemon；daemon=7.3 |
 | Monitor ws 源 | **无** | 无 | bundle 实证 CC 没有 |
-| PushNotification 通道 | OSC 桌面 + Remote Control 手机 | **仅 OSC 桌面**，手机 N/A | deepcode 无 Remote Control 桥 |
+| PushNotification 通道 | OSC 桌面 + Remote Control 手机 | **OSC 桌面 + 独立 BEL 响铃兜底**，手机 N/A | deepcode 无 Remote Control 桥；OSC 桌面弹窗依赖终端启用通知（ghostty 需 `desktop-notifications`+macOS 授权），故补独立 BEL 让未启用终端至少响一声（偏离 CC 纯 OSC，务实增强）|
 | ScheduleWakeup 缓存窗口 | sub-300s cache-lead pull-in + 「别选 300s 留缓存」文案 | **删 pull-in 与该文案**，保 [60,3600] 钳 + 取整 + keepalive | Anthropic 300s prompt-cache TTL 专属；deepcode 跑 DeepSeek/GLM 缓存机制不同 |
 | `/loop` 形态 | skill 文件 | 内置命令展开 | deepcode 无内置 skill 打包，比照 INIT_PROMPT |
 | Monitor 任务模型 | `local_bash`+`kind:monitor` | 同 | 1:1 |
