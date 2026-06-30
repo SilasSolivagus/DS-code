@@ -24,6 +24,7 @@ export class SchedulerService {
   private keepaliveBudget = KEEPALIVE_BUDGET
   private resolver = createSentinelResolver({ doneMeansMerged: () => this.deps.doneMeansMerged() })
   private _scheduledThisTurn = false
+  private _reloading = false
 
   constructor(private deps: SchedulerDeps) {}
 
@@ -35,7 +36,7 @@ export class SchedulerService {
 
   stop(): void {
     if (this.timer) { clearInterval(this.timer); this.timer = null }
-    releaseLock(this.deps.cwd())
+    releaseLock(this.deps.cwd())  // idempotent (safe even if no lock was acquired)
   }
 
   list(): ScheduledEntry[] { return [...this.entries] }
@@ -49,12 +50,19 @@ export class SchedulerService {
   }
 
   reload(cwd: string, now = Date.now()): void {
+    let loaded
     try {
       if (!acquireLock(cwd, process.pid, now)) return
-      const { jobs, missedOneShots } = loadDurable(cwd, now)
-      for (const j of jobs) { j.nextFireAt = 0; this.addCron(j) }
-      for (const j of missedOneShots) this.deps.fire('（错过的定时任务补跑）', j.prompt)
-    } catch { /* cwd not accessible, skip */ }
+      loaded = loadDurable(cwd, now)
+    } catch { return /* cwd not accessible */ }
+    this._reloading = true
+    try {
+      for (const j of loaded.jobs) { j.nextFireAt = 0; this.addCron(j) }
+    } finally {
+      this._reloading = false
+    }
+    this.persist(cwd)  // single persist after re-arming all durable jobs
+    for (const j of loaded.missedOneShots) this.deps.fire('（错过的定时任务补跑）', j.prompt)
   }
 
   persist(cwd: string): void {
@@ -84,7 +92,7 @@ export class SchedulerService {
       job.nextFireAt = n ? n.getTime() + jitterMs(job.id, this.periodMs(job.cron), job.recurring) : Infinity
     }
     this.entries.push(job)
-    if (job.durable) this.persist(this.deps.cwd())
+    if (job.durable && !this._reloading) this.persist(this.deps.cwd())
   }
 
   /** turn 末模型未重新调度时调：武装一个兜底 wakeup；budget 耗尽则不武装（循环结束）。 */
