@@ -3,8 +3,8 @@ import { allTools, toApiTools } from '../src/tools/index.js'
 import { readTool } from '../src/tools/read.js'
 
 describe('registry', () => {
-  it('注册了十三个工具（含 ExitPlanMode、EnterWorktree、ExitWorktree、Sleep、ScheduleWakeup）', () => {
-    expect(allTools.map(t => t.name).sort()).toEqual(['Bash', 'Config', 'Edit', 'EnterWorktree', 'ExitPlanMode', 'ExitWorktree', 'Glob', 'Grep', 'NotebookEdit', 'Read', 'ScheduleWakeup', 'Sleep', 'Write'])
+  it('注册了十六个工具（含 ExitPlanMode、EnterWorktree、ExitWorktree、Sleep、ScheduleWakeup、CronCreate、CronList、CronDelete）', () => {
+    expect(allTools.map(t => t.name).sort()).toEqual(['Bash', 'Config', 'CronCreate', 'CronDelete', 'CronList', 'Edit', 'EnterWorktree', 'ExitPlanMode', 'ExitWorktree', 'Glob', 'Grep', 'NotebookEdit', 'Read', 'ScheduleWakeup', 'Sleep', 'Write'])
   })
 
   it('toApiTools 生成 OpenAI function 定义', () => {

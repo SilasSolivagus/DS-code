@@ -3,6 +3,7 @@ import crypto from 'node:crypto'
 import type { ScheduledEntry, CronJob, SchedulerDeps } from './types.js'
 import { nextFire, jitterMs, roundUpToMinute, JITTER } from './cron.js'
 import { createSentinelResolver } from './sentinel.js'
+import { loadDurable, saveDurable, acquireLock, releaseLock } from './store.js'
 
 export const KEEPALIVE_MS = 1_200_000  // 20min 兜底
 export const KEEPALIVE_BUDGET = 1
@@ -34,6 +35,7 @@ export class SchedulerService {
 
   stop(): void {
     if (this.timer) { clearInterval(this.timer); this.timer = null }
+    releaseLock(this.deps.cwd())
   }
 
   list(): ScheduledEntry[] { return [...this.entries] }
@@ -41,8 +43,22 @@ export class SchedulerService {
   cancel(id: string): boolean {
     const i = this.entries.findIndex(e => e.id === id)
     if (i < 0) return false
-    this.entries.splice(i, 1)
+    const [removed] = this.entries.splice(i, 1)
+    if (removed.kind === 'cron' && removed.durable) this.persist(this.deps.cwd())
     return true
+  }
+
+  reload(cwd: string, now = Date.now()): void {
+    try {
+      if (!acquireLock(cwd, process.pid, now)) return
+      const { jobs, missedOneShots } = loadDurable(cwd, now)
+      for (const j of jobs) { j.nextFireAt = 0; this.addCron(j) }
+      for (const j of missedOneShots) this.deps.fire('（错过的定时任务补跑）', j.prompt)
+    } catch { /* cwd not accessible, skip */ }
+  }
+
+  persist(cwd: string): void {
+    saveDurable(cwd, this.entries.filter((e): e is CronJob => e.kind === 'cron' && e.durable))
   }
 
   /** ScheduleWakeup 落点。delaySeconds 已在工具层 clamp；此处取整到整分钟。重置 keepalive budget 与哨兵首发态。 */
@@ -68,6 +84,7 @@ export class SchedulerService {
       job.nextFireAt = n ? n.getTime() + jitterMs(job.id, this.periodMs(job.cron), job.recurring) : Infinity
     }
     this.entries.push(job)
+    if (job.durable) this.persist(this.deps.cwd())
   }
 
   /** turn 末模型未重新调度时调：武装一个兜底 wakeup；budget 耗尽则不武装（循环结束）。 */

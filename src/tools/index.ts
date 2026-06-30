@@ -14,8 +14,9 @@ import { enterWorktreeTool } from './enterWorktree.js'
 import { exitWorktreeTool } from './exitWorktree.js'
 import { sleepTool } from './sleep.js'
 import { scheduleWakeupTool } from './scheduleWakeup.js'
+import { cronCreateTool, cronListTool, cronDeleteTool } from './cron.js'
 
-export const allTools: Tool<any>[] = [readTool, globTool, grepTool, bashTool, editTool, writeTool, notebookEditTool, configTool, exitPlanModeTool, enterWorktreeTool, exitWorktreeTool, sleepTool, scheduleWakeupTool]
+export const allTools: Tool<any>[] = [readTool, globTool, grepTool, bashTool, editTool, writeTool, notebookEditTool, configTool, exitPlanModeTool, enterWorktreeTool, exitWorktreeTool, sleepTool, scheduleWakeupTool, cronCreateTool, cronListTool, cronDeleteTool]
 
 export function toApiTools(tools: Tool<any>[]) {
   return tools.map(t => ({

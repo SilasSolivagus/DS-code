@@ -974,6 +974,7 @@ export function createChatCore(opts: {
   })
   setScheduler(scheduler)
   scheduler.start()
+  scheduler.reload(cwd)
 
   const applyModel = (id: string): void => {
     model = id
