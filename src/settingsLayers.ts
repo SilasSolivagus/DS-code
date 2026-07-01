@@ -15,6 +15,7 @@ export const DANGEROUS_TOP_KEYS = [
   'apiKey', 'baseURL', 'hooks', 'mcpServers', 'webSearch',
   'allowedHttpHookUrls', 'httpHookAllowedEnvVars',
   'provider', 'providers', 'statusLineCommand',
+  'autoModeModel', 'autoModeThinking', 'disableAutoMode',
 ] as const
 
 /** 深拷 raw 后剥离危险字段；嵌套删 permissions.allow / skills.sources。返回剥掉的键名（含嵌套路径）。 */
@@ -30,6 +31,9 @@ export function stripUntrustedScope(raw: any): { raw: any; stripped: string[] } 
   }
   if (out.skills && typeof out.skills === 'object' && out.skills.sources !== undefined) {
     delete out.skills.sources; stripped.push('skills.sources')
+  }
+  if (out.permissions && typeof out.permissions === 'object' && out.permissions.defaultMode !== undefined) {
+    delete out.permissions.defaultMode; stripped.push('permissions.defaultMode')
   }
   return { raw: out, stripped }
 }
@@ -139,9 +143,10 @@ function parsePresent(raw: any): Record<string, unknown> {
   if (!raw || typeof raw !== 'object') return p
   if ('permissions' in raw && raw.permissions && typeof raw.permissions === 'object') {
     const perm = parsePermissions(raw)
-    const out: { allow?: string[]; deny?: string[] } = {}
+    const out: { allow?: string[]; deny?: string[]; defaultMode?: import('./permissions.js').PermissionMode } = {}
     if (Array.isArray(raw.permissions.allow)) out.allow = perm.allow
     if (perm.deny) out.deny = perm.deny
+    if (perm.defaultMode) out.defaultMode = perm.defaultMode
     if (Object.keys(out).length) p.permissions = out
   }
   for (const k of ['compactTokens', 'costWarnCNY', 'maxToolResultChars', 'model', 'baseURL', 'apiKey', 'inline', 'provider'] as const) {
@@ -164,6 +169,9 @@ function parsePresent(raw: any): Record<string, unknown> {
   if (typeof raw.skipWorkflowUsageWarning === 'boolean') p.skipWorkflowUsageWarning = raw.skipWorkflowUsageWarning
   if (typeof raw.workflowKeywordTriggerEnabled === 'boolean') p.workflowKeywordTriggerEnabled = raw.workflowKeywordTriggerEnabled
   if (typeof raw.doneMeansMerged === 'boolean') p.doneMeansMerged = raw.doneMeansMerged
+  if (typeof raw.autoModeModel === 'string') p.autoModeModel = raw.autoModeModel
+  if (raw.autoModeThinking === true) p.autoModeThinking = true
+  if (raw.disableAutoMode === true) p.disableAutoMode = true
   return p
 }
 

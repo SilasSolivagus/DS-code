@@ -53,6 +53,12 @@ export interface LoopDeps {
 
 const CONCURRENCY = 5
 
+/** 取最近 n 条 role:'tool' message 的内容拼接，截断到 maxChars（为 classify 提供兄弟上下文快照）。*/
+export function buildRecentContext(messages: any[], n: number, maxChars: number): string {
+  const tools = messages.filter(m => m.role === 'tool').slice(-n).map(m => String(m.content ?? ''))
+  return tools.join('\n---\n').slice(0, maxChars)
+}
+
 /** 退出 loop 前调用：若 messages 以 tool 结尾，补一条收尾 assistant，保证下一轮 user 消息序列合法 */
 function sealMessages(messages: any[], note: string): void {
   if (messages[messages.length - 1]?.role === 'tool') {
@@ -149,6 +155,7 @@ export async function* runLoop(
   deps: LoopDeps,
 ): AsyncGenerator<LoopEvent, 'done' | 'aborted' | 'max_turns'> {
   const apiTools = toApiTools(deps.tools)
+  deps.permission.recentContext = () => buildRecentContext(messages, 2, 4000)
   let stopHookFired = false // Stop hook block→续跑守卫：每次 runLoop 最多续跑一次，硬防无限循环
   // 2.1 Token budget 续跑状态（本次 runLoop=一次 send 内累计；不跨 send）
   let budgetOutputSoFar = 0

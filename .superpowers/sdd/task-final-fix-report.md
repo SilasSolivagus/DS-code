@@ -57,3 +57,18 @@ npx vitest run
 npx tsc --noEmit  → clean (0 errors)
 npm run build     → clean (tsc -p tsconfig.build.json, 0 errors)
 ```
+
+---
+
+## Conflict resolution note (branch feat/tui-batch-1-permissions)
+
+Cherry-pick from worktree to `feat/tui-batch-1-permissions` (which had 5.4 TUI theme work ahead) produced two conflicts:
+
+1. **`src/config.ts`**: Branch already had `outputStyle?: string` at line 44 and `theme?: string` from 5.4. The duplicate `outputStyle` definition from the cherry-pick was dropped; the existing comment on `theme` from HEAD (mentioning THEMES) was kept.
+
+2. **`src/tui/components/StatusFooter.tsx`**: Branch 5.4 already had `useTheme()` + `DEFAULT_THEME` import and the call sites `contextBarColor(usedPct, T)` (already landed from cherry-pick). Conflict was on the function signature: HEAD used `DEFAULT_THEME.err/warn/accent`, fix used `theme.err/warn/accent`. Resolved to `contextBarColor(pct: number, theme: typeof DEFAULT_THEME = DEFAULT_THEME)` using `theme.*` — correct since the call sites already pass live `T = useTheme()`.
+
+M1 note: in the worktree `T` was the static theme singleton (no `useTheme()` yet). On this branch 5.4 already introduced `useTheme()`, so the resolution is better — `contextBarColor` now genuinely hot-switches when passed the live `T` from `useTheme()`.
+
+Final commit on `feat/tui-batch-1-permissions`: `4b292bc`
+Full suite after merge: **1168/1168 tests pass (149 files), tsc + build clean.**
