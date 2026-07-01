@@ -128,8 +128,9 @@ describe('backgroundSession core', () => {
 
 describe('/stop 命令', () => {
   it('无 id → 列出运行中 job', async () => {
-    writeJobState(makeJob({ short: 'aaa11111', name: 'job A', state: 'working' }))
-    writeJobState(makeJob({ short: 'bbb22222', name: 'job B', state: 'working' }))
+    // pid 用当前进程（存活）：/stop 无参走 reconcileJobs，死 pid 会被判 failed 而滤出列表
+    writeJobState(makeJob({ short: 'aaa11111', name: 'job A', state: 'working', pid: process.pid }))
+    writeJobState(makeJob({ short: 'bbb22222', name: 'job B', state: 'working', pid: process.pid }))
     writeJobState(makeJob({ short: 'ccc33333', name: 'job C', state: 'completed' }))
     const core = makeCore({})
     await core.send('/stop')
@@ -149,13 +150,25 @@ describe('/stop 命令', () => {
 
   it('有 id → process.kill(pid,SIGTERM) + state stopped', async () => {
     const kill = vi.fn()
-    writeJobState(makeJob({ short: 'ddd44444', pid: 9999, state: 'working' }))
+    // pid 用当前进程（存活）：新增的僵尸校正只在 pid 已死时才跳过 kill，这里要走 kill 分支
+    writeJobState(makeJob({ short: 'ddd44444', pid: process.pid, state: 'working' }))
     const core = makeCore({ killFn: kill })
     await core.send('/stop ddd44444')
-    expect(kill).toHaveBeenCalledWith(9999, 'SIGTERM')
+    expect(kill).toHaveBeenCalledWith(process.pid, 'SIGTERM')
     expect(readJobState('ddd44444')?.state).toBe('stopped')
     const notices = core.state.transcript.filter((i: any) => i.kind === 'notice') as any[]
     expect(notices.some(n => n.text.includes('已停止'))).toBe(true)
+  })
+
+  it('pid 已死的 working job → 不调用 killFn，标记 failed 并提示', async () => {
+    const kill = vi.fn()
+    writeJobState(makeJob({ short: 'hhh88888', pid: 2147483646, state: 'working' }))
+    const core = makeCore({ killFn: kill })
+    await core.send('/stop hhh88888')
+    expect(kill).not.toHaveBeenCalled()
+    expect(readJobState('hhh88888')?.state).toBe('failed')
+    const notices = core.state.transcript.filter((i: any) => i.kind === 'notice') as any[]
+    expect(notices.some(n => n.text.includes('hhh88888') && n.text.includes('failed'))).toBe(true)
   })
 
   it('未知 id → 提示找不到', async () => {
@@ -208,7 +221,8 @@ describe('askConfirm（7.3 Task6）', () => {
 
 describe('resumeList 并入 bg 会话（7.3 Task6）', () => {
   it('bg working job 排在 resumeList 前面，预览带 [bg state] 前缀', async () => {
-    writeJobState(makeJob({ short: 'fff66666', name: '后台任务', state: 'working', cwd: '/proj', sessionFile: '/tmp/fff66666.jsonl' }))
+    // pid 用当前进程（存活）：resumeList 走 reconcileJobs，死 pid 会被判 failed 改变预览文案
+    writeJobState(makeJob({ short: 'fff66666', name: '后台任务', state: 'working', cwd: '/proj', sessionFile: '/tmp/fff66666.jsonl', pid: process.pid }))
     const core = makeCore({})
     const list = core.resumeList()
     expect(list[0]).toEqual({ file: '/tmp/fff66666.jsonl', preview: '[bg working] 后台任务' })

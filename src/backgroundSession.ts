@@ -75,6 +75,29 @@ export function listJobs(): JobState[] {
   return out.sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
+/** pid 是否存活：kill(pid, 0) 不发信号只探活。EPERM=进程在但非我方所有→按存活处理；
+ *  ESRCH（含 pid<=0 的非法态）→ 已死。用于兜底 detached 子进程被杀/OOM 却没走到 catch 的僵尸 job。 */
+export function isPidAlive(pid: number): boolean {
+  if (pid <= 0) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (e: any) {
+    return e?.code === 'EPERM'
+  }
+}
+
+/** 读侧兜底：working 但 pid 已死 → 判定 failed 并落盘。listJobs() 本身保持纯（测试依赖其不做存活判定），
+ *  校正只在这里做。供 /stop、resumeList、启动清理复用。 */
+export function reconcileJobs(now: number): JobState[] {
+  return listJobs().map(j => {
+    if (j.state === 'working' && j.pid > 0 && !isPidAlive(j.pid)) {
+      return updateJobState(j.short, { state: 'failed', updatedAt: now }) ?? j
+    }
+    return j
+  })
+}
+
 export function formatJobList(jobs: JobState[], now: number): string {
   if (jobs.length === 0) return '（无后台会话）'
   return jobs.map(j => {

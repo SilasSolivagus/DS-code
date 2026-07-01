@@ -27,6 +27,16 @@ export async function runBackgroundSession(opts: {
   process.env.DEEPCODE_SESSION_KIND = 'bg'
   installTaskCleanup()
 
+  // 安全网：setup 阶段（loadSession/initMcpTools 等）目前在 try/catch 之外，且任何未捕获异常/
+  // rejection 都会让 Node 直接退出——不加这个僵尸 job 会卡死在 working（见 7.3 后台会话薄片
+  // 现场复现的根因）。二者必须极简、不可再抛，否则本身变成新的僵尸源。
+  const onCrash = () => {
+    try { updateJobState(opts.jobShort, { state: 'failed', updatedAt: Date.now() }) } catch { /* best-effort */ }
+    process.exit(1)
+  }
+  process.on('uncaughtException', onCrash)
+  process.on('unhandledRejection', onCrash)
+
   // SIGTERM（/stop 杀）→ 标 stopped，best-effort 跑 mcpCleanup（cleanup 在 initMcpTools 后才回填），再退出
   let cleanup: (() => Promise<void>) | null = null
   const onTerm = async () => {
@@ -126,6 +136,8 @@ export async function runBackgroundSession(opts: {
     updateJobState(opts.jobShort, { state: 'failed', updatedAt: Date.now() })
   } finally {
     process.off('SIGTERM', onTerm)
+    process.off('uncaughtException', onCrash)
+    process.off('unhandledRejection', onCrash)
     await mcpCleanup()
   }
 }

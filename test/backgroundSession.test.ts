@@ -4,7 +4,8 @@ import path from 'node:path'
 import os from 'node:os'
 import {
   shortId, jobStateDir, writeJobState, readJobState, updateJobState,
-  listJobs, formatJobList, cleanupOldJobs, buildBackgroundArgv, type JobState,
+  listJobs, formatJobList, cleanupOldJobs, buildBackgroundArgv,
+  isPidAlive, reconcileJobs, type JobState,
 } from '../src/backgroundSession.js'
 
 // 用临时 jobs 根目录：backgroundSession.jobsRoot() 自读 DEEPCODE_TEST_HOME 覆盖 home（不经 config.js）
@@ -101,6 +102,44 @@ describe('cleanupOldJobs', () => {
     expect(readJobState('old00000')).toBeNull()      // 终态且超龄 → 删
     expect(readJobState('run00000')).not.toBeNull()  // working → 保留
     expect(readJobState('new00000')).not.toBeNull()  // 未超龄 → 保留
+  })
+})
+
+describe('isPidAlive', () => {
+  it('当前进程 pid → true', () => { expect(isPidAlive(process.pid)).toBe(true) })
+  it('确定已死的 pid → false', () => { expect(isPidAlive(2147483646)).toBe(false) })
+  it('0 或负数 → false', () => {
+    expect(isPidAlive(0)).toBe(false)
+    expect(isPidAlive(-1)).toBe(false)
+  })
+})
+
+describe('reconcileJobs', () => {
+  it('working 且 pid 已死 → 变成 failed 并落盘', () => {
+    writeJobState(mkJob({ short: 'dead0000', sessionId: 'dead0000xxx', state: 'working', pid: 2147483646, updatedAt: 1000 }))
+    const out = reconcileJobs(5000)
+    const j = out.find(x => x.short === 'dead0000')!
+    expect(j.state).toBe('failed')
+    expect(j.updatedAt).toBe(5000)
+    expect(readJobState('dead0000')?.state).toBe('failed') // 落盘确认
+  })
+  it('working 且 pid 存活（当前进程）→ 保持 working', () => {
+    writeJobState(mkJob({ short: 'live0000', sessionId: 'live0000xxx', state: 'working', pid: process.pid }))
+    const out = reconcileJobs(5000)
+    expect(out.find(x => x.short === 'live0000')?.state).toBe('working')
+    expect(readJobState('live0000')?.state).toBe('working')
+  })
+  it('非 working（如 completed）→ 不动', () => {
+    writeJobState(mkJob({ short: 'done0000', sessionId: 'done0000xxx', state: 'completed', pid: 2147483646, updatedAt: 1000 }))
+    const out = reconcileJobs(5000)
+    expect(out.find(x => x.short === 'done0000')?.state).toBe('completed')
+    expect(readJobState('done0000')?.updatedAt).toBe(1000) // 未被改写
+  })
+  it('listJobs() 本身保持纯——不因死 pid 而改写', () => {
+    writeJobState(mkJob({ short: 'pure0000', sessionId: 'pure0000xxx', state: 'working', pid: 2147483646 }))
+    const jobs = listJobs()
+    expect(jobs.find(j => j.short === 'pure0000')?.state).toBe('working')
+    expect(readJobState('pure0000')?.state).toBe('working') // listJobs 未写盘
   })
 })
 

@@ -71,7 +71,7 @@ import { createStatusLineRunner, execStatusLineCommand } from '../statusLine.js'
 import { COMMIT_GUIDANCE, COMMIT_PUSH_PR_GUIDANCE, buildCommitContext, buildPrContext, isEmptyDiff, resolveBaseBranch } from '../commitGuidance.js'
 import { expandTextPlaceholders, type Attachment, type ImageEntry, type TextEntry } from './pasteFold.js'
 import { describeImage, GlmKeyMissingError } from '../imageDescribe.js'
-import { buildBackgroundArgv, writeJobState, updateJobState, shortId, listJobs, readJobState, formatJobList } from '../backgroundSession.js'
+import { buildBackgroundArgv, writeJobState, updateJobState, shortId, readJobState, formatJobList, reconcileJobs, isPidAlive } from '../backgroundSession.js'
 
 /** ! 直跑：同步执行，30s 超时，stdout+stderr 合并，超 20k 截断 */
 export function runBang(cmd: string, cwd: string): { output: string; code: number } {
@@ -1382,14 +1382,18 @@ export function createChatCore(opts: {
     if (line === '/stop' || line.startsWith('/stop ')) {
       const id = line.slice('/stop'.length).trim()
       if (!id) {
-        const running = listJobs().filter(j => j.state === 'working')
+        const running = reconcileJobs(Date.now()).filter(j => j.state === 'working')
         notice('info', running.length ? `运行中的后台会话：\n${formatJobList(running, Date.now())}\n用 /stop <id> 停止` : '（无运行中的后台会话）')
         return
       }
       const job = readJobState(id)
       if (!job) { notice('warn', `找不到后台会话 ${id}`); return }
       if (job.state !== 'working') { notice('info', `${id} 已是 ${job.state}`); return }
-      if (!job.pid) { notice('warn', `${id} 该后台会话无有效 pid，无法停止`); return }
+      if (!job.pid || !isPidAlive(job.pid)) {
+        updateJobState(id, { state: 'failed', updatedAt: Date.now() })
+        notice('info', `后台会话 ${id} 的进程已不在，已标记为 failed`)
+        return
+      }
       try { killProc(job.pid, 'SIGTERM') } catch (e: any) { notice('warn', `杀进程失败：${e?.message ?? e}`) }
       updateJobState(id, { state: 'stopped', updatedAt: Date.now() })
       notice('info', `已停止后台会话 ${id}（transcript 保留，可 /resume 回看）`)
@@ -1549,7 +1553,7 @@ export function createChatCore(opts: {
     },
     resumeList: () => {
       const sessions = listSessions(cwd, sessionDir).slice(0, 10).map(s => ({ file: s.file, preview: s.preview }))
-      const bg = listJobs().filter(j => j.cwd === cwd).map(j => ({ file: j.sessionFile, preview: `[bg ${j.state}] ${j.name}` }))
+      const bg = reconcileJobs(Date.now()).filter(j => j.cwd === cwd).map(j => ({ file: j.sessionFile, preview: `[bg ${j.state}] ${j.name}` }))
       const seen = new Set(sessions.map(s => s.file))
       return [...bg.filter(b => !seen.has(b.file)), ...sessions].slice(0, 15)
     },

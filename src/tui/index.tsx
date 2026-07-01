@@ -11,7 +11,7 @@ import { makeMouseFilteredStdin } from './mouseStdin.js'
 import { emitWheel } from './wheel.js'
 import { installTaskCleanup, cleanupOldTaskLogs } from '../tasks.js'
 import { loadSettings } from '../config.js'
-import { cleanupOldJobs } from '../backgroundSession.js'
+import { cleanupOldJobs, reconcileJobs } from '../backgroundSession.js'
 import type OpenAI from 'openai'
 
 export async function startTui(opts: {
@@ -24,7 +24,9 @@ export async function startTui(opts: {
   // 后台任务：退出时 kill running 任务（追加监听，不抢占下方 altscreen 清理）+ 清理超龄旧日志。
   installTaskCleanup()
   cleanupOldTaskLogs()
-  // 后台会话（7.3）：启动时清理超龄终态 job（working 永不删），对齐 7 天 age-out 约定。
+  // 后台会话（7.3）：先校正僵尸 job（working 但 pid 已死 → failed），再清理超龄终态 job
+  // （working 永不删），对齐 7 天 age-out 约定。
+  reconcileJobs(Date.now())
   cleanupOldJobs(7 * 24 * 3600 * 1000, Date.now())
   // 全屏：默认开；inline 逃生开关 或 非 TTY 时退回内联 App。
   const fullscreen = !opts.inline && !!process.stdout.isTTY
