@@ -5,7 +5,7 @@ export const HARD_DENY_PATTERNS: RegExp[] = [
   /\bcurl\b[^|]*\|\s*(ba)?sh\b/i,                 // curl … | sh/bash
   /\bwget\b[^|]*\|\s*(ba)?sh\b/i,                 // wget … | sh
   /\b(ba)?sh\s+<\(\s*curl/i,                       // bash <(curl …)
-  /\b(chmod\s+\+x|&&)\b[^\n]*\/tmp\/[^\n]*&&[^\n]*\/tmp\//i, // 下载到 /tmp 后执行
+  /\/tmp\/\S+[^\n]*&&[^\n]*(\bsh\b|\bbash\b|\/tmp\/)/i, // 下载到 /tmp 后 && 执行（chmod 或直接跑）
   /@\s*(\$HOME|~|\.)?[^\s]*(\.ssh\/id_|\.aws\/cred|\.env|\.npmrc|credentials)/i, // -d @<secret>
   /(cat|grep|env|history)\b[^|]*\|\s*(curl|nc|netcat|ftp)\b/i,  // 管 secret 出网
   />>\s*~?\/?[^\s]*\.ssh\/authorized_keys/i,       // 写 authorized_keys 后门

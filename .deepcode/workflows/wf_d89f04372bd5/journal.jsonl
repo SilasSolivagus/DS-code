@@ -1,0 +1,7 @@
+{"type":"workflow_start","runId":"wf_d89f04372bd5","name":"smoke"}
+{"type":"workflow_phase","index":0,"title":"Scan","phaseIndex":0}
+{"type":"workflow_agent","index":1,"key":"p1#0","label":"list","phaseIndex":0,"phaseTitle":"Scan","agentId":"wfa_1","model":"","status":"ok","prompt":"用 ls 看看 src/workflow/ 目录下有哪些文件，一句话列出。","optsKey":"{\"label\":\"list\"}","result":"`src/workflow/` 目录下共有 9 个文件：`backend.ts`、`journal.ts`、`orchestrator.ts`、`parse.ts`、`resolve.ts`、`runtime.ts`、`sandbox.ts`、`trigger.ts`、`types.ts`。"}
+{"type":"workflow_agent","index":0,"key":"p0#0","label":"pkg","phaseIndex":0,"phaseTitle":"Scan","agentId":"wfa_0","model":"","status":"ok","prompt":"读取本仓库 package.json，只用一句话报告它的 \"name\" 字段值。","optsKey":"{\"label\":\"pkg\",\"schema\":{\"properties\":{\"name\":{\"type\":\"string\"}},\"required\":[\"name\"],\"type\":\"object\"}}","result":{}}
+{"type":"workflow_phase","index":2,"title":"Summarize","phaseIndex":1}
+{"type":"workflow_agent","index":2,"key":"#0","label":"summary","phaseIndex":1,"phaseTitle":"Summarize","agentId":"wfa_2","model":"","status":"ok","prompt":"把这些发现汇总成一句话：[{},\"`src/workflow/` 目录下共有 9 个文件：`backend.ts`、`journal.ts`、`orchestrator.ts`、`parse.ts`、`resolve.ts`、`runtime.ts`、`sandbox.ts`、`trigger.ts`、`types.ts`。\"]","optsKey":"{\"label\":\"summary\"}","result":"根据汇总，一句话如下：\n\n`src/workflow/` 目录下共有 9 个文件：`backend.ts`、`journal.ts`、`orchestrator.ts`、`parse.ts`、`resolve.ts`、`runtime.ts`、`sandbox.ts`、`trigger.ts`、`types.ts`。"}
+{"type":"workflow_complete","runId":"wf_d89f04372bd5","agents":3,"ms":11929}
