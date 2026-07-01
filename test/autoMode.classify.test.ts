@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { classify, resolveClassifierModel, buildClassifierMessages, CLASSIFIER_SYSTEM_PROMPT } from '../src/autoMode.js'
 
 const okCall = (decision: string) => async () => `{"reasoning":"t","decision":"${decision}"}`
@@ -30,6 +30,22 @@ describe('classify', () => {
   it('setup-phase 抛错 → ask（fail-safe 覆盖 loadSettings）', async () => {
     const r = await classify('Bash', 'x', '', { loadSettings: () => { throw new Error('boom') } })
     expect(r).toBe('ask')
+  })
+})
+
+describe('分类器 client memoize', () => {
+  beforeEach(() => { vi.resetModules() })
+
+  it('分类器 client 复用（memoize，避免每次新建 ProxyAgent）', async () => {
+    const sentinel = {} as any
+    vi.doMock('../src/api.js', () => ({ createClient: vi.fn(() => sentinel), withRetry: vi.fn() }))
+    const { getClassifierClient, __resetClassifierClient } = await import('../src/autoMode.js')
+    __resetClassifierClient()
+    const c1 = getClassifierClient()
+    const c2 = getClassifierClient()
+    expect(c1).toBe(c2)
+    const { createClient } = await import('../src/api.js')
+    expect(createClient).toHaveBeenCalledTimes(1)
   })
 })
 

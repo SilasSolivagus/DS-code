@@ -1,6 +1,13 @@
 import type { Settings } from './config.js'
 import { resolveActiveProvider } from './providers.js'
 import { createClient, withRetry } from './api.js'
+import type OpenAI from 'openai'
+
+let _classifierClient: OpenAI | undefined
+export function getClassifierClient(): OpenAI {
+  return _classifierClient ??= createClient()
+}
+export function __resetClassifierClient(): void { _classifierClient = undefined }
 
 export type ClassifierDecision = 'run' | 'ask' | 'block'
 
@@ -84,7 +91,7 @@ export interface ClassifyDeps {
 }
 
 async function defaultCall(model: string, messages: any[], thinking: boolean): Promise<string> {
-  const client = createClient()
+  const client = getClassifierClient()
   const resp = await withRetry(() => client.chat.completions.create({
     model, messages, temperature: 0.2,
     thinking: thinking ? { type: 'enabled' } : { type: 'disabled' },
