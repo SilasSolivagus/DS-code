@@ -15,6 +15,7 @@ export const DANGEROUS_TOP_KEYS = [
   'apiKey', 'baseURL', 'hooks', 'mcpServers', 'webSearch',
   'allowedHttpHookUrls', 'httpHookAllowedEnvVars',
   'provider', 'providers', 'statusLineCommand',
+  'autoModeModel', 'autoModeThinking', 'disableAutoMode',
 ] as const
 
 /** 深拷 raw 后剥离危险字段；嵌套删 permissions.allow / skills.sources。返回剥掉的键名（含嵌套路径）。 */
@@ -30,6 +31,9 @@ export function stripUntrustedScope(raw: any): { raw: any; stripped: string[] } 
   }
   if (out.skills && typeof out.skills === 'object' && out.skills.sources !== undefined) {
     delete out.skills.sources; stripped.push('skills.sources')
+  }
+  if (out.permissions && typeof out.permissions === 'object' && out.permissions.defaultMode !== undefined) {
+    delete out.permissions.defaultMode; stripped.push('permissions.defaultMode')
   }
   return { raw: out, stripped }
 }
