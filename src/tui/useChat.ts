@@ -292,6 +292,8 @@ export interface ChatCore {
   applyOutputStyle(name: string): void
   /** fork 当前会话到新文件、写初始 working state、spawn detached 后台子进程（不 process.exit，退出由 App 层做） */
   backgroundSession(seed?: string): Promise<{ ok: boolean; message: string; spawned?: boolean }>
+  /** 包装 questionAsk 的二选一确认弹窗；返回 true 当且仅当用户选中 yes */
+  askConfirm(question: string, header: string, yes: string, no: string): Promise<boolean>
 }
 
 /** 压缩（summarize LLM 调用）超时上限：到点自动 abort，防 provider 卡住流时 /compact 与自动压缩无限挂起。 */
@@ -307,7 +309,7 @@ export function nextPermMode(cur: PermissionMode, disableAuto: boolean): Permiss
 }
 
 const HELP_TEXT =
-  '/model  无参打开模型选择器；/model <名> 直接切到指定模型\n/think  thinking 模式开关\n/effort 思考档位 low/medium/high/off\n/accept acceptEdits 模式开关（Edit/Write 免确认，Bash 仍确认）\n/auto 或 Shift+Tab：auto 模式（分类器自动判 run/ask/block，只读免审）\n/plan   plan 模式开关（只读探索+写计划，ExitPlanMode 请用户审批）\n/add-dir <路径> 添加工作目录白名单（plan 模式围栏扩展）\n/cost   本会话花费明细\n/context 上下文占比与上次 usage\n/stats  本会话统计（轮数/工具/token/缓存/花费）\n/copy   复制上条回复到剪贴板\n/memory 查看当前生效的记忆文件\n/compact 手动压缩对话历史\n/clear  清空对话（开新会话文件，花费累计保留）\n/resume 列出并恢复本目录历史会话\n/rewind 回退到某轮之前（仅对话/仅代码/两者）\n/fork   分叉当前对话到新会话继续（原会话冻结，新会话标题加 (Branch)）\n/rename <名> 给当前会话命名（显示在 /resume 列表）\n/export 导出对话到 markdown 文件\n/permissions 查看/删除已保存权限规则（/permissions rm <编号>）\n/init   分析项目生成 DEEPCODE.md\n/keybindings 查看快捷键\n/output-style 选择输出风格（default/Explanatory/Learning/自定义）\n/commit 生成并创建 git commit（预跑 git 状态+遵循仓库风格，带 Co-Authored-By: deepcode）\n/commit-push-pr 提交+推送+创建或更新 PR（## Summary/## Test plan，需 gh CLI）\n/exit   退出\n自定义命令：~/.deepcode/commands/*.md 或 <项目>/.deepcode/commands/*.md（$ARGUMENTS 占位）'
+  '/model  无参打开模型选择器；/model <名> 直接切到指定模型\n/think  thinking 模式开关\n/effort 思考档位 low/medium/high/off\n/accept acceptEdits 模式开关（Edit/Write 免确认，Bash 仍确认）\n/auto 或 Shift+Tab：auto 模式（分类器自动判 run/ask/block，只读免审）\n/plan   plan 模式开关（只读探索+写计划，ExitPlanMode 请用户审批）\n/add-dir <路径> 添加工作目录白名单（plan 模式围栏扩展）\n/cost   本会话花费明细\n/context 上下文占比与上次 usage\n/stats  本会话统计（轮数/工具/token/缓存/花费）\n/copy   复制上条回复到剪贴板\n/memory 查看当前生效的记忆文件\n/compact 手动压缩对话历史\n/clear  清空对话（开新会话文件，花费累计保留）\n/resume 列出并恢复本目录历史会话\n/rewind 回退到某轮之前（仅对话/仅代码/两者）\n/fork   分叉当前对话到新会话继续（原会话冻结，新会话标题加 (Branch)）\n/rename <名> 给当前会话命名（显示在 /resume 列表）\n/export 导出对话到 markdown 文件\n/permissions 查看/删除已保存权限规则（/permissions rm <编号>）\n/init   分析项目生成 DEEPCODE.md\n/keybindings 查看快捷键\n/output-style 选择输出风格（default/Explanatory/Learning/自定义）\n/background 或 /bg [prompt] 把会话送到后台并释放终端\n/stop [id] 列出/停止后台会话\n/commit 生成并创建 git commit（预跑 git 状态+遵循仓库风格，带 Co-Authored-By: deepcode）\n/commit-push-pr 提交+推送+创建或更新 PR（## Summary/## Test plan，需 gh CLI）\n/exit   退出\n自定义命令：~/.deepcode/commands/*.md 或 <项目>/.deepcode/commands/*.md（$ARGUMENTS 占位）'
 
 export function createChatCore(opts: {
   client: OpenAI
@@ -592,6 +594,12 @@ export function createChatCore(opts: {
       pendingQuestion = { questions, resolve: res }
       setState()
     })
+
+  // 7.3：二选一确认弹窗，复用 questionAsk（同 AskUserQuestion UI，无新组件）
+  const askConfirm = async (question: string, header: string, yes: string, no: string): Promise<boolean> => {
+    const ans = await questionAsk([{ question, header, multiSelect: false, options: [{ label: yes, description: '' }, { label: no, description: '' }] }])
+    return !!ans && ans[0]?.selected?.[0] === yes
+  }
 
   // ExitPlanMode 审批桥：挂起 Promise + pendingPlanApproval 状态，UI 用 resolvePlanApproval 回答
   const approvePlan = (plan: string, allowedPrompts?: AllowedPrompt[]): Promise<{ approved: boolean }> =>
@@ -1538,7 +1546,12 @@ export function createChatCore(opts: {
       setState()
       p.resolve(approved)
     },
-    resumeList: () => listSessions(cwd, sessionDir).slice(0, 10).map(s => ({ file: s.file, preview: s.preview })),
+    resumeList: () => {
+      const sessions = listSessions(cwd, sessionDir).slice(0, 10).map(s => ({ file: s.file, preview: s.preview }))
+      const bg = listJobs().filter(j => j.cwd === cwd).map(j => ({ file: j.sessionFile, preview: `[bg ${j.state}] ${j.name}` }))
+      const seen = new Set(sessions.map(s => s.file))
+      return [...bg.filter(b => !seen.has(b.file)), ...sessions].slice(0, 15)
+    },
     resume: (file: string) => {
       if (busy) return
       const turns = restoreSession(file)
@@ -1605,6 +1618,7 @@ export function createChatCore(opts: {
     outputStyleList,
     applyOutputStyle,
     backgroundSession,
+    askConfirm,
   }
 }
 

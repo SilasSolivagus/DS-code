@@ -177,3 +177,59 @@ describe('/stop 命令', () => {
     expect(notices.some(n => n.text.includes('completed'))).toBe(true)
   })
 })
+
+describe('askConfirm（7.3 Task6）', () => {
+  it('选中 yes 选项 → resolve true', async () => {
+    const core = makeCore({})
+    const p = core.askConfirm('确认？', '标题', '是', '否')
+    // 等 pendingQuestion 挂起后再回答（questionAsk 内 setState 是同步的，microtask 后即可见）
+    await Promise.resolve()
+    expect(core.state.pendingQuestion).not.toBeNull()
+    core.resolveQuestion([{ header: '标题', question: '确认？', selected: ['是'] }])
+    expect(await p).toBe(true)
+  })
+
+  it('选中 no 选项 → resolve false', async () => {
+    const core = makeCore({})
+    const p = core.askConfirm('确认？', '标题', '是', '否')
+    await Promise.resolve()
+    core.resolveQuestion([{ header: '标题', question: '确认？', selected: ['否'] }])
+    expect(await p).toBe(false)
+  })
+
+  it('答案为 null（用户取消）→ resolve false', async () => {
+    const core = makeCore({})
+    const p = core.askConfirm('确认？', '标题', '是', '否')
+    await Promise.resolve()
+    core.resolveQuestion(null)
+    expect(await p).toBe(false)
+  })
+})
+
+describe('resumeList 并入 bg 会话（7.3 Task6）', () => {
+  it('bg working job 排在 resumeList 前面，预览带 [bg state] 前缀', async () => {
+    writeJobState(makeJob({ short: 'fff66666', name: '后台任务', state: 'working', cwd: '/proj', sessionFile: '/tmp/fff66666.jsonl' }))
+    const core = makeCore({})
+    const list = core.resumeList()
+    expect(list[0]).toEqual({ file: '/tmp/fff66666.jsonl', preview: '[bg working] 后台任务' })
+  })
+
+  it('不同 cwd 的 job 不混入', async () => {
+    writeJobState(makeJob({ short: 'ggg77777', name: '别处任务', state: 'working', cwd: '/other', sessionFile: '/tmp/ggg77777.jsonl' }))
+    const core = makeCore({})
+    const list = core.resumeList()
+    expect(list.some(s => s.file === '/tmp/ggg77777.jsonl')).toBe(false)
+  })
+
+  it('同一 sessionFile 已在 sessions 列表中时去重（不重复出现）', async () => {
+    const spawn = vi.fn((..._args: any[]) => ({ pid: 5555, unref: () => {} }) as any)
+    const core = makeCore({ spawnFn: spawn })
+    script.push({ result: { content: '回答', toolCalls: [], usage, finishReason: 'stop' } })
+    await core.send('先发一句')
+    const r = await core.backgroundSession('继续在后台干')
+    expect(r.ok).toBe(true)
+    const list = core.resumeList()
+    const files = list.map(s => s.file)
+    expect(new Set(files).size).toBe(files.length)
+  })
+})

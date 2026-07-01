@@ -142,6 +142,17 @@ export function App(props: {
     if (text === '/output-style') { setOutputStyleMode(true); return }
     if (text === '/theme') { setThemeMode(true); return }
     if (text === '/rewind') { setRewindStep('point'); return }
+    if (text === '/background' || text === '/bg' || text.startsWith('/background ') || text.startsWith('/bg ')) {
+      const seed = text.replace(/^\/(background|bg)\s?/, '').trim() || undefined
+      void (async () => {
+        const ans = await core.askConfirm('把当前会话送到后台并释放终端？', '后台会话', '送到后台', '留在前台')
+        if (!ans) return
+        const r = await core.backgroundSession(seed)
+        if (!r.ok) return // core 已 notice 失败原因；实为门控，留前台
+        exit() // 释放终端，回 shell（子进程已 detached 继续跑）
+      })()
+      return
+    }
     if (text.trim().split(/\s+/)[0] === '/workflows') {
       const journalDir = path.join(props.cwd, '.deepcode', 'workflows')
       const runs: WorkflowRunSummary[] = []
