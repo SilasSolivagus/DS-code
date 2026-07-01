@@ -37,6 +37,23 @@ export interface HeadlessResult {
   costCNY: number
 }
 
+/** 共享工具集构造（runHeadless 与 runBackgroundSession 都用，避免重复）。纯机械搬移，零行为变化。 */
+export function buildHeadlessToolset(d: {
+  client: OpenAI; addUsage: (u: Usage) => void; getModel: () => string
+  agents: ReturnType<typeof resolveAgents>; settings: any; cwd: string
+  skills: ReturnType<typeof loadSkills>; mcpTools: any[]
+}): any[] {
+  const { client, addUsage, getModel, agents, settings, cwd, skills, mcpTools } = d
+  const model = getModel()
+  return [...allTools, taskCreateTool, taskGetTool, taskUpdateTool, taskListTool,
+    makeAgentTool({ client, onUsage: (u, _m) => addUsage(u), getModel, agents, worktree: settings.worktree }),
+    makeWorkflowTool({ client, onUsage: (u, _m) => addUsage(u), sessionModel: model, agents, runSubagent, journalDir: path.join(cwd, '.deepcode', 'workflows'), resolveModelAlias: (m: string) => resolveSubModel(m, model) }),
+    makeWebFetchTool({ client, onUsage: (u, _m) => addUsage(u) }),
+    makeWebSearchTool({ config: resolveWebSearchConfig(settings) }),
+    bgTaskListTool, taskOutputTool, taskStopTool, ...mcpTools,
+    makeSkillTool(skills, { client, onUsage: (u, _m) => addUsage(u), getModel, agents, skillPool: [...allTools, makeWebFetchTool({ client, onUsage: (u, _m) => addUsage(u) })], listingBudgetChars: settings.skills?.listingBudgetChars })]
+}
+
 /** 单 prompt 跑完整个 loop。工具事件打到 stderr（stdout 留给最终结果，方便脚本消费）。 */
 export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: boolean; flagSettingsPath?: string }): Promise<HeadlessResult> {
   installTaskCleanup() // 退出时 kill 仍 running 的后台任务
@@ -114,7 +131,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
   })
   const gen = runLoop(messages, {
     client: opts.client,
-    tools: [...allTools, taskCreateTool, taskGetTool, taskUpdateTool, taskListTool, makeAgentTool({ client: opts.client, onUsage: (u, _model) => addUsage(u), getModel: () => model, agents, worktree: settings.worktree }), makeWorkflowTool({ client: opts.client, onUsage: (u, _model) => addUsage(u), sessionModel: model, agents, runSubagent, journalDir: path.join(cwd, '.deepcode', 'workflows'), resolveModelAlias: (m: string) => resolveSubModel(m, model) }), makeWebFetchTool({ client: opts.client, onUsage: (u, _model) => addUsage(u) }), makeWebSearchTool({ config: resolveWebSearchConfig(settings) }), bgTaskListTool, taskOutputTool, taskStopTool, ...mcpTools, makeSkillTool(skills, { client: opts.client, onUsage: (u, _m) => addUsage(u), getModel: () => model, agents, skillPool: [...allTools, makeWebFetchTool({ client: opts.client, onUsage: (u, _m) => addUsage(u) })], listingBudgetChars: settings.skills?.listingBudgetChars })],
+    tools: buildHeadlessToolset({ client: opts.client, addUsage, getModel: () => model, agents, settings, cwd, skills, mcpTools }),
     model,
     thinking: false,
     maxToolResultChars: settings.maxToolResultChars,
