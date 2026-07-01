@@ -6,6 +6,7 @@ import { HOOK_EVENTS, type HooksConfig, type HookEvent, runHooks } from './hooks
 import { loadLayeredSettings } from './settingsLayers.js'
 import { parseMemoryConfig } from './memdir/memoryConfig.js'
 import type { CustomProvider, ModelMeta } from './providers.js'
+import type { PermissionMode } from './permissions.js'
 
 export interface McpStdioServerConfig {
   command: string
@@ -32,7 +33,7 @@ export interface WebSearchSettings {
 }
 
 export interface Settings {
-  permissions: { allow: string[]; deny?: string[] }
+  permissions: { allow: string[]; deny?: string[]; defaultMode?: PermissionMode }
   /** 自动 compact 触发阈值（上次请求的 prompt_tokens 超过即触发；undefined = 走派生阈值） */
   compactTokens?: number
   /** 本会话花费提醒阈值（CNY，状态行变色一次） */
@@ -91,6 +92,8 @@ export interface Settings {
   autoModeModel?: string
   /** auto mode 分类器是否启用 thinking（缺省 false）。 */
   autoModeThinking?: boolean
+  /** 禁用 auto mode（缺省 false）。 */
+  disableAutoMode?: boolean
 }
 
 const DIR = path.join(os.homedir(), '.deepcode')
@@ -110,16 +113,20 @@ export function taskOutputPath(id: string): string {
   return path.join(TASKS_DIR, id + '.log')
 }
 
-export function parsePermissions(raw: any): { allow: string[]; deny?: string[] } {
+const PERMISSION_MODES = new Set<string>(['default', 'acceptEdits', 'yolo', 'plan', 'auto'])
+
+export function parsePermissions(raw: any): { allow: string[]; deny?: string[]; defaultMode?: PermissionMode } {
   const allow: string[] = Array.isArray(raw?.permissions?.allow)
     ? raw.permissions.allow.filter((s: unknown): s is string => typeof s === 'string')
     : []
-  const out: { allow: string[]; deny?: string[] } = { allow }
+  const out: { allow: string[]; deny?: string[]; defaultMode?: PermissionMode } = { allow }
   const rawDeny = raw?.permissions?.deny
   if (Array.isArray(rawDeny)) {
     const deny = rawDeny.filter((d: unknown): d is string => typeof d === 'string').map((d: string) => d.trim()).filter((d: string) => d.length > 0)
     if (deny.length) out.deny = deny
   }
+  const rawMode = raw?.permissions?.defaultMode
+  if (typeof rawMode === 'string' && PERMISSION_MODES.has(rawMode)) out.defaultMode = rawMode as PermissionMode
   return out
 }
 
@@ -147,6 +154,9 @@ export function loadRawUserSettings(): Settings {
     spinnerTips: typeof raw?.spinnerTips === 'boolean' ? raw.spinnerTips : undefined,
     spinnerTipsOverride: parseSpinnerTipsOverride(raw?.spinnerTipsOverride),
     doneMeansMerged: typeof raw?.doneMeansMerged === 'boolean' ? raw.doneMeansMerged : undefined,
+    autoModeModel: typeof raw?.autoModeModel === 'string' ? raw.autoModeModel : undefined,
+    autoModeThinking: raw?.autoModeThinking === true ? true : undefined,
+    disableAutoMode: raw?.disableAutoMode === true ? true : undefined,
   }
 }
 
