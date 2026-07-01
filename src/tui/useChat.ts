@@ -294,8 +294,17 @@ export interface ChatCore {
 /** 压缩（summarize LLM 调用）超时上限：到点自动 abort，防 provider 卡住流时 /compact 与自动压缩无限挂起。 */
 export const COMPACT_TIMEOUT_MS = 120_000
 
+/** Shift+Tab 四态循环的纯函数；disableAuto=true 时跳过 auto 态。可被测试直接 import。 */
+export function nextPermMode(cur: PermissionMode, disableAuto: boolean): PermissionMode {
+  if (cur === 'default') return disableAuto ? 'acceptEdits' : 'auto'
+  if (cur === 'auto') return 'acceptEdits'
+  if (cur === 'acceptEdits') return 'plan'
+  if (cur === 'plan') return 'default'
+  return 'default'
+}
+
 const HELP_TEXT =
-  '/model  无参打开模型选择器；/model <名> 直接切到指定模型\n/think  thinking 模式开关\n/effort 思考档位 low/medium/high/off\n/accept acceptEdits 模式开关（Edit/Write 免确认，Bash 仍确认）\n/plan   plan 模式开关（只读探索+写计划，ExitPlanMode 请用户审批）\n/add-dir <路径> 添加工作目录白名单（plan 模式围栏扩展）\n/cost   本会话花费明细\n/context 上下文占比与上次 usage\n/stats  本会话统计（轮数/工具/token/缓存/花费）\n/copy   复制上条回复到剪贴板\n/memory 查看当前生效的记忆文件\n/compact 手动压缩对话历史\n/clear  清空对话（开新会话文件，花费累计保留）\n/resume 列出并恢复本目录历史会话\n/rewind 回退到某轮之前（仅对话/仅代码/两者）\n/fork   分叉当前对话到新会话继续（原会话冻结，新会话标题加 (Branch)）\n/rename <名> 给当前会话命名（显示在 /resume 列表）\n/export 导出对话到 markdown 文件\n/permissions 查看/删除已保存权限规则（/permissions rm <编号>）\n/init   分析项目生成 DEEPCODE.md\n/keybindings 查看快捷键\n/output-style 选择输出风格（default/Explanatory/Learning/自定义）\n/commit 生成并创建 git commit（预跑 git 状态+遵循仓库风格，带 Co-Authored-By: deepcode）\n/commit-push-pr 提交+推送+创建或更新 PR（## Summary/## Test plan，需 gh CLI）\n/exit   退出\n自定义命令：~/.deepcode/commands/*.md 或 <项目>/.deepcode/commands/*.md（$ARGUMENTS 占位）'
+  '/model  无参打开模型选择器；/model <名> 直接切到指定模型\n/think  thinking 模式开关\n/effort 思考档位 low/medium/high/off\n/accept acceptEdits 模式开关（Edit/Write 免确认，Bash 仍确认）\n/auto 或 Shift+Tab：auto 模式（分类器自动判 run/ask/block，只读免审）\n/plan   plan 模式开关（只读探索+写计划，ExitPlanMode 请用户审批）\n/add-dir <路径> 添加工作目录白名单（plan 模式围栏扩展）\n/cost   本会话花费明细\n/context 上下文占比与上次 usage\n/stats  本会话统计（轮数/工具/token/缓存/花费）\n/copy   复制上条回复到剪贴板\n/memory 查看当前生效的记忆文件\n/compact 手动压缩对话历史\n/clear  清空对话（开新会话文件，花费累计保留）\n/resume 列出并恢复本目录历史会话\n/rewind 回退到某轮之前（仅对话/仅代码/两者）\n/fork   分叉当前对话到新会话继续（原会话冻结，新会话标题加 (Branch)）\n/rename <名> 给当前会话命名（显示在 /resume 列表）\n/export 导出对话到 markdown 文件\n/permissions 查看/删除已保存权限规则（/permissions rm <编号>）\n/init   分析项目生成 DEEPCODE.md\n/keybindings 查看快捷键\n/output-style 选择输出风格（default/Explanatory/Learning/自定义）\n/commit 生成并创建 git commit（预跑 git 状态+遵循仓库风格，带 Co-Authored-By: deepcode）\n/commit-push-pr 提交+推送+创建或更新 PR（## Summary/## Test plan，需 gh CLI）\n/exit   退出\n自定义命令：~/.deepcode/commands/*.md 或 <项目>/.deepcode/commands/*.md（$ARGUMENTS 占位）'
 
 export function createChatCore(opts: {
   client: OpenAI
@@ -321,7 +330,9 @@ export function createChatCore(opts: {
   let budgetUsed = 0                     // 2.1 本次 send 累计输出 token（状态栏 budget 段分子）
   let thinking = false
   let effortLevel: 'low' | 'medium' | 'high' = 'medium'
-  let permMode: PermissionMode = opts.yolo ? 'yolo' : 'default'
+  let permMode: PermissionMode = opts.yolo ? 'yolo'
+    : (settings.permissions.defaultMode === 'auto' && !settings.disableAutoMode) ? 'auto'
+    : 'default'
   let prePlanMode: PermissionMode = 'default'  // plan 模式进入前的模式，退出时恢复
   let additionalDirs: string[] = []            // /add-dir 会话内白名单（不落盘）
   const taskList = new TaskListStore()
@@ -1065,11 +1076,12 @@ export function createChatCore(opts: {
       return
     }
     if (line === '/cycle-mode') {
-      // Shift+Tab 用：default → acceptEdits → plan → default 三态循环（绝对定模式，回得到 default）。
+      // Shift+Tab 用：default → auto → acceptEdits → plan → default 四态循环（disableAutoMode 时跳过 auto）。
       if (opts.yolo) return // yolo 仅 --yolo 启动，不参与循环
-      if (permMode === 'default') permMode = 'acceptEdits'
-      else if (permMode === 'acceptEdits') { prePlanMode = permMode; permMode = 'plan' } // 记进入前模式供 /plan 退出恢复（cycle 的 plan→default 走下一分支不读 prePlanMode）
-      else { permMode = 'default'; prePlanMode = 'default' } // plan → default
+      const nextMode = nextPermMode(permMode, settings.disableAutoMode ?? false)
+      // 进入 plan 前记录当前模式，供 /plan 退出时恢复（与 /plan 命令保持一致）
+      if (nextMode === 'plan') prePlanMode = permMode
+      permMode = nextMode
       session.appendMeta({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id })
       notice('info', permMode === 'plan'
         ? 'plan 模式：只读探索 + 写计划，完成后调用 ExitPlanMode 请审批'

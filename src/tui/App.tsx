@@ -181,7 +181,7 @@ export function App(props: {
   }, [liveCwd])
   const memoryCount = useMemo(() => findMemoryFiles(props.cwd).length, [])  // eslint-disable-line react-hooks/exhaustive-deps
   // 模式标签：权限模式 + thinking 后缀
-  const modeLabel = (state.permMode === 'acceptEdits' ? 'accept' : state.permMode === 'yolo' ? 'yolo' : state.permMode === 'plan' ? 'plan' : 'default')
+  const modeLabel = (state.permMode === 'auto' ? 'auto' : state.permMode === 'acceptEdits' ? 'accept' : state.permMode === 'yolo' ? 'yolo' : state.permMode === 'plan' ? 'plan' : 'default')
     + (state.thinking ? '·think' : '')
   // 工具调用计数：按首次出现顺序分组（transcript 中 kind==='tool' 的条目）
   const toolCounts = useMemo(() => {

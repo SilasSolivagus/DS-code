@@ -191,7 +191,7 @@ export function FullscreenApp(props: {
     } catch { return null }
   }, [liveCwd])
   const memoryCount = useMemo(() => findMemoryFiles(props.cwd).length, [])  // eslint-disable-line react-hooks/exhaustive-deps
-  const modeLabel = (state.permMode === 'acceptEdits' ? 'accept' : state.permMode === 'yolo' ? 'yolo' : state.permMode === 'plan' ? 'plan' : 'default')
+  const modeLabel = (state.permMode === 'auto' ? 'auto' : state.permMode === 'acceptEdits' ? 'accept' : state.permMode === 'yolo' ? 'yolo' : state.permMode === 'plan' ? 'plan' : 'default')
     + (state.thinking ? '·think' : '')
   const toolCounts = useMemo(() => {
     const order: string[] = []
