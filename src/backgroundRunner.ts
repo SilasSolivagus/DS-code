@@ -1,6 +1,5 @@
 // src/backgroundRunner.ts
 // 7.3：/background detached 子进程的运行器。resume 会话续跑 + 持久化 + job 状态机。
-import path from 'node:path'
 import type OpenAI from 'openai'
 import { runLoop } from './loop.js'
 import { resolveAgents } from './agentsLoader.js'
@@ -28,8 +27,13 @@ export async function runBackgroundSession(opts: {
   process.env.DEEPCODE_SESSION_KIND = 'bg'
   installTaskCleanup()
 
-  // SIGTERM（/stop 杀）→ 标 stopped 后退出
-  const onTerm = () => { updateJobState(opts.jobShort, { state: 'stopped', updatedAt: Date.now() }); process.exit(0) }
+  // SIGTERM（/stop 杀）→ 标 stopped，best-effort 跑 mcpCleanup（cleanup 在 initMcpTools 后才回填），再退出
+  let cleanup: (() => Promise<void>) | null = null
+  const onTerm = async () => {
+    updateJobState(opts.jobShort, { state: 'stopped', updatedAt: Date.now() })
+    try { await cleanup?.() } catch { /* best-effort */ }
+    process.exit(0)
+  }
   process.on('SIGTERM', onTerm)
 
   const loaded = loadSession(opts.resumeFile)
@@ -82,6 +86,7 @@ export async function runBackgroundSession(opts: {
   }
 
   const { tools: mcpTools, cleanup: mcpCleanup } = await initMcpTools(settings.mcpServers, { onWarn: msg => process.stderr.write(msg + '\n') })
+  cleanup = mcpCleanup
   const lenBefore = messages.length
   const gen = runLoop(messages, {
     client: opts.client,
@@ -108,7 +113,10 @@ export async function runBackgroundSession(opts: {
   })
   try {
     let step
-    while (!(step = await gen.next()).done) { const ev = step.value; if (ev.type === 'turn_end') addUsage(ev.usage) }
+    while (!(step = await gen.next()).done) {
+      const ev = step.value
+      if (ev.type === 'turn_end') { addUsage(ev.usage); handle.appendUsage(ev.usage, model) }
+    }
     // 落盘本轮新增消息 + fileState 快照
     for (const m of messages.slice(lenBefore)) handle.appendMessage(m)
     handle.appendFileState([...ctx.fileState])

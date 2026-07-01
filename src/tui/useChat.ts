@@ -1389,6 +1389,7 @@ export function createChatCore(opts: {
       const job = readJobState(id)
       if (!job) { notice('warn', `找不到后台会话 ${id}`); return }
       if (job.state !== 'working') { notice('info', `${id} 已是 ${job.state}`); return }
+      if (!job.pid) { notice('warn', `${id} 该后台会话无有效 pid，无法停止`); return }
       try { killProc(job.pid, 'SIGTERM') } catch (e: any) { notice('warn', `杀进程失败：${e?.message ?? e}`) }
       updateJobState(id, { state: 'stopped', updatedAt: Date.now() })
       notice('info', `已停止后台会话 ${id}（transcript 保留，可 /resume 回看）`)

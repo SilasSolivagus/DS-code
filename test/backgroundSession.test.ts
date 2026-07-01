@@ -7,11 +7,11 @@ import {
   listJobs, formatJobList, cleanupOldJobs, buildBackgroundArgv, type JobState,
 } from '../src/backgroundSession.js'
 
-// 用临时 JOBS_DIR：backgroundSession 读 config.JOBS_DIR，测试用 env 覆盖 home
+// 用临时 jobs 根目录：backgroundSession.jobsRoot() 自读 DEEPCODE_TEST_HOME 覆盖 home（不经 config.js）
 let tmp: string
 beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dc-jobs-'))
-  process.env.DEEPCODE_TEST_HOME = tmp // config.JOBS_DIR 在 test 下改读此值（见 Step 4）
+  process.env.DEEPCODE_TEST_HOME = tmp
 })
 afterEach(() => { fs.rmSync(tmp, { recursive: true, force: true }); delete process.env.DEEPCODE_TEST_HOME })
 
@@ -25,7 +25,32 @@ function mkJob(over: Partial<JobState> = {}): JobState {
 }
 
 describe('shortId', () => {
-  it('取前 8 字符', () => { expect(shortId('abcd1234efgh')).toBe('abcd1234') })
+  it('返回确定性 8 位 hex', () => {
+    const s = shortId('2026-07-01T10-17-08-545Z-g0x1')
+    expect(s).toMatch(/^[0-9a-f]{8}$/)
+    expect(shortId('2026-07-01T10-17-08-545Z-g0x1')).toBe(s) // 确定性：同输入同输出
+  })
+
+  // 回归：C1——deepcode sessionId 是时间戳文件名（非 UUID），同月/同日前缀相同；
+  // 旧实现 slice(0,8) 会让同月的两个 job 撞进同一目录、互相覆盖 state.json。
+  it('两个共享日期前缀的时间戳 sessionId 产生不同的 short（不再撞车）', () => {
+    const a = shortId('2026-07-01T10-17-08-545Z-g0x1')
+    const b = shortId('2026-07-01T10-22-51-901Z-k9zq')
+    expect(a).not.toBe(b)
+  })
+
+  it('两个时间戳 sessionId 各自落在独立的 job 目录，互不覆盖', () => {
+    const sidA = '2026-07-01T10-17-08-545Z-g0x1'
+    const sidB = '2026-07-01T10-22-51-901Z-k9zq'
+    const shortA = shortId(sidA)
+    const shortB = shortId(sidB)
+    expect(jobStateDir(shortA)).not.toBe(jobStateDir(shortB))
+    writeJobState(mkJob({ sessionId: sidA, short: shortA, name: 'job A' }))
+    writeJobState(mkJob({ sessionId: sidB, short: shortB, name: 'job B' }))
+    expect(readJobState(shortA)?.name).toBe('job A')
+    expect(readJobState(shortB)?.name).toBe('job B')
+    expect(listJobs().length).toBe(2) // 旧实现下会因目录撞车退化成 1
+  })
 })
 
 describe('write/read/update', () => {

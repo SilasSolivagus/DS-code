@@ -3,6 +3,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
+import crypto from 'node:crypto'
 
 export type JobStatus = 'working' | 'completed' | 'failed' | 'stopped'
 
@@ -28,8 +29,12 @@ function jobsRoot(): string {
   return path.join(home, '.deepcode', 'jobs')
 }
 
+/** sessionId → 8 位 hex 短 id（job 目录名）。deepcode sessionId 是时间戳文件名（如
+ *  2026-07-01T10-17-08-545Z-g0x1），同月/同日的多个会话共享字符串前缀，故不能直接 slice(0,8)
+ *  （曾撞车：CC 移植遗留，CC 的 sessionId 是 UUID 才能安全 slice）。改用 sha256 哈希摘要，
+ *  避免不同 sessionId 撞到同一 job 目录。 */
 export function shortId(sessionId: string): string {
-  return sessionId.slice(0, 8)
+  return crypto.createHash('sha256').update(sessionId).digest('hex').slice(0, 8)
 }
 
 export function jobStateDir(short: string): string {
