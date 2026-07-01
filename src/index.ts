@@ -10,9 +10,26 @@ const inlineFlag = argv.includes('--inline') || process.env.DEEPCODE_INLINE === 
 const pIdx = argv.indexOf('-p')
 const settingsFlagIdx = argv.indexOf('--settings')
 const flagSettingsPath = settingsFlagIdx >= 0 ? argv[settingsFlagIdx + 1] : undefined
+const bgRun = argv.includes('--background-run')
+const resumeIdx = argv.indexOf('--resume')
+const resumeFile = resumeIdx >= 0 ? argv[resumeIdx + 1] : undefined
+const jobIdx = argv.indexOf('--job')
+const jobShort = jobIdx >= 0 ? argv[jobIdx + 1] : undefined
+const permIdx = argv.indexOf('--permission-mode')
+const permMode = permIdx >= 0 ? argv[permIdx + 1] : undefined
+const modelIdx = argv.indexOf('--model')
+const modelFlag = modelIdx >= 0 ? argv[modelIdx + 1] : undefined
 
 try {
-  if (pIdx !== -1) {
+  if (bgRun) {
+    if (!resumeFile || !jobShort) throw new Error('--background-run 需 --resume <file> 与 --job <short>')
+    const client = createClient(flagSettingsPath)
+    const { runBackgroundSession } = await import('./backgroundRunner.js')
+    // seed = -p 之后的值（父进程用 -p 传 seed）；无 -p 则续跑未完回合
+    const seed = pIdx !== -1 ? argv[pIdx + 1] : undefined
+    await runBackgroundSession({ client, resumeFile, jobShort, seed, yolo, permMode, model: modelFlag, flagSettingsPath })
+    process.exit(0)
+  } else if (pIdx !== -1) {
     const prompt = argv[pIdx + 1]
     if (!prompt || prompt.startsWith('-')) throw new Error('用法：deepcode -p "<任务>" [--json] [--yolo]')
     const client = createClient(flagSettingsPath)
