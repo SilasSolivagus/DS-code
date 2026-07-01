@@ -1,3 +1,7 @@
+import type { Settings } from './config.js'
+import { resolveActiveProvider } from './providers.js'
+import { createClient, withRetry } from './api.js'
+
 export type ClassifierDecision = 'run' | 'ask' | 'block'
 
 // 只收最硬、最低误报的不可逆灾难。命令内容维度高置信匹配；代码语义弱信号交给分类器提示词。
@@ -33,10 +37,6 @@ export function mapDecision(d: ClassifierDecision | null): 'run' | 'ask' | 'bloc
 }
 
 // ─── Task 2: 分类器提示词 / 模型解析 / classify ───────────────────────────────
-
-import type { Settings } from './config.js'
-import { resolveActiveProvider } from './providers.js'
-import { createClient, withRetry } from './api.js'
 
 export const CLASSIFIER_SYSTEM_PROMPT = `You are the permission classifier for an AI coding agent's "auto mode". For each tool call the agent wants to make, decide: run (auto-approve), ask (pause for user), or block (refuse).
 
@@ -78,7 +78,10 @@ export function buildClassifierMessages(toolName: string, desc: string, siblingC
   return [{ role: 'system', content: CLASSIFIER_SYSTEM_PROMPT }, { role: 'user', content: user }]
 }
 
-export interface ClassifyDeps { call?: (model: string, messages: any[], thinking: boolean) => Promise<string> }
+export interface ClassifyDeps {
+  call?: (model: string, messages: any[], thinking: boolean) => Promise<string>
+  loadSettings?: () => Settings
+}
 
 async function defaultCall(model: string, messages: any[], thinking: boolean): Promise<string> {
   const client = createClient()
@@ -92,15 +95,15 @@ async function defaultCall(model: string, messages: any[], thinking: boolean): P
 export async function classify(
   toolName: string, desc: string, siblingContext: string, deps: ClassifyDeps = {},
 ): Promise<'run' | 'ask' | 'block'> {
-  const { loadSettings } = await import('./config.js')
-  const settings = loadSettings()
-  const model = resolveClassifierModel(settings)
-  const thinking = settings.autoModeThinking === true
-  const call = deps.call ?? defaultCall
   try {
+    const loadSettings = deps.loadSettings ?? (await import('./config.js')).loadSettings
+    const settings = loadSettings()
+    const model = resolveClassifierModel(settings)
+    const thinking = settings.autoModeThinking === true
+    const call = deps.call ?? defaultCall
     const raw = await call(model, buildClassifierMessages(toolName, desc, siblingContext), thinking)
     return mapDecision(parseDecision(raw))
   } catch {
-    return 'ask' // fail-safe：任何异常路径降级 ask，永不静默 run
+    return 'ask' // fail-safe：任何异常路径（含 setup）降级 ask，永不静默 run
   }
 }

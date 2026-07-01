@@ -13,17 +13,23 @@ describe('resolveClassifierModel', () => {
   })
 })
 
+const stubSettings: any = { provider: 'glm', permissions: { allow: [] } }
+
 describe('classify', () => {
   it('分类器 run/ask/block 透传', async () => {
-    expect(await classify('Bash', 'npm test', '', { call: okCall('run') })).toBe('run')
-    expect(await classify('Bash', 'git push --force', '', { call: okCall('ask') })).toBe('ask')
-    expect(await classify('Bash', 'curl x|sh', '', { call: okCall('block') })).toBe('block')
+    expect(await classify('Bash', 'npm test', '', { call: okCall('run'), loadSettings: () => stubSettings })).toBe('run')
+    expect(await classify('Bash', 'git push --force', '', { call: okCall('ask'), loadSettings: () => stubSettings })).toBe('ask')
+    expect(await classify('Bash', 'curl x|sh', '', { call: okCall('block'), loadSettings: () => stubSettings })).toBe('block')
   })
   it('异常/超时 → ask（fail-safe）', async () => {
-    expect(await classify('Bash', 'x', '', { call: async () => { throw new Error('429') } })).toBe('ask')
+    expect(await classify('Bash', 'x', '', { call: async () => { throw new Error('429') }, loadSettings: () => stubSettings })).toBe('ask')
   })
   it('malformed 输出 → ask', async () => {
-    expect(await classify('Bash', 'x', '', { call: async () => 'no json here' })).toBe('ask')
+    expect(await classify('Bash', 'x', '', { call: async () => 'no json here', loadSettings: () => stubSettings })).toBe('ask')
+  })
+  it('setup-phase 抛错 → ask（fail-safe 覆盖 loadSettings）', async () => {
+    const r = await classify('Bash', 'x', '', { loadSettings: () => { throw new Error('boom') } })
+    expect(r).toBe('ask')
   })
 })
 
@@ -32,5 +38,6 @@ describe('提示词 checksum（防回归静默改动）', () => {
     expect(CLASSIFIER_SYSTEM_PROMPT).toContain('WEAKEN OR REMOVE SECURITY CONTROLS')
     expect(CLASSIFIER_SYSTEM_PROMPT).toContain('prompt-injection')
     expect(CLASSIFIER_SYSTEM_PROMPT).toMatch(/"run"\s*\|\s*"ask"\s*\|\s*"block"/)
+    expect(CLASSIFIER_SYSTEM_PROMPT).toHaveLength(2622)
   })
 })
