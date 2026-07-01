@@ -42,6 +42,7 @@ vi.mock('../src/settingsLayers.js', async orig => ({
 }))
 
 import { createChatCore } from '../src/tui/useChat.js'
+import { writeJobState, readJobState, type JobState } from '../src/backgroundSession.js'
 
 const usage = { prompt_tokens: 10, completion_tokens: 5, prompt_cache_hit_tokens: 0 }
 
@@ -60,11 +61,31 @@ afterEach(() => {
   delete process.env.DEEPCODE_TEST_HOME
 })
 
-function makeCore(extra: { spawnFn: any }) {
+function makeCore(extra: { spawnFn?: any; killFn?: any }) {
   return createChatCore({
     client: {} as any, yolo: true, cwd: '/proj', sessionDir, onState: () => {},
     spawnFn: extra.spawnFn,
+    killFn: extra.killFn,
   })
+}
+
+function makeJob(overrides: Partial<JobState>): JobState {
+  const short = overrides.short ?? 'abc12345'
+  return {
+    sessionId: short + '-full',
+    short,
+    state: 'working',
+    cwd: '/proj',
+    name: '测试 job',
+    pid: 1234,
+    model: 'test-model',
+    permMode: 'default',
+    sessionFile: `/tmp/${short}.jsonl`,
+    backend: 'detached',
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    ...overrides,
+  }
 }
 
 describe('backgroundSession core', () => {
@@ -102,5 +123,57 @@ describe('backgroundSession core', () => {
     const st = JSON.parse(fs.readFileSync(path.join(jobsDir, shorts[0], 'state.json'), 'utf8'))
     expect(st.state).toBe('working')
     expect(st.pid).toBe(5555)
+  })
+})
+
+describe('/stop 命令', () => {
+  it('无 id → 列出运行中 job', async () => {
+    writeJobState(makeJob({ short: 'aaa11111', name: 'job A', state: 'working' }))
+    writeJobState(makeJob({ short: 'bbb22222', name: 'job B', state: 'working' }))
+    writeJobState(makeJob({ short: 'ccc33333', name: 'job C', state: 'completed' }))
+    const core = makeCore({})
+    await core.send('/stop')
+    const notices = core.state.transcript.filter((i: any) => i.kind === 'notice') as any[]
+    const text = notices.map(n => n.text).join('\n')
+    expect(text).toContain('aaa11111')
+    expect(text).toContain('bbb22222')
+    expect(text).not.toContain('ccc33333')
+  })
+
+  it('无运行中 job 时提示无', async () => {
+    const core = makeCore({})
+    await core.send('/stop')
+    const notices = core.state.transcript.filter((i: any) => i.kind === 'notice') as any[]
+    expect(notices.some(n => n.text.includes('无运行中的后台会话'))).toBe(true)
+  })
+
+  it('有 id → process.kill(pid,SIGTERM) + state stopped', async () => {
+    const kill = vi.fn()
+    writeJobState(makeJob({ short: 'ddd44444', pid: 9999, state: 'working' }))
+    const core = makeCore({ killFn: kill })
+    await core.send('/stop ddd44444')
+    expect(kill).toHaveBeenCalledWith(9999, 'SIGTERM')
+    expect(readJobState('ddd44444')?.state).toBe('stopped')
+    const notices = core.state.transcript.filter((i: any) => i.kind === 'notice') as any[]
+    expect(notices.some(n => n.text.includes('已停止'))).toBe(true)
+  })
+
+  it('未知 id → 提示找不到', async () => {
+    const kill = vi.fn()
+    const core = makeCore({ killFn: kill })
+    await core.send('/stop nope0000')
+    expect(kill).not.toHaveBeenCalled()
+    const notices = core.state.transcript.filter((i: any) => i.kind === 'notice') as any[]
+    expect(notices.some(n => n.text.includes('找不到'))).toBe(true)
+  })
+
+  it('已终态 id → 提示已是该状态', async () => {
+    const kill = vi.fn()
+    writeJobState(makeJob({ short: 'eee55555', state: 'completed' }))
+    const core = makeCore({ killFn: kill })
+    await core.send('/stop eee55555')
+    expect(kill).not.toHaveBeenCalled()
+    const notices = core.state.transcript.filter((i: any) => i.kind === 'notice') as any[]
+    expect(notices.some(n => n.text.includes('completed'))).toBe(true)
   })
 })

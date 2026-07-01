@@ -71,7 +71,7 @@ import { createStatusLineRunner, execStatusLineCommand } from '../statusLine.js'
 import { COMMIT_GUIDANCE, COMMIT_PUSH_PR_GUIDANCE, buildCommitContext, buildPrContext, isEmptyDiff, resolveBaseBranch } from '../commitGuidance.js'
 import { expandTextPlaceholders, type Attachment, type ImageEntry, type TextEntry } from './pasteFold.js'
 import { describeImage, GlmKeyMissingError } from '../imageDescribe.js'
-import { buildBackgroundArgv, writeJobState, updateJobState, shortId } from '../backgroundSession.js'
+import { buildBackgroundArgv, writeJobState, updateJobState, shortId, listJobs, readJobState, formatJobList } from '../backgroundSession.js'
 
 /** ! 直跑：同步执行，30s 超时，stdout+stderr 合并，超 20k 截断 */
 export function runBang(cmd: string, cwd: string): { output: string; code: number } {
@@ -321,8 +321,11 @@ export function createChatCore(opts: {
   runSubagent?: import('../services/memory/extractMemories.js').ExtractorDeps['runSubagent']
   /** 测试注入：替换 backgroundSession 内 spawn detached 子进程用的函数 */
   spawnFn?: typeof spawn
+  /** 测试注入：替换 /stop 内杀进程用的函数 */
+  killFn?: (pid: number, sig: string) => void
 }): ChatCore {
   const spawnBg = opts.spawnFn ?? spawn
+  const killProc = opts.killFn ?? ((p: number, s: string) => process.kill(p, s as any))
   const layered = loadLayeredSettings(opts.cwd, opts.flagSettingsPath)
   const settings = layered.settings
   const ruleSources = layered.permissionSources.allow
@@ -1365,6 +1368,22 @@ export function createChatCore(opts: {
         scheduler.resetLoopPreamble('dynamic')
         await runTurn('（/loop 自主）', LOOP_GUIDANCE.autonomous())
       }
+      return
+    }
+
+    if (line === '/stop' || line.startsWith('/stop ')) {
+      const id = line.slice('/stop'.length).trim()
+      if (!id) {
+        const running = listJobs().filter(j => j.state === 'working')
+        notice('info', running.length ? `运行中的后台会话：\n${formatJobList(running, Date.now())}\n用 /stop <id> 停止` : '（无运行中的后台会话）')
+        return
+      }
+      const job = readJobState(id)
+      if (!job) { notice('warn', `找不到后台会话 ${id}`); return }
+      if (job.state !== 'working') { notice('info', `${id} 已是 ${job.state}`); return }
+      try { killProc(job.pid, 'SIGTERM') } catch (e: any) { notice('warn', `杀进程失败：${e?.message ?? e}`) }
+      updateJobState(id, { state: 'stopped', updatedAt: Date.now() })
+      notice('info', `已停止后台会话 ${id}（transcript 保留，可 /resume 回看）`)
       return
     }
 
