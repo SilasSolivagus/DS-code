@@ -246,4 +246,21 @@ describe('resumeList 并入 bg 会话（7.3 Task6）', () => {
     const files = list.map(s => s.file)
     expect(new Set(files).size).toBe(files.length)
   })
+
+  it('fork 会话文件既在 sessions 又是 bg job 时，就地显示 [bg state] 标签（M9）', async () => {
+    // pid 用存活进程，reconcileJobs 保持 working
+    const spawn = vi.fn((..._args: any[]) => ({ pid: process.pid, unref: () => {} }) as any)
+    const core = makeCore({ spawnFn: spawn })
+    script.push({ result: { content: '回答', toolCalls: [], usage, finishReason: 'stop' } })
+    await core.send('先发一句')
+    const r = await core.backgroundSession('后台干活')
+    expect(r.ok).toBe(true)
+    const list = core.resumeList()
+    const bgEntry = list.find(s => s.preview.startsWith('[bg '))
+    expect(bgEntry).toBeDefined()
+    expect(bgEntry!.preview).toMatch(/^\[bg working\]/)
+    // 不因带标签而重复：同一文件仍只一条
+    const files = list.map(s => s.file)
+    expect(new Set(files).size).toBe(files.length)
+  })
 })

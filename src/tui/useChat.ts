@@ -1555,10 +1555,13 @@ export function createChatCore(opts: {
       p.resolve(approved)
     },
     resumeList: () => {
-      const sessions = listSessions(cwd, sessionDir).slice(0, 10).map(s => ({ file: s.file, preview: s.preview }))
-      const bg = reconcileJobs(Date.now()).filter(j => j.cwd === cwd).map(j => ({ file: j.sessionFile, preview: `[bg ${j.state}] ${j.name}` }))
+      // 后台会话按文件建标签索引；fork 出的会话文件通常也在 listSessions 里，
+      // 故对同一文件优先显示 [bg <state>] 标签（覆盖普通预览），不再被去重吞掉。
+      const bgByFile = new Map(reconcileJobs(Date.now()).filter(j => j.cwd === cwd).map(j => [j.sessionFile, `[bg ${j.state}] ${j.name}`] as const))
+      const sessions = listSessions(cwd, sessionDir).slice(0, 10).map(s => ({ file: s.file, preview: bgByFile.get(s.file) ?? s.preview }))
       const seen = new Set(sessions.map(s => s.file))
-      return [...bg.filter(b => !seen.has(b.file)), ...sessions].slice(0, 15)
+      const extraBg = [...bgByFile].filter(([f]) => !seen.has(f)).map(([file, preview]) => ({ file, preview }))
+      return [...extraBg, ...sessions].slice(0, 15)
     },
     resume: (file: string) => {
       if (busy) return
