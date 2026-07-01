@@ -269,6 +269,9 @@ export async function checkPermission(
   }
   // auto 模式：无 allow 命中 → 静态 hard_deny 兜底 → 分类器兜底（规则先于分类器，对齐 CC）
   if (pc.mode === 'auto' && !forceAsk && pc.classify) {
+    // acceptEdits fast-path（照搬 CC）：Edit/Write 在 acceptEdits 下本就放行 → 跳过分类器（省每次 ~3s 延迟）。
+    // 安全性：越界写已被上方工作目录围栏拦；in-workspace 编辑走 acceptEdits 语义（可逆可 review）。
+    if (tool.name === 'Edit' || tool.name === 'Write') return { ok: true }
     if (matchHardDeny(tool.name, desc)) {
       const reason = 'auto mode：命中安全边界硬规则（不可逆/外泄/后门），已拦截'
       await hooks?.onDenied?.(tool.name, desc, reason)

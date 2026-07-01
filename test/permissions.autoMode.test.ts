@@ -51,4 +51,22 @@ describe('auto 模式分类器分支', () => {
     expect(r.ok).toBe(true)
     expect(called).toBe(false)
   })
+
+  it('auto 模式 Edit/Write fast-path：跳过分类器直接放行', async () => {
+    // Write fast-path
+    let writeCalled = false
+    const writeTool = { name: 'Write', isReadOnly: false, needsPermission: (i: any) => i.path }
+    const rw = await checkPermission(writeTool as any, { path: '/workspace/test.ts' },
+      baseCtx({ classify: async () => { writeCalled = true; return 'run' } }))
+    expect(rw.ok).toBe(true)
+    expect(writeCalled).toBe(false) // fast-path: 分类器未被调用
+
+    // Edit fast-path
+    let editCalled = false
+    const editTool = { name: 'Edit', isReadOnly: false, needsPermission: (i: any) => i.path }
+    const re = await checkPermission(editTool as any, { path: '/workspace/foo.ts' },
+      baseCtx({ classify: async () => { editCalled = true; return 'run' } }))
+    expect(re.ok).toBe(true)
+    expect(editCalled).toBe(false) // fast-path: 分类器未被调用
+  })
 })
