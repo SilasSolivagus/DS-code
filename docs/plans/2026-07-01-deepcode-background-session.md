@@ -304,7 +304,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - Consumes: `readJobState`/`updateJobState`/`shortId`（Task 1）；`loadSession`/`openSession`（session.ts）；`runLoop`（loop.ts）
 - Produces: `runBackgroundSession(opts: { client: OpenAI; resumeFile: string; jobShort: string; seed?: string; yolo?: boolean; permMode?: string; flagSettingsPath?: string }): Promise<void>`
 
-**说明**：本函数是 `runHeadless` 的后台变体——**不新建会话而是 resume 指定文件、把新消息持久化回该文件、维护 job 状态**。为不牵动既有 headless 路径（零回归风险），自成一体，工具集与 runHeadless 结构相同（有意的受控重复：后台路径在持久化 + job 生命周期上与 ephemeral headless 发散，强行共享会耦合两条语义）。
+**说明**：本函数是 `runHeadless` 的后台变体——**不新建会话而是 resume 指定文件、把新消息持久化回该文件、维护 job 状态**。工具集构造**抽成 headless.ts 导出的共享 helper `buildHeadlessToolset(deps)`**，runHeadless 与 runBackgroundSession 都用它（DRY，避免 ~40 行重复）。抽取是纯机械搬移，既有 headless 测试守护，零行为变化。
 
 - [ ] **Step 1: 写失败测试 `test/backgroundRunner.test.ts`**
 
@@ -371,9 +371,33 @@ describe('runBackgroundSession', () => {
 Run: `npx vitest run test/backgroundRunner.test.ts`
 Expected: FAIL（`Cannot find module '../src/backgroundRunner.js'`）
 
-- [ ] **Step 3: 实现 `src/backgroundRunner.ts`**
+- [ ] **Step 3a: 从 headless.ts 抽出共享工具集 helper**
 
-以 `src/headless.ts` 的 `runHeadless` 为骨架，改三处：①用 `loadSession(resumeFile)` 的 messages 代替新建 initMsgs；②`openSession(resumeFile)` 句柄，seed 与每轮新消息 append 落盘；③进入设 env + 结束/异常/SIGTERM 更新 job 状态。工具集构造与 runHeadless 相同（复制该表达式，含 agent/workflow/webfetch/webSearch/bgTask/skill）。
+在 `src/headless.ts` 把 `runLoop` 调用里的 `tools: [...]` 大表达式抽成导出函数（纯机械搬移，参数为其引用的闭包依赖），并让 `runHeadless` 改用它：
+
+```ts
+export function buildHeadlessToolset(d: {
+  client: OpenAI; addUsage: (u: Usage) => void; getModel: () => string
+  agents: ReturnType<typeof resolveAgents>; settings: any; cwd: string
+  skills: ReturnType<typeof loadSkills>; mcpTools: any[]
+}): any[] {
+  const { client, addUsage, getModel, agents, settings, cwd, skills, mcpTools } = d
+  const model = getModel()
+  return [...allTools, taskCreateTool, taskGetTool, taskUpdateTool, taskListTool,
+    makeAgentTool({ client, onUsage: (u, _m) => addUsage(u), getModel, agents, worktree: settings.worktree }),
+    makeWorkflowTool({ client, onUsage: (u, _m) => addUsage(u), sessionModel: model, agents, runSubagent, journalDir: path.join(cwd, '.deepcode', 'workflows'), resolveModelAlias: (m: string) => resolveSubModel(m, model) }),
+    makeWebFetchTool({ client, onUsage: (u, _m) => addUsage(u) }),
+    makeWebSearchTool({ config: resolveWebSearchConfig(settings) }),
+    bgTaskListTool, taskOutputTool, taskStopTool, ...mcpTools,
+    makeSkillTool(skills, { client, onUsage: (u, _m) => addUsage(u), getModel, agents, skillPool: [...allTools, makeWebFetchTool({ client, onUsage: (u, _m) => addUsage(u) })], listingBudgetChars: settings.skills?.listingBudgetChars })]
+}
+```
+
+`runHeadless` 里把原 `tools: [...]` 改为 `tools: buildHeadlessToolset({ client: opts.client, addUsage, getModel: () => model, agents, settings, cwd, skills, mcpTools })`。跑 `npx vitest run` 确认既有 headless 测试全绿（守护此纯搬移）。
+
+- [ ] **Step 3b: 实现 `src/backgroundRunner.ts`**
+
+以 `runHeadless` 为骨架，改三处：①用 `loadSession(resumeFile)` 的 messages 代替新建 initMsgs；②`openSession(resumeFile)` 句柄，seed 与每轮新消息 append 落盘；③进入设 env + 结束/异常/SIGTERM 更新 job 状态。工具集**复用 `buildHeadlessToolset`**（import 自 headless.js）。
 
 ```ts
 // src/backgroundRunner.ts
@@ -472,7 +496,7 @@ export async function runBackgroundSession(opts: {
   const lenBefore = messages.length
   const gen = runLoop(messages, {
     client: opts.client,
-    tools: [...allTools, taskCreateTool, taskGetTool, taskUpdateTool, taskListTool, makeAgentTool({ client: opts.client, onUsage: (u, _model) => addUsage(u), getModel: () => model, agents, worktree: settings.worktree }), makeWorkflowTool({ client: opts.client, onUsage: (u, _model) => addUsage(u), sessionModel: model, agents, runSubagent, journalDir: path.join(cwd, '.deepcode', 'workflows'), resolveModelAlias: (m: string) => resolveSubModel(m, model) }), makeWebFetchTool({ client: opts.client, onUsage: (u, _model) => addUsage(u) }), makeWebSearchTool({ config: resolveWebSearchConfig(settings) }), bgTaskListTool, taskOutputTool, taskStopTool, ...mcpTools, makeSkillTool(skills, { client: opts.client, onUsage: (u, _m) => addUsage(u), getModel: () => model, agents, skillPool: [...allTools, makeWebFetchTool({ client: opts.client, onUsage: (u, _m) => addUsage(u) })], listingBudgetChars: settings.skills?.listingBudgetChars })],
+    tools: buildHeadlessToolset({ client: opts.client, addUsage, getModel: () => model, agents, settings, cwd, skills, mcpTools }),
     model,
     thinking: false,
     maxToolResultChars: settings.maxToolResultChars,
@@ -510,9 +534,9 @@ export async function runBackgroundSession(opts: {
 }
 ```
 
-> 注：`opts.model` 在接口未列——补进签名。修 Step 3 首行接口为含 `model?: string`。（见下 Step 3b。）
+> 注：`opts.model` 在接口未列——补进签名（见下 Step 3c）。另：改用 `buildHeadlessToolset` 后，backgroundRunner.ts 顶部 import 只保留 helper deps 实际用到的（`resolveAgents`/`loadSkills`/`buildSystemPrompt`/`resolveOutputStyle`/`loadOutputStyles` 等），删掉搬进 headless.ts 的各 `make*Tool`/`allTools` import——按 typecheck 报的未使用清理。
 
-- [ ] **Step 3b: 接口补 model 字段**
+- [ ] **Step 3c: 接口补 model 字段**
 
 把 `runBackgroundSession` 签名的 opts 加 `model?: string`：
 
