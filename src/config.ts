@@ -87,6 +87,10 @@ export interface Settings {
   workflowKeywordTriggerEnabled?: boolean
   /** /loop 自主模式结束判定：true=合并即视为任务完成（哨兵 preamble 用 persist 变体）。Task 14 加写入。 */
   doneMeansMerged?: boolean
+  /** auto mode 分类器覆盖模型（缺省走 provider fast 档）。 */
+  autoModeModel?: string
+  /** auto mode 分类器是否启用 thinking（缺省 false）。 */
+  autoModeThinking?: boolean
 }
 
 const DIR = path.join(os.homedir(), '.deepcode')
