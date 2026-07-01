@@ -7,7 +7,7 @@
 import { useSyncExternalStore } from 'react'
 import fs from 'node:fs'
 import path from 'node:path'
-import { execSync } from 'node:child_process'
+import { execSync, spawn } from 'node:child_process'
 import type OpenAI from 'openai'
 import { runLoop, type LoopDeps, type LoopEvent } from '../loop.js'
 import { allTools } from '../tools/index.js'
@@ -71,6 +71,7 @@ import { createStatusLineRunner, execStatusLineCommand } from '../statusLine.js'
 import { COMMIT_GUIDANCE, COMMIT_PUSH_PR_GUIDANCE, buildCommitContext, buildPrContext, isEmptyDiff, resolveBaseBranch } from '../commitGuidance.js'
 import { expandTextPlaceholders, type Attachment, type ImageEntry, type TextEntry } from './pasteFold.js'
 import { describeImage, GlmKeyMissingError } from '../imageDescribe.js'
+import { buildBackgroundArgv, writeJobState, updateJobState, shortId } from '../backgroundSession.js'
 
 /** ! 直跑：同步执行，30s 超时，stdout+stderr 合并，超 20k 截断 */
 export function runBang(cmd: string, cwd: string): { output: string; code: number } {
@@ -289,6 +290,8 @@ export interface ChatCore {
   applyModel(id: string): void
   outputStyleList(): { name: string; description: string }[]
   applyOutputStyle(name: string): void
+  /** fork 当前会话到新文件、写初始 working state、spawn detached 后台子进程（不 process.exit，退出由 App 层做） */
+  backgroundSession(seed?: string): Promise<{ ok: boolean; message: string; spawned?: boolean }>
 }
 
 /** 压缩（summarize LLM 调用）超时上限：到点自动 abort，防 provider 卡住流时 /compact 与自动压缩无限挂起。 */
@@ -316,7 +319,10 @@ export function createChatCore(opts: {
   onState: (s: ChatState) => void
   /** 测试注入：替换 extractMemories 内的 runSubagent，用 spy 验证触发 */
   runSubagent?: import('../services/memory/extractMemories.js').ExtractorDeps['runSubagent']
+  /** 测试注入：替换 backgroundSession 内 spawn detached 子进程用的函数 */
+  spawnFn?: typeof spawn
 }): ChatCore {
+  const spawnBg = opts.spawnFn ?? spawn
   const layered = loadLayeredSettings(opts.cwd, opts.flagSettingsPath)
   const settings = layered.settings
   const ruleSources = layered.permissionSources.allow
@@ -1399,6 +1405,46 @@ export function createChatCore(opts: {
     await runTurn(line, userText)
   }
 
+  // 7.3 /background：门控（非空会话）+ fork 到新会话文件 + 写初始 working state + spawn detached 子进程。
+  // 不 process.exit——退出由 App/FullscreenApp 层做（保持可测）。
+  const backgroundSession = async (seed?: string): Promise<{ ok: boolean; message: string; spawned?: boolean }> => {
+    const hasContent = messages.some(m => m.role === 'user' || m.role === 'assistant')
+    if (!hasContent) {
+      const message = '还没内容可后台化——先发一条消息。'
+      notice('warn', message)
+      return { ok: false, message }
+    }
+
+    // fork 当前会话到新文件（同 /fork 逻辑：拷消息，标题加 (Branch)），不切换当前活跃 session
+    const base = stripBranchSuffix(currentTitle ?? (() => {
+      const fu = messages.find(m => m.role === 'user' && typeof m.content === 'string')
+      return typeof fu?.content === 'string' ? fu.content.slice(0, 40) : '会话'
+    })())
+    const existingTitles = listSessions(cwd, sessionDir).map(s => s.preview)
+    const forkTitle = nextBranchTitle(base, existingTitles)
+    const forkMeta = { cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id, title: forkTitle }
+    const forkS = newSession(forkMeta, sessionDir)
+    for (const m of messages) forkS.appendMessage(m, turnOf.get(m))
+    const forkedId = sessionIdFromFile(forkS.file)
+    const short = shortId(forkedId)
+
+    // 写初始 working state（pid 待回填）
+    const now = Date.now()
+    writeJobState({
+      sessionId: forkedId, short, state: 'working', cwd, name: seed?.slice(0, 40) || forkTitle,
+      initialPrompt: seed, pid: 0, model, permMode, sessionFile: forkS.file, backend: 'detached',
+      createdAt: now, updatedAt: now,
+    })
+
+    // spawn detached 子进程（buildBackgroundArgv 首元素是 entry，spawn 第二参用 slice(1)）
+    const argv = buildBackgroundArgv({ entry: process.argv[1], resumeFile: forkS.file, short, seed, permMode, model })
+    const child = spawnBg(process.execPath, argv.slice(1), { detached: true, stdio: 'ignore' })
+    child.unref()
+    if (child.pid) updateJobState(short, { pid: child.pid })
+
+    return { ok: true, spawned: true, message: `已送到后台（${short}）。终端已释放。用 /resume 回看，/stop ${short} 停止。` }
+  }
+
   const applyOutputStyle = (name: string): void => {
     outputStyleName = name
     const style = resolveOutputStyle(name, outputStyleCache)
@@ -1539,6 +1585,7 @@ export function createChatCore(opts: {
     applyModel,
     outputStyleList,
     applyOutputStyle,
+    backgroundSession,
   }
 }
 
