@@ -33,6 +33,7 @@ import { loadLayeredSettings } from '../settingsLayers.js'
 import { runHooks } from '../hooks.js'
 import { makeHookRuntime } from '../hookRuntime.js'
 import { isDangerous, type Decision, type PermissionMode, type PermissionDecisionReason } from '../permissions.js'
+import { classify } from '../autoMode.js'
 import { resolveDenyList, buildDenySourceMap } from '../deny.js'
 import type { ToolContext, WorktreeSessionState } from '../tools/types.js'
 import { newSession, openSession, listSessions, loadSession, sessionIdFromFile, stripBranchSuffix, nextBranchTitle, type SessionHandle, type UsageRecord } from '../session.js'
@@ -798,6 +799,7 @@ export function createChatCore(opts: {
           ask,
           ruleSources,
           denySources,
+          classify: (t: string, d: string, s: string) => classify(t, d, s),
         },
         reminders: () => {
           taskList.tick()
