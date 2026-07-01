@@ -1440,7 +1440,10 @@ export function createChatCore(opts: {
   // 7.3 /background：门控（非空会话）+ fork 到新会话文件 + 写初始 working state + spawn detached 子进程。
   // 不 process.exit——退出由 App/FullscreenApp 层做（保持可测）。
   const backgroundSession = async (seed?: string): Promise<{ ok: boolean; message: string; spawned?: boolean }> => {
-    const hasContent = messages.some(m => m.role === 'user' || m.role === 'assistant')
+    // 快照一次：mid-busy 触发时并发的 turn-end append 可能在 fork 拷贝途中修改 messages，
+    // 快照后 hasContent 判断与拷贝循环都读同一份，避免撕裂。
+    const snapshot = [...messages]
+    const hasContent = snapshot.some(m => m.role === 'user' || m.role === 'assistant')
     if (!hasContent) {
       const message = '还没内容可后台化——先发一条消息。'
       notice('warn', message)
@@ -1449,14 +1452,14 @@ export function createChatCore(opts: {
 
     // fork 当前会话到新文件（同 /fork 逻辑：拷消息，标题加 (Branch)），不切换当前活跃 session
     const base = stripBranchSuffix(currentTitle ?? (() => {
-      const fu = messages.find(m => m.role === 'user' && typeof m.content === 'string')
+      const fu = snapshot.find(m => m.role === 'user' && typeof m.content === 'string')
       return typeof fu?.content === 'string' ? fu.content.slice(0, 40) : '会话'
     })())
     const existingTitles = listSessions(cwd, sessionDir).map(s => s.preview)
     const forkTitle = nextBranchTitle(base, existingTitles)
     const forkMeta = { cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id, title: forkTitle }
     const forkS = newSession(forkMeta, sessionDir)
-    for (const m of messages) forkS.appendMessage(m, turnOf.get(m))
+    for (const m of snapshot) forkS.appendMessage(m, turnOf.get(m))
     const forkedId = sessionIdFromFile(forkS.file)
     const short = shortId(forkedId)
 
